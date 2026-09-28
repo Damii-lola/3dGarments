@@ -1,0 +1,35 @@
+# Render Blueprint — New → Blueprint → pick this repo.
+# Secrets marked `sync: false` are asked for once in the Render dashboard.
+services:
+  - type: web
+    name: 3dgarments-api
+    runtime: node
+    rootDir: server
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - server/**
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: https://damii-lola.github.io,http://localhost:5173
+      - key: SUPABASE_BUCKET
+        value: garments
+      - key: CF_VISION_MODEL
+        value: "@cf/meta/llama-4-scout-17b-16e-instruct"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false

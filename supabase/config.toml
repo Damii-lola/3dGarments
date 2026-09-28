@@ -1,0 +1,16 @@
+# Supabase CLI project config. CI runs `supabase link` + `supabase db push`.
+project_id = "3dgarments"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["https://damii-lola.github.io/3dGarments/"]

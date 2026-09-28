@@ -1,0 +1,26 @@
+{
+  "name": "3dgarments-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch --env-file-if-exists=.env src/index.js",
+    "verify": "node --env-file-if-exists=.env scripts/verify.mjs",
+    "check": "node --check src/index.js && for f in $(find src scripts -name '*.js' -o -name '*.mjs'); do node --check $f || exit 1; done",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.5"
+  }
+}
