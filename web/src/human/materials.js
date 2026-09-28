@@ -53,6 +53,7 @@ export function createSkinMaterial({ tone = SKIN_TONES[2].hex, hairColor = '#2a1
     uBrows: { value: brows },
     uStubble: { value: stubble },
     uScalp: { value: 0 },
+    uClay: { value: 0 },
     uSSS: { value: new THREE.Vector3(0.55, 0.26, 0.14) },
     uPore: { value: 0.35 },
   };
@@ -76,12 +77,13 @@ export function createSkinMaterial({ tone = SKIN_TONES[2].hex, hairColor = '#2a1
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uMaskA; uniform sampler2D uMaskB; uniform sampler2D uDetail; uniform vec3 uSSS; uniform float uPore;
-uniform vec3 uHair; uniform float uBrows; uniform float uStubble; uniform float uScalp;
+uniform vec3 uHair; uniform float uBrows; uniform float uStubble; uniform float uScalp; uniform float uClay;
 varying vec3 vRest;
 ${NOISE}
 vec4 mA; vec4 mB; vec4 mD;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
 mA = texture2D(uMaskA, vUv); mB = texture2D(uMaskB, vUv); mD = texture2D(uDetail, vUv);
+vec3 clayBase = diffuseColor.rgb;
 {
   vec3 tone = diffuseColor.rgb;
   // mottling: large soft patches + faint freckle-scale variation
@@ -107,11 +109,14 @@ mA = texture2D(uMaskA, vUv); mB = texture2D(uMaskB, vUv); mD = texture2D(uDetail
   diffuseColor.rgb = mix(diffuseColor.rgb, uHair, stub * dots * 0.55);
   diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, uHair, 0.7), smoothstep(0.55, 0.95, mD.g) * uScalp); // only under full hair
   diffuseColor.rgb = mix(diffuseColor.rgb, uHair * 0.9, clamp(mD.r * 1.15, 0.0, 1.0) * uBrows);   // eyebrows
-}`)
+}
+// clay: one uniform grey — only a whisper of brow/lip definition, like a sculpt render
+diffuseColor.rgb = mix(diffuseColor.rgb, clayBase * (1.0 - 0.22 * clamp(mD.r * 1.15, 0.0, 1.0) - 0.06 * mA.r), uClay);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = mix(roughnessFactor, 0.4, mA.r);
 roughnessFactor = mix(roughnessFactor, 0.28, mA.b);
-roughnessFactor *= 0.92 + 0.16 * n3(vRest * 60.0);`)
+roughnessFactor *= 0.92 + 0.16 * n3(vRest * 60.0);
+roughnessFactor = mix(roughnessFactor, 0.5 + 0.06 * n3(vRest * 60.0), uClay);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 {
   // pores: bump from high-frequency noise, faded out before it can alias
@@ -139,8 +144,14 @@ roughnessFactor *= 0.92 + 0.16 * n3(vRest * 60.0);`)
 }`,
       ));
   };
-  mat.userData.setSkin = ({ tone: t, hairColor: h, brows: br, stubble: st, scalp: sc } = {}) => {
+  mat.userData.setSkin = ({ tone: t, hairColor: h, brows: br, stubble: st, scalp: sc, clay } = {}) => {
     if (t) mat.color.set(t);
+    if (clay != null) {
+      uniforms.uClay.value = clay ? 1 : 0;
+      // clay doesn't scatter red light the way skin does
+      uniforms.uSSS.value.set(...(clay ? [0.3, 0.3, 0.3] : [0.55, 0.26, 0.14]));
+      mat.sheenColor.set(clay ? '#d8d8dc' : '#ffb59e');
+    }
     if (h) uniforms.uHair.value.set(h);
     if (br != null) uniforms.uBrows.value = br;
     if (st != null) uniforms.uStubble.value = st;
@@ -160,6 +171,16 @@ export function createEyeMaterial() {
   // the cornea shell maps to the texture's transparent patch: cut it away to reveal the iris
   const m = new THREE.MeshPhysicalMaterial({ map: eyeTex, color: '#fff3ea', alphaTest: 0.5, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 0.5, envMapIntensity: 0.55 });
   m.name = 'eyes';
+  const u = { uClay: { value: 0 }, uGray: { value: new THREE.Color('#8f9094') } };
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uClay; uniform vec3 uGray;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+diffuseColor.rgb = mix(diffuseColor.rgb, uGray * (0.45 + 0.75 * lum), uClay);`);
+  };
+  m.userData.setClay = (on, gray) => { u.uClay.value = on ? 1 : 0; if (gray) u.uGray.value.set(gray); };
   return m;
 }
 

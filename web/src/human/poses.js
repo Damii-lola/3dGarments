@@ -64,8 +64,8 @@ const hand = (curl, spread = 0, thumb = [0, 0, 0]) => {
 };
 
 export const HANDS = {
-  relaxed: { label: 'Relaxed', pose: hand([10, 16, 10, 4], 0.6, [6, 10]) },
-  soft: { label: 'Soft', pose: hand([14, 22, 14, 4], 1.2, [8, 14]) },
+  relaxed: { label: 'Relaxed', pose: hand([12, 20, 12, 5], -0.8, [8, 10, -24]) },  // thumb tucked beside the index
+  soft: { label: 'Soft', pose: hand([16, 24, 14, 4], -0.5, [10, 14, -18]) },
   open: { label: 'Open', pose: hand([2, 3, 2, 0], 5, [-5, 2, 10]) },
   fist: { label: 'Fist', pose: hand([80, 95, 60, 3], 0, [25, 40, -10]) },
   point: { label: 'Point', pose: { ...hand([80, 95, 60, 3], 0, [25, 40, -10]), index_01: [0, 0, 0], index_02: [2, 0, 0], index_03: [2, 0, 0] } },
@@ -79,7 +79,7 @@ const withHands = (pose, left = 'relaxed', right = left) => {
 
 /* ---------------------------------------------------------------- body poses */
 
-const armsDown = { upperarm: [-12, -15, -41], lowerarm: [5, 48, 0], hand: [0, 0, 6] };  // forearm pronated: palms face the thighs
+const armsDown = { upperarm: [-12, -15, -41], lowerarm: [5, 48, 0], hand: [4, 0, 0] };  // forearm pronated: palms face the thighs
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
 const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
 

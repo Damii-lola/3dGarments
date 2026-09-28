@@ -18,7 +18,8 @@ server/                 Express API (Render). ESM, Node 22.
 tools/human/            asset pipeline: fetch.sh (sparse-clone MakeHuman + MPFB), build.py, paint.py
 web/                    Vite + three.js SPA (GitHub Pages)
   public/human/         BUILT assets: human.json + human.bin (brotli), skin/detail/underwear masks, eye.png
-  src/main.js           studio UI: Model / Pose / Scene tabs, Shot panel, state in localStorage
+  src/main.js           studio UI: Model (sex, width cm, height in, skin) / Pose / Scene tabs, Shot panel, state in localStorage
+  src/human/body.js     the simple body model: FIT presets, width "frame", SKINS (grey clay first, each with an ethnicity blend), ranges
   src/human/assets.js   loads + decodes human.bin (brotli-dec-wasm)
   src/human/modifiers.js  MakeHuman macro maths (gender/age/muscle/weight/height/proportions/breast/ethnicity)
   src/human/human.js    Human: CPU morph → joints from cubes → bone frames → rebind; pose; feet on floor; underwear
@@ -46,6 +47,7 @@ render.yaml             Render blueprint
 - MakeHuman data stays in native space (decimetres, y up, faces +z) inside human.bin. human.js converts to metres with the feet on y = 0.
 - Bone rest frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. +z moves a left limb outward, and +y on the upper arm is internal rotation.
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.
+- Model controls are real measurements: width = shoulder point to point (biacromial, probe verts at the shoulder tips) in cm, height = crown to sole in inches. `Human.measure()` evaluates only probe vertices; `Human.solve()` inverts exactly because targets blend linearly on each half-range. Keep the width frame within FRAME_RANGE (the torso turns boxy above +0.6).
 - Body-surface overlays (underwear, later tight garments) reuse the body's triangles and skin weights, pushed out along the normal in the shader, with the outline cut by a UV mask painted in paint.py from 3D curves.
 
 ## Coordinate conventions (garment pipeline)

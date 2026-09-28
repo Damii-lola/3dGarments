@@ -290,3 +290,13 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius
 
 body.flash .stage::after { content: ''; position: absolute; inset: 0; background: #fff; opacity: 0; animation: flash .35s ease-out; pointer-events: none; }
 @keyframes flash { 0% { opacity: .55; } 100% { opacity: 0; } }
+
+/* model tab: sex toggle + labelled skin picker */
+.chips.seg.big .chip { height: 42px; font-size: 14px; font-weight: 600; }
+.skins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.skin { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 10px 0 6px; border-radius: 11px; border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--text); cursor: pointer; font-size: 12.5px; text-align: left; }
+.skin:hover { background: rgba(255,255,255,.07); }
+.skin i { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c) 70%, #fff), var(--c) 60%, color-mix(in srgb, var(--c) 75%, #000)); flex: none; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.skin span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skin.on { border-color: var(--accent); background: rgba(255,91,58,.14); box-shadow: 0 0 0 1px var(--accent); }
+.skin.clay { grid-column: 1 / -1; }

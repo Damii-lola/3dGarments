@@ -5,9 +5,7 @@ import './styles.css';
 import { createStage, HDRIS, LIGHTING } from './scene/stage.js';
 import { loadHumanAssets } from './human/assets.js';
 import { Human } from './human/human.js';
-import { DEFAULT_SHAPE } from './human/modifiers.js';
-import { SKIN_TONES } from './human/materials.js';
-import { HAIR_STYLES, HAIR_COLORS } from './human/hair.js';
+import { SKINS, RANGES, FRAME_RANGE, shapeFor, skinById, fmtIn, IN } from './human/body.js';
 import { POSES, HANDS, DEFAULT_POSE, composePose } from './human/poses.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -15,21 +13,15 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 /* ================================================================ state */
 
-const FEMALE = { shape: { gender: 0, breastSize: 0.5 }, hair: 'sleek', stubble: 0, cm: 174 };
-const MALE = { shape: { gender: 1, breastSize: 0.5 }, hair: 'crop', stubble: 0.35, cm: 185 };
-
 const DEFAULTS = {
-  shape: { ...DEFAULT_SHAPE, ageYears: 27, muscle: 0.55, proportions: 0.7, height: 0.62 },
-  skin: { tone: SKIN_TONES[2].hex, stubble: 0 },
-  hair: { style: 'sleek', color: HAIR_COLORS[1].hex },
-  underwear: { style: 'auto', color: '#2c2c30' },
+  model: { sex: 'female', width: RANGES.female.defaults.width, height: RANGES.female.defaults.height, skin: 'gray' },
   pose: { preset: DEFAULT_POSE, hands: '', adjust: {} },
   env: { kind: 'studio', color: '#e9e6e1', hdri: 'lobby', blur: 0.35, rotation: 0, intensity: 1, image: null },
   light: { preset: 'soft', rotation: 0, intensity: 1, exposure: 1 },
   shot: { aspect: '4:5', size: 2048, transparent: false, shadow: true, format: 'png' },
 };
 
-const STORE = '3dg.studio.v1';
+const STORE = '3dg.studio.v2';
 const state = structuredClone(DEFAULTS);
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
@@ -43,8 +35,12 @@ const save = () => {
 };
 
 const params = new URLSearchParams(location.search);
-if (params.get('model') === 'male') Object.assign(state.shape, MALE.shape), state.hair.style = MALE.hair, state.skin.stubble = MALE.stubble;
-if (params.get('model') === 'female') Object.assign(state.shape, FEMALE.shape), state.hair.style = FEMALE.hair, state.skin.stubble = 0;
+const M = state.model;
+if (params.get('model') === 'male' || params.get('model') === 'female') {
+  M.sex = params.get('model');
+  Object.assign(M, RANGES[M.sex].defaults);
+}
+if (params.get('skin') && SKINS.some((k) => k.id === params.get('skin'))) M.skin = params.get('skin');
 if (params.get('pose') && POSES[params.get('pose')]) state.pose.preset = params.get('pose');
 if (params.get('scene') && HDRIS[params.get('scene')]) Object.assign(state.env, { kind: 'hdri', hdri: params.get('scene') });
 
@@ -120,14 +116,37 @@ const ftIn = (cm) => { const i = Math.round(cm / 2.54); return `${Math.floor(i /
 const stage = createStage($('#stage-canvas'));
 let human = null;
 
+/**
+ * Real measurements → body. Width (shoulder point to point, cm) and height (in) each drive one
+ * parameter; they barely interact, so two alternating exact solves converge.
+ */
+let frame = 0, heightParam = 0.5;
+function solveBody() {
+  const base = { sex: M.sex, skin: M.skin };
+  for (let i = 0; i < 2; i++) {
+    frame = Human.solve((f) => human.measure(shapeFor({ ...base, frame: f, height: heightParam })).width * 100, M.width, FRAME_RANGE[0], FRAME_RANGE[1], 0);
+    heightParam = Human.solve((h) => human.measure(shapeFor({ ...base, frame, height: h })).height * 100 / IN, M.height, 0, 1, 0.5);
+  }
+  return shapeFor({ ...base, frame, height: heightParam });
+}
+
 function applyShape() {
   if (!human) return;
-  human.setShape(state.shape);
+  human.setShape(solveBody());
   stage.setSubjectHeight(human.heightM);
   save();
 }
 let shapeRaf = 0;
 const queueShape = () => { cancelAnimationFrame(shapeRaf); shapeRaf = requestAnimationFrame(applyShape); };
+
+/** Skin, hair colour, grey clay mode and hair style all follow sex + skin. */
+function applyLook() {
+  if (!human) return;
+  const k = skinById(M.skin);
+  human.setSkin({ tone: k.hex, clay: !!k.clay, stubble: 0, hairColor: k.hair });
+  human.setHair({ style: M.sex === 'male' ? 'crop' : 'sleek', color: k.hair });
+  human.setUnderwear({ style: 'auto', color: k.clay ? '#5f6064' : '#2c2c30' });
+}
 
 function applyPose() {
   human?.setPose(composePose(state.pose.preset, adjustToPose(state.pose.adjust), state.pose.hands || null));
@@ -179,95 +198,53 @@ function adjustToPose(adjust) {
 function buildModelTab() {
   const host = $('[data-body="model"]');
   host.innerHTML = '';
-  const s = state.shape;
+  const R = RANGES[M.sex];
 
-  const gender = chips([['0', 'Female'], ['1', 'Male']], String(Math.round(s.gender)), (v) => {
-    const preset = v === '1' ? MALE : FEMALE;
-    Object.assign(s, preset.shape);
-    if (human) s.height = human.heightParamFor(preset.cm, s);
-    // follow the gender's default look unless the user picked something else
-    if (Object.values([FEMALE.hair, MALE.hair]).includes(state.hair.style)) state.hair.style = preset.hair;
-    state.skin.stubble = preset.stubble;
+  const sex = chips([['female', 'Female'], ['male', 'Male']], M.sex, (v) => {
+    if (v === M.sex) return;
+    M.sex = v;
+    Object.assign(M, RANGES[v].defaults);
     applyShape();
-    human?.setHair({ style: state.hair.style });
-    human?.setSkin({ stubble: state.skin.stubble });
+    applyLook();
     buildModelTab();
-  }, { cls: 'seg' });
+  }, { cls: 'seg big' });
 
-  const BUILDS = {
-    slim: { label: 'Slim', v: { weight: 0.3, muscle: 0.45, proportions: 0.7 } },
-    athletic: { label: 'Athletic', v: { weight: 0.45, muscle: 0.78, proportions: 0.8 } },
-    average: { label: 'Average', v: { weight: 0.5, muscle: 0.5, proportions: 0.5 } },
-    curvy: { label: 'Curvy', v: { weight: 0.66, muscle: 0.45, proportions: 0.55, breastSize: 0.72 } },
-    plus: { label: 'Plus size', v: { weight: 0.9, muscle: 0.4, proportions: 0.45 } },
-    muscular: { label: 'Muscular', v: { weight: 0.62, muscle: 1, proportions: 0.85 } },
+  // ranges are clipped to what the body can actually reach for this sex
+  const reach = (key, lo, hi) => {
+    const base = { sex: M.sex, skin: M.skin };
+    const m = key === 'width'
+      ? [FRAME_RANGE[0], FRAME_RANGE[1]].map((f) => human.measure(shapeFor({ ...base, frame: f, height: heightParam })).width * 100)
+      : [0, 1].map((h) => human.measure(shapeFor({ ...base, frame, height: h })).height * 100 / IN);
+    return [Math.max(lo, Math.ceil(m[0])), Math.min(hi, Math.floor(m[1]))];
   };
-  const builds = chips(Object.entries(BUILDS).map(([k, b]) => [k, b.label]), null, (k) => {
-    Object.assign(s, BUILDS[k].v);
-    applyShape();
-    buildModelTab();
+  const [wLo, wHi] = human ? reach('width', ...R.width) : R.width;
+  const [hLo, hHi] = human ? reach('height', ...R.height) : R.height;
+
+  const width = slider({
+    label: 'Width', hint: 'shoulder point to point', min: wLo, max: wHi, step: 0.5, value: M.width,
+    fmt: (v) => `${v.toFixed(1)} cm`,
+    onInput: (v) => { M.width = v; queueShape(); },
+  });
+  const height = slider({
+    label: 'Height', min: hLo, max: hHi, step: 0.5, value: M.height,
+    fmt: (v) => `${fmtIn(v)} · ${Math.round(v * IN)} cm`,
+    onInput: (v) => { M.height = v; queueShape(); },
   });
 
-  // height is chosen in centimetres; the macro value is solved for it
-  const heightSlider = () => {
-    const lo = Math.max(145, Math.ceil(human.estimateHeight({ ...s, height: 0 }) * 100));
-    const hi = Math.min(205, Math.floor(human.estimateHeight({ ...s, height: 1 }) * 100));
-    const cur = Math.round(human.estimateHeight(s) * 100);
-    return slider({
-      label: 'Height', min: lo, max: hi, step: 1, value: Math.min(hi, Math.max(lo, cur)), fmt: (v) => `${v} cm · ${ftIn(v)}`,
-      onInput: (v) => { s.height = human.heightParamFor(v, s); queueShape(); },
-    });
-  };
-
-  const body = [
-    human ? heightSlider() : null,
-    slider({ label: 'Weight', min: 0, max: 1, value: s.weight, fmt: pct, onInput: (v) => { s.weight = v; queueShape(); } }),
-    slider({ label: 'Muscle', min: 0, max: 1, value: s.muscle, fmt: pct, onInput: (v) => { s.muscle = v; queueShape(); } }),
-    slider({ label: 'Proportions', min: 0, max: 1, value: s.proportions, fmt: pct, hint: 'model-ideal →', onInput: (v) => { s.proportions = v; queueShape(); } }),
-    s.gender < 0.5 ? slider({ label: 'Bust', min: 0, max: 1, value: s.breastSize, fmt: pct, onInput: (v) => { s.breastSize = v; queueShape(); } }) : null,
-    slider({ label: 'Age', min: 25, max: 80, step: 1, value: s.ageYears, fmt: (v) => `${v}`, onInput: (v) => { s.ageYears = v; queueShape(); } }),
-    slider({ label: 'Masculine ↔ feminine blend', min: 0, max: 1, value: s.gender, fmt: pct, onInput: (v) => { s.gender = v; queueShape(); } }),
-  ];
-
-  const face = ['african', 'asian', 'caucasian'].map((k) => slider({
-    label: { african: 'African', asian: 'Asian', caucasian: 'European' }[k], min: 0, max: 1, value: s[k], fmt: pct,
-    onInput: (v) => { s[k] = v; queueShape(); },
-  }));
-
-  const skin = swatches(SKIN_TONES, state.skin.tone, (hex) => { state.skin.tone = hex; human?.setSkin({ tone: hex }); save(); });
-
-  const hairStyle = chips(Object.entries(HAIR_STYLES).map(([k, h]) => [k, h.label]), state.hair.style, (v) => {
-    state.hair.style = v; human?.setHair({ style: v }); save();
-  });
-  const hairColor = swatches(HAIR_COLORS, state.hair.color, (hex) => { state.hair.color = hex; human?.setHair({ color: hex }); save(); });
-  const stubble = s.gender >= 0.5 ? slider({ label: 'Stubble', min: 0, max: 1, value: state.skin.stubble, fmt: pct, onInput: (v) => { state.skin.stubble = v; human?.setSkin({ stubble: v }); save(); } }) : null;
-
-  const uwStyle = chips([['auto', 'Auto'], ['set', 'Bra + briefs'], ['briefs', 'Briefs'], ['boxers', 'Boxer briefs'], ['none', 'None']], state.underwear.style, (v) => {
-    state.underwear.style = v; human?.setUnderwear({ style: v }); save();
-  });
-  const uwColor = swatches([
-    { label: 'Charcoal', hex: '#2c2c30' }, { label: 'Black', hex: '#141416' }, { label: 'White', hex: '#e9e7e2' },
-    { label: 'Nude', hex: '#c9a58a' }, { label: 'Grey marl', hex: '#8b8b8f' }, { label: 'Navy', hex: '#1f2a44' },
-  ], state.underwear.color, (hex) => { state.underwear.color = hex; human?.setUnderwear({ color: hex }); save(); });
-
-  const reset = document.createElement('button');
-  reset.className = 'link';
-  reset.textContent = 'Reset model';
-  reset.addEventListener('click', () => {
-    Object.assign(state.shape, DEFAULTS.shape, { gender: s.gender });
-    applyShape();
-    buildModelTab();
+  const skin = document.createElement('div');
+  skin.className = 'skins';
+  skin.innerHTML = SKINS.map((k) => `<button type="button" class="skin${k.id === M.skin ? ' on' : ''}${k.clay ? ' clay' : ''}" data-v="${k.id}" title="${esc(k.label)}">
+      <i style="--c:${k.hex}"></i><span>${esc(k.label)}</span></button>`).join('');
+  skin.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-v]');
+    if (!b || b.dataset.v === M.skin) return;
+    M.skin = b.dataset.v;
+    skin.querySelectorAll('.skin').forEach((x) => x.classList.toggle('on', x === b));
+    applyShape(); // faces follow the chosen skin's ethnicity
+    applyLook();
   });
 
-  host.append(
-    section('Model', gender, builds),
-    section('Body', ...body),
-    section('Skin tone', skin),
-    section('Face features', ...face),
-    section('Hair', hairStyle, hairColor, stubble),
-    section('Underwear', uwStyle, uwColor),
-    reset,
-  );
+  host.append(section('Model', sex), section('Measurements', width, height), section('Skin', skin));
 }
 
 /* ================================================================ Pose tab */
@@ -486,15 +463,9 @@ async function boot() {
   await stage.setEnvironment(state.env);
 
   const assets = await loadHumanAssets();
-  human = new Human(assets, {
-    shape: state.shape,
-    skin: { tone: state.skin.tone, stubble: state.skin.stubble },
-    hair: { style: state.hair.style, color: state.hair.color },
-  });
-  const wanted = params.get('model') === 'male' ? MALE.cm : params.get('model') === 'female' ? FEMALE.cm : null;
-  if (wanted) { state.shape.height = human.heightParamFor(wanted, state.shape); human.setShape(state.shape); }
-  human.setSkin({ tone: state.skin.tone, stubble: state.skin.stubble, hairColor: state.hair.color });
-  human.setUnderwear(state.underwear);
+  human = new Human(assets);
+  human.setShape(solveBody());
+  applyLook();
   stage.root.add(human.object);
   stage.setSubjectHeight(human.heightM);
   applyPose();
@@ -504,7 +475,7 @@ async function boot() {
   buildModelTab();
   buildPoseTab();
   $('#loader').classList.add('done');
-  window.__3dg = { stage, human, state, takeShot, applyPose, applyShape, ready: true };
+  window.__3dg = { stage, human, state, takeShot, applyPose, applyShape, applyLook, buildModelTab, ready: true };
 }
 
 boot().catch((err) => {

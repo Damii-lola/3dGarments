@@ -57,9 +57,9 @@ const tokenCache = new Map();
 function tokensOf(name) {
   let t = tokenCache.get(name);
   if (!t) {
-    const base = name.replace(/^(height|proportions|breast)\//, '');
-    // local (non-macro) targets such as breast/breast-dist-incr are driven by `local` values
-    const local = /^(breast|nipple)-/.test(base) ? base.match(/^(.*)-(incr|decr|up|down)$/) : null;
+    const base = name.replace(/^(height|proportions|breast|local)\//, '');
+    // local (non-macro) targets such as local/torso-vshape-incr are driven by `shape.local` values (−1…1)
+    const local = /^(breast|nipple)-/.test(base) || name.startsWith('local/') ? base.match(/^(.*)-(incr|decr|up|down)$/) : null;
     t = local ? { local: local[1], dir: /incr|up/.test(local[2]) ? 1 : -1 } : { macro: base.split('-') };
     tokenCache.set(name, t);
   }

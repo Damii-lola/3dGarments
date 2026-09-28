@@ -253,6 +253,10 @@ def main():
         'macrodetails/height/*-young-*', 'macrodetails/height/*-old-*',
         'macrodetails/proportions/*-young-*', 'macrodetails/proportions/*-old-*',
         'breast/*male-young-*', 'breast/*male-old-*', 'breast/breast-*', 'breast/nipple-*',
+        # local shaping: body width (shoulders / torso / hips) and a fit, athletic build
+        'measure/measure-shoulder-dist-*', 'torso/torso-scale-horiz-*', 'hip/hip-scale-horiz-*',
+        'torso/torso-vshape-*', 'torso/torso-muscle-pectoral-*', 'torso/torso-muscle-dorsi-*',
+        'stomach/stomach-tone-*', 'buttocks/buttocks-volume-*',
     ]
     files = []
     for p in patterns:
@@ -274,6 +278,8 @@ def main():
         gaps.append(g.astype(np.uint16))
         vals.append(q[nz].astype(np.int16))
         name = os.path.relpath(f, T).replace('macrodetails/', '').replace('.target', '')
+        if name.split('/')[0] in ('measure', 'torso', 'hip', 'stomach', 'buttocks'):
+            name = 'local/' + name.split('/')[1]
         targets.append([name, int(len(nz))])
     g = np.concatenate(gaps)
     v = np.concatenate(vals)

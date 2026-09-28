@@ -159,46 +159,67 @@ export class Human {
   /* ================================================================ shape */
 
   /**
-   * Standing height (m) a shape WOULD have, without morphing the whole mesh:
-   * only the crown and sole vertices are evaluated (binary search into each sparse target).
+   * Real measurements a shape WOULD have, without morphing the whole mesh: only a few
+   * probe vertices are evaluated (binary search into each sparse target).
+   *   height — crown to sole (m)
+   *   width  — shoulder width, point to point (biacromial): straight across between the
+   *            outer edges of the tops of the shoulders, the garment-sizing measurement (m)
    */
-  estimateHeight(shape) {
-    if (!this.heightProbe) {
-      const B = this.base, top = [], sole = [];
+  measure(shape) {
+    if (!this.probe) {
+      const B = this.base, top = [], sole = [], left = [], right = [];
+      const J = (n) => { const v = this.jointVerts[this.jointByName[n]]; let y = 0; for (const i of v) y += B[i * 3 + 1]; return y / v.length; };
+      // shoulder points (acromion): the outer edge of the top of the shoulder, where a sleeve seam sits
+      const yS = J('joint-l-shoulder') + 0.15;
+      const band = [];
       for (let i = 0; i < 13380; i++) {
-        if (B[i * 3 + 1] > 8.25) top.push(i);
-        if (B[i * 3 + 1] < -7.95) sole.push(i);
+        const y = B[i * 3 + 1];
+        if (y > 8.25) top.push(i);
+        if (y < -7.95) sole.push(i);
+        if (Math.abs(y - yS) < 0.1) band.push(i);
       }
-      this.heightProbe = { top, sole };
+      const x = (i) => B[i * 3];
+      left.push(...band.filter((i) => x(i) > 0.8).sort((p, q) => x(q) - x(p)).slice(0, 4));
+      right.push(...band.filter((i) => x(i) < -0.8).sort((p, q) => x(p) - x(q)).slice(0, 4));
+      this.probe = { top, sole, left, right, all: [...new Set([...top, ...sole, ...left, ...right])] };
     }
     const s = { ...this.shape, ...shape };
-    const { top, sole } = this.heightProbe;
-    const ys = new Map([...top, ...sole].map((v) => [v, this.base[v * 3 + 1]]));
+    const { top, sole, left, right, all } = this.probe;
+    const P = new Map(all.map((v) => [v, [this.base[v * 3], this.base[v * 3 + 1]]]));
     const step = this.assets.manifest.targetStep;
     for (const [name, w] of targetWeights(s, this.assets.targets.keys())) {
       const { index, delta } = this.assets.targets.get(name);
-      for (const v of ys.keys()) {
+      for (const v of all) {
         let lo = 0, hi = index.length - 1;
         while (lo <= hi) {
           const mid = (lo + hi) >> 1;
-          if (index[mid] < v) lo = mid + 1; else if (index[mid] > v) hi = mid - 1; else { ys.set(v, ys.get(v) + delta[mid * 3 + 1] * w * step); break; }
+          if (index[mid] < v) lo = mid + 1;
+          else if (index[mid] > v) hi = mid - 1;
+          else { const p = P.get(v); p[0] += delta[mid * 3] * w * step; p[1] += delta[mid * 3 + 1] * w * step; break; }
         }
       }
     }
-    let maxY = -Infinity, minY = Infinity;
-    for (const v of top) maxY = Math.max(maxY, ys.get(v));
-    for (const v of sole) minY = Math.min(minY, ys.get(v));
-    return (maxY - minY) * DM;
+    const max = (vs, k) => Math.max(...vs.map((v) => P.get(v)[k]));
+    const min = (vs, k) => Math.min(...vs.map((v) => P.get(v)[k]));
+    return { height: (max(top, 1) - min(sole, 1)) * DM, width: (max(left, 0) - min(right, 0)) * DM };
   }
 
+  estimateHeight(shape) { return this.measure(shape).height; }
+
   /**
-   * The `height` macro value (0…1) that gives a standing height of `cm`, all else equal.
-   * Height targets blend linearly on each half of the range, so three probes invert it exactly.
+   * Solve a 0…1 (or −1…1) parameter for a target measurement. Every target blends
+   * linearly on each half of its range, so probing both ends and the middle inverts it exactly.
+   * @param get   (x) => measurement (cm) for parameter value x
    */
+  static solve(get, want, lo, hi, mid = (lo + hi) / 2) {
+    const [a, b, c] = [lo, mid, hi].map(get);
+    if (want <= b) return Math.max(lo, Math.min(mid, lo + (mid - lo) * (want - a) / ((b - a) || 1)));
+    return Math.max(mid, Math.min(hi, mid + (hi - mid) * (want - b) / ((c - b) || 1)));
+  }
+
+  /** The `height` macro value that gives a standing height of `cm`, all else equal. */
   heightParamFor(cm, shape = this.shape) {
-    const [a, b, c] = [0, 0.5, 1].map((h) => this.estimateHeight({ ...shape, height: h }) * 100);
-    if (cm <= b) return Math.max(0, Math.min(0.5, 0.5 * (cm - a) / ((b - a) || 1)));
-    return Math.max(0.5, Math.min(1, 0.5 + 0.5 * (cm - b) / ((c - b) || 1)));
+    return Human.solve((h) => this.measure({ ...shape, height: h }).height * 100, cm, 0, 1);
   }
 
   setShape(shape) {
@@ -402,7 +423,14 @@ export class Human {
     return this.bones[this.boneIndex[name]].getWorldPosition(target);
   }
 
-  setSkin(opts) { this.skin.userData.setSkin(opts); }
+  /** @param opts { tone?, clay?: bool (uniform grey sculpt look), stubble?, brows?, hairColor? } */
+  setSkin(opts = {}) {
+    this.skin.userData.setSkin(opts);
+    if (opts.clay != null) {
+      this.eyes.material.userData.setClay(opts.clay, opts.tone);
+      this.body.material[1].color.set(opts.clay ? '#35363a' : '#120d0a'); // lashes
+    }
+  }
 
   dispose() {
     this.hair.dispose();
