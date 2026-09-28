@@ -9,7 +9,9 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "@pmndrs/assets": "^1.7.0",
     "@supabase/supabase-js": "^2.45.0",
+    "brotli-dec-wasm": "^2.3.2",
     "three": "^0.169.0"
   },
   "devDependencies": {

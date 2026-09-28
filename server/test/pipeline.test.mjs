@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { SAMPLE_SVGS } from '../src/shared/samples.js';
+import { SAMPLE_SVGS } from './fixtures/samples.js';
 import { processGarmentPixels } from '../src/shared/silhouette.js';
 
 const OUT = process.env.TEST_OUT;

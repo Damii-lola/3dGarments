@@ -8,8 +8,9 @@ export default defineConfig({
   base: process.env.VITE_BASE || '/',
   resolve: { alias: { '@shared': shared } },
   server: { port: 5173, fs: { allow: ['..'] } },
+  optimizeDeps: { exclude: ['brotli-dec-wasm'] },
   build: {
-    target: 'es2020',
+    target: 'es2022',
     sourcemap: true,
     chunkSizeWarningLimit: 900,
     rollupOptions: { output: { manualChunks: { three: ['three'], supabase: ['@supabase/supabase-js'] } } },

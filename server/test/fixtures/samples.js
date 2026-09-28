@@ -1,5 +1,5 @@
 /**
- * Synthetic flat-lay "photos" (SVG) used for the in-app demo and the test-suite.
+ * Synthetic flat-lay "photos" (SVG) used by the test-suite.
  * They deliberately include a textured backdrop + drop shadow so they exercise
  * the real segmentation path, not a pre-cut PNG.
  */

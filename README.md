@@ -1,6 +1,10 @@
 # 3dGarments
 
-**Snap it. Wear it.** Take a photo of any top, dress or pair of trousers. 3dGarments cuts the garment out, measures it, and wraps it around a 3D model you can spin, size and restyle.
+**A 3D model studio for fashion shops.** Shape a realistic, fully rigged human (female ↔ male, height in cm, weight, muscle, proportions, age, face features, skin tone, hair), pose it, put it in a studio or on location, and export product-ready shots at up to 4K, including transparent cut-outs.
+
+Next: upload the **front, side and back** of a garment and it goes onto the model.
+
+The human is built from CC0 [MakeHuman](https://github.com/makehumancommunity/makehuman) / [MPFB](https://github.com/makehumancommunity/mpfb2) data (`tools/human/`, see `web/public/human/LICENSE.md`).
 
 ```
  phone camera ──► GitHub Pages (Vite + three.js)
@@ -12,7 +16,7 @@
                Supabase (Postgres + private Storage)
 ```
 
-The web app also runs fully **offline / local mode**: the same silhouette engine runs in the browser, so it works with no backend configured.
+The studio runs entirely in the browser and needs no backend. The API and Supabase back the garment pipeline (cut-out, measurement, AI description) that clothing upload builds on.
 
 ## One-time setup (about 10 minutes)
 
@@ -47,7 +51,9 @@ The web app already points to the Render API by default.
 cd server && npm i && npm run dev    # needs the same 4 env vars exported in your shell
 cd web && npm i && npm run dev       # http://localhost:5173
 ```
-To try it without any keys, open `http://localhost:5173/?demo=tee,jeans`.
+URL shortcuts: `?model=male|female`, `?pose=hips` (any key of `POSES`), `?scene=city` (any HDRI), `?view=three`.
+
+Rebuild the human assets (only after changing `tools/human/*`): `tools/human/fetch.sh && python3 tools/human/build.py` (needs `pip install numpy pillow brotli`).
 
 ## API
 | Method | Path | |

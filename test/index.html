@@ -14,46 +14,32 @@
     <aside class="side">
       <header class="head">
         <div class="logo">3d<b>Garments</b> <span>LAB</span></div>
-        <p>Avatar, mannequin &amp; clothing workbench. Edits here are the real <code>web/src/scene</code> code.</p>
+        <p>Human, rig &amp; pose workbench. Edits here are the real <code>web/src/human</code> + <code>web/src/scene</code> code.</p>
       </header>
 
       <section>
-        <h3>Garments</h3>
-        <div class="chips" id="samples"></div>
-        <label class="btn">
-          <input type="file" id="upload" accept="image/*" multiple hidden />Upload photo(s)
-        </label>
-        <div id="worn" class="worn"></div>
+        <h3>Body</h3>
+        <div class="chips" id="presets"></div>
+        <div id="shape-sliders"></div>
       </section>
 
       <section>
-        <h3>Body</h3>
-        <div id="body-sliders"></div>
-      </section>
-
-      <section id="fit-section" hidden>
-        <h3>Fit · <span id="fit-name"></span></h3>
-        <label class="row">Type
-          <select id="fit-category">
-            <option>top</option><option>outerwear</option><option>dress</option>
-            <option>skirt</option><option>pants</option><option>shorts</option>
-          </select>
-        </label>
-        <div id="fit-sliders"></div>
+        <h3>Pose</h3>
+        <div class="chips" id="poses"></div>
+        <label class="row">Bone <select id="bone"></select></label>
+        <div id="bone-sliders"></div>
+        <pre id="pose-json" class="small"></pre>
       </section>
 
       <section>
         <h3>Debug</h3>
+        <label class="check"><input type="checkbox" id="dbg-skeleton" /> Skeleton</label>
         <label class="check"><input type="checkbox" id="dbg-wire" /> Wireframe</label>
-        <label class="check"><input type="checkbox" id="dbg-regions" /> Region colours <small class="legend"><i style="--c:#1a80ff"></i>shell <i style="--c:#ff2020"></i>sleeve L <i style="--c:#ffb300"></i>sleeve R <i style="--c:#0dd940"></i>leg L <i style="--c:#9933ff"></i>leg R</small></label>
-        <label class="check"><input type="checkbox" id="dbg-mannequin" checked /> Mannequin</label>
-        <label class="check"><input type="checkbox" id="dbg-garments" checked /> Garments</label>
-        <label class="check"><input type="checkbox" id="dbg-back" /> Hide back panels</label>
+        <label class="check"><input type="checkbox" id="dbg-weights" /> Weights of selected bone</label>
         <label class="check"><input type="checkbox" id="dbg-spin" /> Turntable</label>
         <div class="chips views">
-          <button data-view="front">Front</button><button data-view="side">Side</button>
-          <button data-view="back">Back</button><button data-view="close">Close</button>
-          <button id="shot">PNG</button>
+          <button data-view="front">Front</button><button data-view="three">¾</button><button data-view="side">Side</button>
+          <button data-view="back">Back</button><button data-view="portrait">Face</button><button data-view="feet">Feet</button>
         </div>
       </section>
 
@@ -64,13 +50,6 @@
     </aside>
 
     <main class="view" id="view"></main>
-
-    <aside class="inspector" id="inspector" hidden>
-      <div class="inspector-head">Silhouette · <span id="insp-name"></span></div>
-      <canvas id="insp-canvas" width="320" height="320"></canvas>
-      <div class="insp-legend"><i style="--c:#3ddc97"></i>torso edges <i style="--c:#ffd24a"></i>armpit <i style="--c:#3ad7ff"></i>crotch <i style="--c:#ff4fd8"></i>sleeve axis</div>
-      <pre id="insp-json"></pre>
-    </aside>
   </div>
   <script type="module" src="./src/lab.js"></script>
 </body>

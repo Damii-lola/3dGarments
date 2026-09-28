@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>3dGarments — Snap it. Try it on in 3D.</title>
-  <meta name="description" content="Snap a photo of any garment and see it wrapped on a 3D model in seconds." />
+  <title>3dGarments Studio</title>
+  <meta name="description" content="A realistic 3D model studio: shape the body, pose it, light it, and export product-ready photos." />
   <meta name="theme-color" content="#0d0e12" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Cpath d='M10 9l3-2h6l3 2 4 4-3 3-2-2v11H11V14l-2 2-3-3z' fill='%23fff'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,140 +17,64 @@
       <a class="brand" href="./">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">3d<b>Garments</b></span>
+        <span class="brand-tag">Studio</span>
       </a>
       <div class="topbar-mid">
-        <span id="mode-pill" class="pill" title="Where your wardrobe is stored"></span>
-        <span id="wake-pill" class="pill pill-warn" hidden><i class="dot"></i>Waking server…</span>
+        <span id="status-pill" class="pill" hidden></span>
       </div>
-      <button id="account-btn" class="btn btn-ghost btn-sm" type="button"></button>
+      <button id="capture-top" class="btn btn-primary btn-sm" type="button">
+        <svg viewBox="0 0 24 24"><path d="M9 4h6l1.6 2H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.4L9 4z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span>Take shot</span>
+      </button>
     </header>
 
-    <aside class="panel panel-left" id="panel-wardrobe" aria-label="Wardrobe">
-      <div class="panel-head">
-        <h2>Wardrobe</h2>
-        <span class="count" id="wardrobe-count">0</span>
-      </div>
-
-      <label class="capture" id="capture">
-        <input id="file-camera" type="file" accept="image/*" capture="environment" hidden />
-        <span class="capture-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M9 4h6l1.6 2H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.4L9 4z"/><circle cx="12" cy="13" r="4"/></svg>
-        </span>
-        <span class="capture-text">
-          <strong>Snap a garment</strong>
-          <small>Lay it flat on a plain surface</small>
-        </span>
-      </label>
-      <label class="btn btn-ghost btn-block" id="upload-btn">
-        <input id="file-library" type="file" accept="image/*" multiple hidden />
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        Upload from library
-      </label>
-
-      <div id="garment-grid" class="grid" aria-live="polite"></div>
-
-      <div class="samples">
-        <span>No clothes handy? Try:</span>
-        <div class="sample-row" id="sample-row"></div>
-      </div>
+    <aside class="panel panel-left" id="panel-edit" aria-label="Edit model">
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="model" class="active" type="button">Model</button>
+        <button role="tab" data-tab="pose" type="button">Pose</button>
+        <button role="tab" data-tab="scene" type="button">Scene</button>
+      </nav>
+      <div class="tab-body" data-body="model"></div>
+      <div class="tab-body" data-body="pose" hidden></div>
+      <div class="tab-body" data-body="scene" hidden></div>
     </aside>
 
     <main class="stage" id="stage">
       <div class="stage-canvas" id="stage-canvas"></div>
-      <div class="stage-empty" id="stage-empty">
-        <h1>Snap it. <em>Wear it.</em></h1>
-        <p>Photograph any top, dress or trousers. We cut it out, measure it and wrap it on your 3D model.</p>
-      </div>
-      <div class="stage-toolbar" role="toolbar" aria-label="View">
+      <div class="crop" id="crop" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="loader" id="loader"><div class="spinner"></div><span>Loading your 3D model…</span></div>
+      <div class="stage-toolbar" role="toolbar" aria-label="Camera">
         <button class="tool" data-view="front" type="button">Front</button>
+        <button class="tool" data-view="three" type="button">¾</button>
         <button class="tool" data-view="side" type="button">Side</button>
         <button class="tool" data-view="back" type="button">Back</button>
-        <button class="tool" data-view="close" type="button">Close-up</button>
+        <button class="tool" data-view="upper" type="button">Waist</button>
+        <button class="tool" data-view="portrait" type="button">Face</button>
         <span class="tool-sep"></span>
         <button class="tool tool-icon" id="spin-btn" type="button" title="Turntable" aria-pressed="false">
           <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
         </button>
-        <button class="tool tool-icon" id="snap-btn" type="button" title="Save image">
-          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        </button>
       </div>
     </main>
 
-    <aside class="panel panel-right" id="panel-fit" aria-label="Fit">
-      <section class="section" id="garment-section" hidden>
-        <div class="panel-head"><h2>Garment</h2></div>
-        <div class="garment-card" id="garment-card"></div>
-        <label class="field">
-          <span>Name</span>
-          <input id="g-name" type="text" maxlength="60" autocomplete="off" />
-        </label>
-        <label class="field">
-          <span>Type</span>
-          <select id="g-category">
-            <option value="top">Top / shirt</option>
-            <option value="outerwear">Jacket / coat</option>
-            <option value="dress">Dress / gown</option>
-            <option value="skirt">Skirt / wrapper</option>
-            <option value="pants">Trousers / jeans</option>
-            <option value="shorts">Shorts</option>
-          </select>
-        </label>
-        <div class="slider" data-key="size">
-          <div class="slider-head"><span>Size</span><output id="g-size-out"></output></div>
-          <input id="g-size" type="range" min="0.75" max="1.45" step="0.01" />
-        </div>
-        <div class="slider" data-key="lift">
-          <div class="slider-head"><span>Position</span><output id="g-lift-out"></output></div>
-          <input id="g-lift" type="range" min="-0.15" max="0.15" step="0.005" />
-        </div>
-        <div class="row gap">
-          <button class="btn btn-ghost btn-sm grow" id="g-wear" type="button"></button>
-          <button class="btn btn-danger btn-sm" id="g-delete" type="button">Delete</button>
-        </div>
-      </section>
-
+    <aside class="panel panel-right" id="panel-shot" aria-label="Shot">
+      <section class="section" id="shot-section"></section>
       <section class="section">
-        <div class="panel-head"><h2>Your body</h2><button class="link" id="body-reset" type="button">Reset</button></div>
-        <div class="slider"><div class="slider-head"><span>Height</span><output id="b-height-out"></output></div>
-          <input id="b-height" type="range" min="140" max="210" step="1" data-body="heightCm" /></div>
-        <div class="slider"><div class="slider-head"><span>Chest</span><output id="b-chest-out"></output></div>
-          <input id="b-chest" type="range" min="70" max="140" step="1" data-body="chestCm" /></div>
-        <div class="slider"><div class="slider-head"><span>Waist</span><output id="b-waist-out"></output></div>
-          <input id="b-waist" type="range" min="56" max="140" step="1" data-body="waistCm" /></div>
-        <div class="slider"><div class="slider-head"><span>Hips</span><output id="b-hips-out"></output></div>
-          <input id="b-hips" type="range" min="70" max="150" step="1" data-body="hipsCm" /></div>
+        <div class="panel-head"><h2>Shots</h2><span class="count" id="shots-count">0</span></div>
+        <div class="shots" id="shots"><div class="grid-empty">Your shots appear here.</div></div>
       </section>
-
-      <section class="section tips">
-        <h3>Best results</h3>
-        <ul>
-          <li>Lay the garment flat, front side up</li>
-          <li>Plain floor, bed sheet or wall behind it</li>
-          <li>Shoot from straight above, whole garment in frame</li>
-        </ul>
+      <section class="section soon">
+        <div class="panel-head"><h2>Clothing</h2><span class="badge">Next</span></div>
+        <p class="muted">Upload the <b>front</b>, <b>side</b> and <b>back</b> of a garment and it goes straight onto this model.</p>
+        <div class="soon-slots"><span>Front</span><span>Side</span><span>Back</span></div>
       </section>
     </aside>
 
     <nav class="sheet-tabs" aria-label="Panels">
-      <button type="button" data-sheet="wardrobe" class="active">Wardrobe</button>
-      <button type="button" data-sheet="fit">Fit</button>
+      <button type="button" data-sheet="edit" class="active">Edit</button>
+      <button type="button" data-sheet="shot">Shot</button>
     </nav>
   </div>
-
-  <dialog id="auth-dialog" class="dialog">
-    <form method="dialog" id="auth-form" class="dialog-body">
-      <h2>Your wardrobe, everywhere</h2>
-      <p class="muted">Sign in to save garments to the cloud and get AI garment recognition.</p>
-      <label class="field"><span>Email</span><input id="auth-email" type="email" required autocomplete="email" /></label>
-      <label class="field"><span>Password</span><input id="auth-password" type="password" required minlength="6" autocomplete="current-password" /></label>
-      <p class="form-error" id="auth-error" role="alert"></p>
-      <div class="row gap">
-        <button class="btn btn-primary grow" value="signin" type="submit">Sign in</button>
-        <button class="btn btn-ghost grow" value="signup" type="submit">Create account</button>
-      </div>
-      <button class="link center" value="local" type="submit" formnovalidate>Continue without an account</button>
-    </form>
-  </dialog>
 
   <div id="toasts" class="toasts" aria-live="assertive"></div>
   <script type="module" src="/src/main.js"></script>
