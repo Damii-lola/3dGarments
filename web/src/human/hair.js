@@ -171,7 +171,8 @@ export class Hair {
     const mesh = new THREE.SkinnedMesh(g, this.material);
     mesh.name = 'human:hair';
     mesh.frustumCulled = false;
-    mesh.castShadow = true;
+    // the shadow map can't see strand alpha: a solid shell cap would drop a hard band across the forehead
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     human.object.add(mesh);
     human.object.updateMatrixWorld(true);
@@ -189,7 +190,7 @@ function createHairMaterial(uniforms) {
   // shells are indexed inner → outer, so one draw call blends them in the right order
   const m = new THREE.MeshPhysicalMaterial({
     roughness: 0.75, metalness: 0, specularIntensity: 0.25, envMapIntensity: 0.5,
-    transparent: true, alphaTest: 0.01, depthWrite: true, side: THREE.DoubleSide,
+    transparent: true, alphaTest: 0.12, depthWrite: true, side: THREE.DoubleSide, // faint fragments would stack into a veil across ~30 shells
   });
   m.name = 'hair';
   m.defines = { USE_UV: '' };
@@ -229,7 +230,7 @@ float tip = mix(0.5, 1.05, n3h(vRoot * 140.0)) * mix(0.7, 1.1, clump) * mix(0.25
 float thr = vT / max(tip, 0.05);
 float aa = max(fwidth(streak) * 1.5, 0.04);
 float a = smoothstep(thr * 0.9 - aa, thr * 0.9 + aa, streak * uDensity + 0.08);
-a *= smoothstep(0.0, 0.55, hairline + (streak - 0.5) * 0.35);          // soft, wispy hairline
+a *= smoothstep(0.18, 0.5, hairline + (streak - 0.5) * 0.3);          // wispy hairline, zero outside it
 if (vT < 0.12) a = max(a, smoothstep(0.35, 0.75, hairline));          // inner layer covers the scalp
 a *= mix(1.0, 0.85, vT);
 diffuseColor.a = a;

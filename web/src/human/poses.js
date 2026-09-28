@@ -64,7 +64,7 @@ const hand = (curl, spread = 0, thumb = [0, 0, 0]) => {
 };
 
 export const HANDS = {
-  relaxed: { label: 'Relaxed', pose: hand([6, 12, 8, 3], 1.5, [4, 8]) },
+  relaxed: { label: 'Relaxed', pose: hand([10, 16, 10, 4], 0.6, [6, 10]) },
   soft: { label: 'Soft', pose: hand([14, 22, 14, 4], 1.2, [8, 14]) },
   open: { label: 'Open', pose: hand([2, 3, 2, 0], 5, [-5, 2, 10]) },
   fist: { label: 'Fist', pose: hand([80, 95, 60, 3], 0, [25, 40, -10]) },

@@ -105,7 +105,7 @@ mA = texture2D(uMaskA, vUv); mB = texture2D(uMaskB, vUv); mD = texture2D(uDetail
   float stub = mD.b * uStubble;
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(vec3(1.0), uHair / max(tone, vec3(0.02)), 0.35), stub * 0.55); // blue-grey shadow
   diffuseColor.rgb = mix(diffuseColor.rgb, uHair, stub * dots * 0.55);
-  diffuseColor.rgb = mix(diffuseColor.rgb, uHair * 0.8, mD.g * uScalp);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, uHair, 0.7), smoothstep(0.55, 0.95, mD.g) * uScalp); // only under full hair
   diffuseColor.rgb = mix(diffuseColor.rgb, uHair * 0.9, clamp(mD.r * 1.15, 0.0, 1.0) * uBrows);   // eyebrows
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
