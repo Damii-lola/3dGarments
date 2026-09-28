@@ -40,6 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: test/package-lock.json }
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            test/package-lock.json
+            web/package-lock.json
+      # the lab imports web/src, whose dependencies resolve from web/node_modules
+      - run: npm ci
+        working-directory: web
       - run: npm ci
       - run: npm run build
