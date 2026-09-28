@@ -58,15 +58,13 @@ export function createSkinMaterial({ tone = SKIN_TONES[2].hex, hairColor = '#2a1
   };
   const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(tone),
-    roughness: 0.52,
+    roughness: 0.6,
     metalness: 0,
-    specularIntensity: 0.55,
+    specularIntensity: 0.42,
     specularColor: new THREE.Color('#ffffff'),
-    sheen: 0.35,
-    sheenRoughness: 0.55,
+    sheen: 0.25,
+    sheenRoughness: 0.6,
     sheenColor: new THREE.Color('#ffb59e'),
-    clearcoat: 0.04,
-    clearcoatRoughness: 0.5,
   });
   mat.name = 'skin';
   mat.defines = { USE_UV: '' };
@@ -92,7 +90,7 @@ mA = texture2D(uMaskA, vUv); mB = texture2D(uMaskB, vUv); mD = texture2D(uDetail
   tone = mix(tone, tone * vec3(1.04, 0.93, 0.92), mB.b * 0.35 * smoothstep(0.3, 0.8, n3(vRest * 4.0 + 3.1)));
   vec3 lips = tone * vec3(0.80, 0.50, 0.52);
   vec3 areola = tone * vec3(0.70, 0.50, 0.46);
-  vec3 nails = mix(tone, vec3(0.93, 0.80, 0.78), 0.55);
+  vec3 nails = min(tone * vec3(1.35, 1.18, 1.15) + vec3(0.05, 0.03, 0.03), vec3(0.9, 0.78, 0.75));
   diffuseColor.rgb = tone;
   diffuseColor.rgb = mix(diffuseColor.rgb, tone * vec3(0.97, 0.86, 0.85), mB.r * 0.6);   // ears
   diffuseColor.rgb = mix(diffuseColor.rgb, tone * vec3(0.90, 0.80, 0.80), mA.a * 0.7);   // eyelids
@@ -111,8 +109,8 @@ mA = texture2D(uMaskA, vUv); mB = texture2D(uMaskB, vUv); mD = texture2D(uDetail
   diffuseColor.rgb = mix(diffuseColor.rgb, uHair * 0.9, clamp(mD.r * 1.15, 0.0, 1.0) * uBrows);   // eyebrows
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = mix(roughnessFactor, 0.36, mA.r);
-roughnessFactor = mix(roughnessFactor, 0.22, mA.b);
+roughnessFactor = mix(roughnessFactor, 0.4, mA.r);
+roughnessFactor = mix(roughnessFactor, 0.28, mA.b);
 roughnessFactor *= 0.92 + 0.16 * n3(vRest * 60.0);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 {
@@ -160,7 +158,7 @@ export function createEyeMaterial() {
     eyeTex.anisotropy = 8;
   }
   // the cornea shell maps to the texture's transparent patch: cut it away to reveal the iris
-  const m = new THREE.MeshPhysicalMaterial({ map: eyeTex, alphaTest: 0.5, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.02, specularIntensity: 0.7 });
+  const m = new THREE.MeshPhysicalMaterial({ map: eyeTex, color: '#fff3ea', alphaTest: 0.5, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 0.5, envMapIntensity: 0.55 });
   m.name = 'eyes';
   return m;
 }
@@ -171,7 +169,7 @@ export function createEyeMaterial() {
  * (root at the low edge), lower lashes at v 0.967–0.985 (root at the high edge).
  */
 function createLashMaterial() {
-  const m = new THREE.MeshStandardMaterial({ color: '#120d0a', roughness: 0.65, side: THREE.DoubleSide, alphaTest: 0.5, alphaToCoverage: true });
+  const m = new THREE.MeshStandardMaterial({ color: '#120d0a', roughness: 0.65, side: THREE.DoubleSide, transparent: true, depthWrite: false, alphaTest: 0.02 });
   m.name = 'lashes';
   m.defines = { USE_UV: '' };
   m.onBeforeCompile = (shader) => {
@@ -186,8 +184,9 @@ function createLashMaterial() {
   float len = (upper ? 0.75 : 0.45) + 0.25 * jitter;
   float cx = fract(along) - 0.5 + (jitter - 0.5) * 0.3 + t * t * (jitter - 0.5) * 0.4;
   float width = mix(0.34, 0.06, clamp(t / len, 0.0, 1.0));
-  float strand = 1.0 - smoothstep(width * 0.6, width, abs(cx));
-  diffuseColor.a = strand * (1.0 - smoothstep(len * 0.85, len, t)) * step(0.0, t);
+  float aa = fwidth(cx) * 1.2;
+  float strand = 1.0 - smoothstep(width - aa, width + aa, abs(cx));
+  diffuseColor.a = 0.9 * strand * (1.0 - smoothstep(len * 0.8, len, t)) * smoothstep(-0.05, 0.05, t);
 }
 #include <alphatest_fragment>`);
   };

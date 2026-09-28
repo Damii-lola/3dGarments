@@ -465,6 +465,7 @@ const mobile = window.matchMedia('(max-width: 860px)');
 let activeSheet = 'edit';
 function layoutSheets() {
   for (const [k, el] of Object.entries(sheets)) el.classList.toggle('sheet-hidden', mobile.matches && k !== activeSheet);
+  $('#app').classList.toggle('sheet-closed', mobile.matches && !activeSheet);
   document.querySelectorAll('[data-sheet]').forEach((b) => b.classList.toggle('active', b.dataset.sheet === activeSheet));
 }
 document.querySelectorAll('[data-sheet]').forEach((b) => b.addEventListener('click', () => {

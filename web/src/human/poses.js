@@ -79,7 +79,7 @@ const withHands = (pose, left = 'relaxed', right = left) => {
 
 /* ---------------------------------------------------------------- body poses */
 
-const armsDown = { upperarm: [-12, -15, -41], lowerarm: [5, 0, 0], hand: [0, 0, 6] };
+const armsDown = { upperarm: [-12, -15, -41], lowerarm: [5, 48, 0], hand: [0, 0, 6] };  // forearm pronated: palms face the thighs
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
 const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
 
@@ -90,14 +90,14 @@ export const POSES = {
   },
   catalog: {
     label: 'Catalogue',
-    pose: withHands({ both: { upperarm: [-10, -18, -36], lowerarm: [8, 0, 0], hand: [0, 0, 5], thigh: [0, 0, 1.5] } }, 'soft'),
+    pose: withHands({ both: { upperarm: [-10, -18, -36], lowerarm: [8, 45, 0], hand: [0, 0, 5], thigh: [0, 0, 1.5] } }, 'soft'),
   },
   contrapposto: {
     label: 'Contrapposto',
     pose: withHands({
       c: { pelvis: [0, -4, 5], spine_01: [0, 1, -2], spine_02: [0, 3, -3], spine_03: [0, 2, -2], neck_01: [0, 0, -2], head: [-2, 4, 4] },
       l: { ...armsDown, upperarm: [-12, -13, -42], thigh: [0, 0, -6], calf: [0, 0, 0], foot: [0, 0, 0] },
-      r: { ...armsDown, upperarm: [-8, -16, -38], lowerarm: [10, 0, 0], thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
+      r: { ...armsDown, upperarm: [-8, -16, -38], lowerarm: [10, 45, 0], thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
     }, 'relaxed', 'soft'),
   },
   hips: {
@@ -119,8 +119,8 @@ export const POSES = {
     label: 'Walking',
     pose: withHands({
       c: { pelvis: [0, 6, 0], spine_02: [2, -4, 0], spine_03: [0, -3, 0], head: [-2, 1, 0] },
-      l: { upperarm: [-30, -12, -40], lowerarm: [14, 0, 0], thigh: [26, 0, 0], calf: [-8, 0, 0], foot: [-6, 0, 0] },
-      r: { upperarm: [10, -18, -39], lowerarm: [28, 0, 0], thigh: [-16, 0, 0], calf: [-22, 0, 0], foot: [14, 0, 0] },
+      l: { upperarm: [-30, -12, -40], lowerarm: [14, 40, 0], thigh: [26, 0, 0], calf: [-8, 0, 0], foot: [-6, 0, 0] },
+      r: { upperarm: [10, -18, -39], lowerarm: [28, 40, 0], thigh: [-16, 0, 0], calf: [-22, 0, 0], foot: [14, 0, 0] },
     }, 'relaxed'),
   },
   stride: {
@@ -134,7 +134,7 @@ export const POSES = {
     label: 'Hand to chin',
     pose: withHands({
       c: { spine_02: [3, 0, 0], head: [4, -4, 3] },
-      l: { upperarm: [5, 40, -42], lowerarm: [95, 0, 0], hand: [0, 0, 0] },
+      l: { upperarm: [5, 40, -42], lowerarm: [95, 30, 0], hand: [0, 0, 0] },
       r: { upperarm: [55, 30, -28], lowerarm: [135, 0, 0], hand: [-15, 0, 10], thigh: [4, 0, -2] },
     }, 'soft', 'soft'),
   },

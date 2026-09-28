@@ -12,6 +12,8 @@
     "@pmndrs/assets": "^1.7.0",
     "@supabase/supabase-js": "^2.45.0",
     "brotli-dec-wasm": "^2.3.2",
+    "n8ao": "^2.0.1",
+    "postprocessing": "^6.39.5",
     "three": "^0.169.0"
   },
   "devDependencies": {

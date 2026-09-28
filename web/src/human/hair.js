@@ -186,7 +186,11 @@ export class Hair {
 }
 
 function createHairMaterial(uniforms) {
-  const m = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, alphaTest: 0.5, alphaToCoverage: true, side: THREE.DoubleSide });
+  // shells are indexed inner → outer, so one draw call blends them in the right order
+  const m = new THREE.MeshPhysicalMaterial({
+    roughness: 0.75, metalness: 0, specularIntensity: 0.25, envMapIntensity: 0.5,
+    transparent: true, alphaTest: 0.01, depthWrite: true, side: THREE.DoubleSide,
+  });
   m.name = 'hair';
   m.defines = { USE_UV: '' };
   m.onBeforeCompile = (shader) => {
@@ -223,9 +227,11 @@ gStreak = streak;
 // strands end at different heights: tufty outer boundary, thinner at the hairline
 float tip = mix(0.5, 1.05, n3h(vRoot * 140.0)) * mix(0.7, 1.1, clump) * mix(0.25, 1.0, smoothstep(0.05, 0.7, hairline));
 float thr = vT / max(tip, 0.05);
-float a = step(thr * 0.9, streak * uDensity + 0.08);
-a *= step(0.08 + 0.55 * (1.0 - hairline), streak * 0.6 + hh3(floor(vRoot * uFreq)) * 0.4 + 0.2 * hairline);
-if (vT < 0.12) a = max(a, step(0.5, hairline));                     // inner layer covers the scalp
+float aa = max(fwidth(streak) * 1.5, 0.04);
+float a = smoothstep(thr * 0.9 - aa, thr * 0.9 + aa, streak * uDensity + 0.08);
+a *= smoothstep(0.0, 0.55, hairline + (streak - 0.5) * 0.35);          // soft, wispy hairline
+if (vT < 0.12) a = max(a, smoothstep(0.35, 0.75, hairline));          // inner layer covers the scalp
+a *= mix(1.0, 0.85, vT);
 diffuseColor.a = a;
 float shade = mix(0.35, 1.0, pow(vT, 0.6));
 diffuseColor.rgb = uColor * shade * (0.72 + 0.56 * streak);`)
@@ -242,7 +248,7 @@ diffuseColor.rgb = uColor * shade * (0.72 + 0.56 * streak);`)
     float s1 = pow(sqrt(max(0.0, 1.0 - th1 * th1)), 110.0);
     float s2 = pow(sqrt(max(0.0, 1.0 - th2 * th2)), 28.0);
     float vis = smoothstep(-0.1, 0.3, dot(normal, L));
-    reflectedLight.directSpecular += directionalLights[i].color * vis * (s1 * 0.10 + s2 * 0.16 * uColor / max(max(uColor.r, uColor.g), 0.05) * 0.5) * (0.4 + 0.6 * vT);
+    reflectedLight.directSpecular += directionalLights[i].color * vis * (s1 * 0.05 + s2 * 0.12 * uColor / max(max(uColor.r, uColor.g), 0.05) * 0.5) * (0.4 + 0.6 * vT);
   }
   #endif
 }`);

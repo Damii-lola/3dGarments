@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { N8AOPass } from 'n8ao';
 
 /** CC0 Poly Haven HDRIs, bundled by @pmndrs/assets (loaded on demand). */
 export const HDRIS = {
@@ -52,7 +55,7 @@ export function createStage(container) {
   const roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
   scene.environment = roomEnv;
 
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 80);
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
   camera.position.set(0, 1.1, 5.2);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -90,6 +93,19 @@ export function createStage(container) {
 
   const root = new THREE.Group();
   scene.add(root);
+
+  /* ---------------- post: ambient occlusion → tone mapping / sRGB ---------------- */
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+  const ao = new N8AOPass(scene, camera, 1, 1);
+  Object.assign(ao.configuration, {
+    aoRadius: 0.26, distanceFalloff: 1.3, intensity: 3.2, color: new THREE.Color('#1a0d08'),
+    gammaCorrection: false, screenSpaceRadius: false, halfRes: false, depthAwareUpsampling: true,
+    aoSamples: 16, denoiseSamples: 8, denoiseRadius: 8, transparencyAware: false,
+  });
+  composer.addPass(ao);
+  composer.addPass(new OutputPass());
+  let aoEnabled = true;
+  const draw = () => (aoEnabled ? composer.render() : renderer.render(scene, camera));
 
   const state = {
     env: { kind: 'studio', color: '#e9e6e1', hdri: 'studio', blur: 0.35, rotation: 0, intensity: 1, image: null },
@@ -236,13 +252,15 @@ export function createStage(container) {
     if (autoRotate) root.rotation.y += dt * 0.45;
     controls.update();
     rig.rotation.y = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
-    renderer.render(scene, camera);
+    draw();
   });
 
   const resizeSubs = new Set();
   const resize = () => {
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
     renderer.setSize(w, h, false);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(w, h);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     camera.aspect = w / h;
@@ -283,11 +301,13 @@ export function createStage(container) {
     setShadow(4096);
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
+    composer.setPixelRatio(1);
+    composer.setSize(width, height);
     camera.aspect = r.cw / r.ch;
     camera.setViewOffset(r.cw, r.ch, r.x, r.y, r.w, r.h);
     camera.updateProjectionMatrix();
     fitImageBackground(width / height);
-    renderer.render(scene, camera);
+    draw();
     const blob = await new Promise((res) => renderer.domElement.toBlob(res, transparent ? 'image/png' : type, quality));
     // restore
     camera.clearViewOffset();
@@ -309,6 +329,8 @@ export function createStage(container) {
     get lighting() { return { ...state.light }; },
     setSubjectHeight(h) { subjectHeight = h; },
     setExposure(v) { renderer.toneMappingExposure = v; },
+    setAO(v) { aoEnabled = !!v; },
+    ao,
     setAutoRotate(v) { autoRotate = v; if (!v) root.rotation.y = 0; },
     get autoRotate() { return autoRotate; },
     maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
