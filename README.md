@@ -29,31 +29,23 @@ The migration in `supabase/migrations` creates the tables, RLS policies and the 
 ### 2. Cloudflare Workers AI
 Go to Cloudflare dashboard → **AI → Workers AI → Use REST API**. Create a token with *Workers AI* permissions and copy the **Account ID** and the **API token**.
 
-### 3. Render
-Go to [dashboard.render.com](https://dashboard.render.com) → **New → Blueprint** → select this repo. `render.yaml` creates `3dgarments-api`. Paste the four secrets it asks for (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`).
-Render redeploys on every push to `main` once CI passes.
+### 3. Render (live)
+The API is running at **https://threedgarments.onrender.com**. Its secrets are stored only as Render environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. There are no `.env` files in this repo. Render redeploys on every push to `main` once CI passes.
 
-### 4. Link everything
-```bash
-cp .env.deploy.example .env.deploy     # fill it in (this file is git-ignored)
-./scripts/link.sh                      # sets GitHub secrets/variables, Render env, enables Pages, runs deploys
-```
-If you'd rather click through it:
-- **GitHub → Settings → Secrets and variables → Actions**
-  - Secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`
-  - Variables: `VITE_API_URL` (your Render URL), `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-- **GitHub → Settings → Pages → Source: GitHub Actions**
+Check it at `https://threedgarments.onrender.com/health/deep` → `"ok": true` means Supabase, Storage and Cloudflare AI are all linked.
 
-### 5. Verify
-```bash
-cd server && cp ../.env.deploy .env && npm i && npm run verify
-```
-This checks the Supabase tables and bucket, a Cloudflare text call, a Cloudflare vision call, and the deployed API's `/health/deep`.
+### 4. GitHub
+- **Settings → Pages → Source: GitHub Actions**
+- **Settings → Secrets and variables → Actions**
+  - Secrets (auto-apply DB migrations): `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`
+  - Variables (sign-in on the website): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+
+The web app already points to the Render API by default.
 
 ## Local development
 ```bash
-cd server && npm i && cp .env.example .env && npm run dev    # http://localhost:8787
-cd web && npm i && cp .env.example .env.local && npm run dev  # http://localhost:5173
+cd server && npm i && npm run dev    # needs the same 4 env vars exported in your shell
+cd web && npm i && npm run dev       # http://localhost:5173
 ```
 To try it without any keys, open `http://localhost:5173/?demo=tee,jeans`.
 

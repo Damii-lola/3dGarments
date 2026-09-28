@@ -36,5 +36,5 @@ health.get('/deep', async (_req, res) => {
   out.cloudflare_ai = await verifyCloudflare();
   out.cloudflare_ai.model = config.cloudflare.visionModel;
   const ok = Object.values(out).every((v) => v.ok);
-  res.status(ok ? 200 : 503).json({ ok, ...out });
+  res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
 });

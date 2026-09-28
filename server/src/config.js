@@ -4,7 +4,7 @@ const list = (v, fallback) =>
 export const config = Object.freeze({
   env: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 8787,
-  corsOrigins: list(process.env.CORS_ORIGINS, 'http://localhost:5173,http://127.0.0.1:5173'),
+  corsOrigins: list(process.env.CORS_ORIGINS, 'https://damii-lola.github.io,http://localhost:5173,http://127.0.0.1:5173'),
   supabase: Object.freeze({
     url: process.env.SUPABASE_URL || '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',

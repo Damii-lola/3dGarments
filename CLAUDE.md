@@ -27,12 +27,11 @@ web/                    Vite + three.js SPA (GitHub Pages)
 supabase/migrations/    schema, RLS, private "garments" bucket
 render.yaml             Render blueprint
 .github/workflows/      ci, deploy-web (Pages), supabase (db push)
-scripts/link.sh         pushes keys to GitHub secrets/vars + Render env
 ```
 
 ## Commands
-- API: `cd server && npm i && cp .env.example .env && npm run dev` (port 8787)
-- Web: `cd web && npm i && npm run dev` (port 5173). With no `.env.local` it runs in **local mode**, which does all processing in the browser and needs no backend.
+- API: `cd server && npm i && npm run dev` (port 8787). Secrets live **only** in Render env vars. Never commit `.env` files. Live API: https://threedgarments.onrender.com
+- Web: `cd web && npm i && npm run dev` (port 5173). Without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` it runs in **local mode**, which does all processing in the browser and needs no backend.
 - Demo and screenshots: `http://localhost:5173/?demo=tee,jeans` (also `dress`). `window.__3dg` exposes `{stage, dresser, wardrobe}`.
 - Tests: `cd server && npm test`
 - Integration check: `cd server && npm run verify`

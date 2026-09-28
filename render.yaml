@@ -2,7 +2,7 @@
 # Secrets marked `sync: false` are asked for once in the Render dashboard.
 services:
   - type: web
-    name: 3dgarments-api
+    name: threedgarments
     runtime: node
     rootDir: server
     plan: free
