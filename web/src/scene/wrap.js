@@ -293,7 +293,7 @@ export function buildGarmentMesh({ garment, texture, alphaAt, body, layer = 0 })
   mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: texture.back, alphaTest: 0.5 });
   mesh.renderOrder = 1 + layer;
   mesh.name = `garment:${garment.id}`;
-  mesh.userData = { garmentId: garment.id, mode, scale: s, ease };
+  mesh.userData = { garmentId: garment.id, mode, scale: s, ease, regions: region, V, grid: [nx, ny], triangles: (idx.length + bidx.length) / 3 };
   return mesh;
 }
 

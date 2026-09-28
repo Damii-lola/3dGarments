@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 
-export const DEFAULT_BODY = { heightCm: 172, chestCm: 96, waistCm: 80, hipsCm: 98 };
+export const DEFAULT_BODY = { heightCm: 172, chestCm: 96, waistCm: 80, hipsCm: 98, armAngleDeg: 64 };
 
 export const ellipsePerimeter = (a, b) => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
 const rxFromCirc = (c, k) => c / (Math.PI * (3 * (1 + k) - Math.sqrt((3 + k) * (1 + 3 * k))));
@@ -91,7 +91,7 @@ export function createBody(params = DEFAULT_BODY) {
   };
 
   // arms (relaxed A-pose)
-  const armAngle = THREE.MathUtils.degToRad(64); // below horizontal
+  const armAngle = THREE.MathUtils.degToRad(p.armAngleDeg ?? 64); // below horizontal
   const armLength = 0.335 * H;
   const AR = [[0, 0.05], [0.04, 0.048], [0.16, 0.04], [0.19, 0.035], [0.24, 0.037], [0.33, 0.025], [0.335, 0.024]];
   const armRadius = spline(AR.map((r) => r[0] * H), AR.map((r) => r[1] * k));

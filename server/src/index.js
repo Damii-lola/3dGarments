@@ -8,7 +8,7 @@ import { supabaseConfigured } from './lib/supabase.js';
 import { health } from './routes/health.js';
 import { garments } from './routes/garments.js';
 import { me } from './routes/me.js';
-import { recoverStaleJobs } from './services/pipeline.js';
+import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
 
 const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy
@@ -49,7 +49,10 @@ const server = app.listen(config.port, () => {
   const missing = missingConfig();
   console.log(`3dGarments API listening on :${config.port} (${config.env})`);
   if (missing.length) console.warn(`⚠ missing env: ${missing.join(', ')} — related endpoints return 503`);
-  if (supabaseConfigured()) recoverStaleJobs().catch((e) => console.warn('stale-job recovery skipped:', e.message));
+  if (supabaseConfigured()) {
+    ensureBucket().catch((e) => console.warn('bucket check failed:', e.message));
+    recoverStaleJobs().catch((e) => console.warn('stale-job recovery skipped:', e.message));
+  }
 });
 
 for (const sig of ['SIGTERM', 'SIGINT']) {

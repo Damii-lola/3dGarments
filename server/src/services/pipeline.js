@@ -98,6 +98,20 @@ export async function processGarment({ garmentId, userId, buffer }) {
   }
 }
 
+/** Create the private storage bucket if the migration didn't (self-healing on boot). */
+export async function ensureBucket() {
+  const name = config.supabase.bucket;
+  const { data } = await db().storage.getBucket(name);
+  if (data) return;
+  const { error } = await db().storage.createBucket(name, {
+    public: false,
+    fileSizeLimit: 20 * 1024 * 1024,
+    allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+  });
+  if (error && !/exists/i.test(error.message)) throw error;
+  log(`created storage bucket "${name}"`);
+}
+
 /** A process restart kills in-flight jobs. Mark them failed so users can retry. */
 export async function recoverStaleJobs() {
   const cutoff = new Date(Date.now() - 10 * 60_000).toISOString();

@@ -1,0 +1,44 @@
+:root { --bg: #0b0c10; --panel: #13151b; --line: #23262f; --text: #e8eaf0; --muted: #858a99; --accent: #ff5b3a; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.45 Inter, system-ui, sans-serif; overflow: hidden; }
+button, select, input { font: inherit; color: inherit; }
+code, pre { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.lab { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+.side { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 16px; }
+.head .logo { font-weight: 600; font-size: 18px; letter-spacing: -.02em; }
+.head .logo b { color: var(--accent); }
+.head .logo span { font: 600 10px 'JetBrains Mono', monospace; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; vertical-align: 3px; margin-left: 4px; }
+.head p { color: var(--muted); margin: 6px 0 0; font-size: 12px; }
+.head code { color: var(--text); }
+section { border-top: 1px solid var(--line); padding: 14px 0; display: flex; flex-direction: column; gap: 8px; }
+section:first-of-type { margin-top: 14px; }
+h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button, .btn { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: #1a1d25; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.chips button:hover, .btn:hover { border-color: #3a3f4c; }
+.btn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.worn { display: flex; flex-direction: column; gap: 4px; }
+.worn-item { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 8px; border: 1px solid var(--line); cursor: pointer; }
+.worn-item.sel { border-color: var(--accent); }
+.worn-item img { width: 34px; height: 34px; object-fit: contain; background: #0e1015; border-radius: 6px; }
+.worn-item .n { flex: 1; min-width: 0; }
+.worn-item .n div:last-child { color: var(--muted); font-size: 11px; }
+.worn-item button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12px; color: var(--muted); }
+.slider output { color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.row { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; }
+.row select { background: #1a1d25; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.check { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+.legend, .insp-legend { width: 100%; color: var(--muted); font-size: 10.5px; padding-left: 20px; display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.legend i, .insp-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 3px; }
+.views button { padding: 0 9px; }
+pre#stats { margin: 0; color: var(--muted); font-size: 11px; white-space: pre-wrap; }
+.view { position: relative; min-width: 0; }
+.view canvas { display: block; }
+.inspector { position: fixed; right: 14px; bottom: 14px; width: 340px; max-height: calc(100vh - 28px); overflow: auto; background: rgba(19, 21, 27, .94); border: 1px solid var(--line); border-radius: 12px; padding: 10px; backdrop-filter: blur(10px); }
+.inspector-head { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 8px; }
+#insp-canvas { width: 320px; height: 320px; border-radius: 8px; background: repeating-conic-gradient(#1a1d25 0 25%, #14161c 0 50%) 0 0 / 16px 16px; }
+.insp-legend { padding: 6px 0 0; }
+#insp-json { font-size: 10px; color: var(--muted); max-height: 160px; overflow: auto; margin: 6px 0 0; }

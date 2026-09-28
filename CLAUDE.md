@@ -24,6 +24,7 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/scene/dresser.js  what's worn, layering, rebuilds
   src/scene/stage.js    renderer, lights, camera views
   src/services/         config, auth (supabase-js), api, local (in-browser pipeline), wardrobe store
+test/                   🧪 LAB: workbench for avatar / mannequin / clothing (imports web/src/scene + shared directly)
 supabase/migrations/    schema, RLS, private "garments" bucket
 render.yaml             Render blueprint
 .github/workflows/      ci, deploy-web (Pages), supabase (db push)
@@ -33,6 +34,7 @@ render.yaml             Render blueprint
 - API: `cd server && npm i && npm run dev` (port 8787). Secrets live **only** in Render env vars. Never commit `.env` files. Live API: https://threedgarments.onrender.com
 - Web: `cd web && npm i && npm run dev` (port 5173). Without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` it runs in **local mode**, which does all processing in the browser and needs no backend.
 - Demo and screenshots: `http://localhost:5173/?demo=tee,jeans` (also `dress`). `window.__3dg` exposes `{stage, dresser, wardrobe}`.
+- Lab: `cd test && npm i && npm run dev` (port 5174). Do all avatar, mannequin and clothing work here: it runs the real scene modules with debug views (regions, wireframe, silhouette inspector, stats). `window.__lab` is exposed.
 - Tests: `cd server && npm test`
 - Integration check: `cd server && npm run verify`
 
