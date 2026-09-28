@@ -79,7 +79,9 @@ const withHands = (pose, left = 'relaxed', right = left) => {
 
 /* ---------------------------------------------------------------- body poses */
 
-const armsDown = { upperarm: [-12, -15, -41], lowerarm: [5, 48, 0], hand: [4, 0, 0] };  // forearm pronated: palms face the thighs
+// relaxed arms: collarbones dropped (no shrug), arms hanging just behind the hip line,
+// soft elbows, forearms pronated so the palms face the thighs — calibrated on the fit bodies
+const armsDown = { clavicle: [0, 0, -8], upperarm: [-22, -24, -43], lowerarm: [12, 50, 0], hand: [4, 0, 0] };  // forearm pronated: palms face the thighs
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
 const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
 
@@ -90,14 +92,14 @@ export const POSES = {
   },
   catalog: {
     label: 'Catalogue',
-    pose: withHands({ both: { upperarm: [-10, -18, -36], lowerarm: [8, 45, 0], hand: [0, 0, 5], thigh: [0, 0, 1.5] } }, 'soft'),
+    pose: withHands({ both: { clavicle: [0, 0, -7], upperarm: [-20, -24, -39], lowerarm: [10, 48, 0], hand: [0, 0, 4], thigh: [0, 0, 1.5] } }, 'soft'),
   },
   contrapposto: {
     label: 'Contrapposto',
     pose: withHands({
       c: { pelvis: [0, -4, 5], spine_01: [0, 1, -2], spine_02: [0, 3, -3], spine_03: [0, 2, -2], neck_01: [0, 0, -2], head: [-2, 4, 4] },
-      l: { ...armsDown, upperarm: [-12, -13, -42], thigh: [0, 0, -6], calf: [0, 0, 0], foot: [0, 0, 0] },
-      r: { ...armsDown, upperarm: [-8, -16, -38], lowerarm: [10, 45, 0], thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
+      l: { ...armsDown, upperarm: [-22, -22, -44], thigh: [0, 0, -6], calf: [0, 0, 0], foot: [0, 0, 0] },
+      r: { ...armsDown, upperarm: [-18, -24, -40], lowerarm: [14, 48, 0], thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
     }, 'relaxed', 'soft'),
   },
   hips: {
