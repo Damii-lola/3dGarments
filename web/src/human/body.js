@@ -1,21 +1,25 @@
 /**
  * The studio's four model controls, as real measurements:
- *   sex (picker) · width = shoulder point to point (cm) · height = crown to sole (in) · skin
+ *   sex (picker) · width = shoulder point to point (cm) · height = crown to sole (in) · skin tone (slider)
  * Drives a Human (human.js); shared by the studio and the lab so both show the same models.
  */
-/** Skins: grey clay first, then real-world tones. */
-export const SKINS = [
-  { id: 'gray', label: 'Grey', hex: '#8e8f93', clay: true },
-  { id: 'nordic', label: 'Northern European', hex: '#efd7c7' },
-  { id: 'european', label: 'European', hex: '#e2bea2' },
-  { id: 'eastasian', label: 'East Asian', hex: '#e6c4a2' },
-  { id: 'mediterranean', label: 'Mediterranean', hex: '#cfa47f' },
-  { id: 'latino', label: 'Latino', hex: '#bb8b64' },
-  { id: 'middleeastern', label: 'Middle Eastern', hex: '#b88c69' },
-  { id: 'southasian', label: 'South Asian', hex: '#9a6a48' },
-  { id: 'african', label: 'African', hex: '#6f4630' },
-  { id: 'deep', label: 'Deep African', hex: '#4a2f21' },
-];
+/**
+ * Skin tone: one slider (0 … 1) along real-world tones, lightest (Northern European) to darkest
+ * (African). No names are shown; the default sits on the Latino tone.
+ */
+export const SKIN_STOPS = ['#efd7c7', '#e6c4a2', '#e2bea2', '#cfa47f', '#bb8b64', '#b88c69', '#9a6a48', '#6f4630'];
+export const DEFAULT_TONE = 4 / (SKIN_STOPS.length - 1); // Latino
+
+const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+/** css colour at position t (0 … 1) along SKIN_STOPS */
+export function toneAt(t) {
+  const x = Math.min(1, Math.max(0, t)) * (SKIN_STOPS.length - 1);
+  const i = Math.min(SKIN_STOPS.length - 2, Math.floor(x)), f = x - i;
+  const a = hexRGB(SKIN_STOPS[i]), b = hexRGB(SKIN_STOPS[i + 1]);
+  return `#${a.map((v, k) => Math.round(v + (b[k] - v) * f).toString(16).padStart(2, '0')).join('')}`;
+}
+/** css gradient of the whole range (slider track) */
+export const toneGradient = () => `linear-gradient(90deg, ${SKIN_STOPS.join(', ')})`;
 
 /** Slider ranges (real measurements) and fit-model defaults. */
 export const RANGES = {
@@ -24,14 +28,12 @@ export const RANGES = {
 };
 export const WIDTH_RANGE = [-1, 1.2]; // width morph: ±20 % shoulders per unit
 
-export const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
-
 export const IN = 2.54;
 export const cmToIn = (cm) => cm / IN;
 export const fmtIn = (inches) => { const i = Math.round(inches); return `${i} in · ${Math.floor(i / 12)}′${i % 12}″`; };
 
 export class ModelController {
-  /** @param model { sex, width (cm), height (in), skin } — kept by reference and mutated */
+  /** @param model { sex, width (cm), height (in), tone (0 … 1) } — kept by reference and mutated */
   constructor(human, model) {
     this.human = human;
     this.model = model;
@@ -50,8 +52,7 @@ export class ModelController {
   applyShape() { this.human.setShape(this.solve()); }
 
   applyLook() {
-    const k = skinById(this.model.skin);
-    this.human.setSkin({ tone: k.hex, clay: !!k.clay });
+    this.human.setSkin({ tone: toneAt(this.model.tone ?? DEFAULT_TONE), clay: false });
   }
 
   apply() { this.applyShape(); this.applyLook(); }

@@ -21,8 +21,9 @@ tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab pa
                         shoulder probes, eye centres → GLB), glb.py
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
-  src/main.js           studio UI: Model (sex, width cm, height in, skin) / Pose / Scene tabs, Shot panel, state in localStorage
-  src/human/body.js     SKINS (grey clay first), RANGES, ModelController (cm / in → width morph + uniform scale, exact)
+  src/main.js           studio UI: Model (sex, width cm, height in, skin-tone slider) / Pose / Scene tabs, Shot panel, state in localStorage.
+                        Responsive: desktop 3 columns; ≤860px (and phones in landscape) stage + bottom/side sheet — the matchMedia query in main.js mirrors styles.css
+  src/human/body.js     SKIN_STOPS/toneAt (one slider, light → dark, default Latino), RANGES, ModelController (cm / in → width morph + uniform scale, exact)
   src/human/assets.js   model URLs
   src/human/human.js    Human: loads both GLBs, re-bases limb bones on pose zero, width morph + rebind, pose, hang solver, feet on floor
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
@@ -49,7 +50,7 @@ render.yaml             Render blueprint
 - Models are in metres, y up, facing +z, feet on y = 0, left = +x (prepare.py normalises them).
 - Bone names are ours (pelvis, spine_01…03, neck_01, head, clavicle/upperarm/lowerarm/hand/thigh/calf/foot/ball_l|r, fingers thumb|index|middle|ring|pinky_01…03_l|r). prepare.py maps Mixamo (male) and Character Creator (female) names; helper bones (twist, share, breast, face, toes) fold into their parents.
 - Both models are faceless mannequins. The female's face is removed in prepare.py (`mannequin_head`): the real head + eyes + teeth become a solid, ears are shaved per slice, the solid is blurred (~1.5 cm) and re-meshed, replacing everything above the jaw.
-- Vertex parts (_PART): 0 skin, 1 eye, 4 fabric, 5 teeth, 6 tongue (only skin + fabric remain after the mannequin head). materials.js colours them (clay or skin tone; the iris is drawn around each eyeball centre from the GLB extras). Transparent cards (lashes, brows, tear lines) are dropped.
+- Vertex parts (_PART): 0 skin, 1 eye, 4 fabric, 5 teeth, 6 tongue (only skin + fabric remain after the mannequin head). Fabric is always black, copies the nearest skin vertex's weights and is lifted ≥ 2.5 mm off the skin in prepare.py (the source hides skin under clothes). materials.js colours them (clay or skin tone; the iris is drawn around each eyeball centre from the GLB extras). Transparent cards (lashes, brows, tear lines) are dropped.
 - Bone frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. Feet/toes take their roll from "up" (x = y × +y) in BOTH prepare.py and human.js — a switching reference axis twists the foot. +z moves a left limb outward, and +y on the upper arm is internal rotation.
 - Pose zero (rig.js): every limb bone is re-based onto these directions whatever the model's bind pose (T-pose male, arms-down female), so all poses mean the same on every model. Don't edit rig.js without recalibrating poses.js.
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.

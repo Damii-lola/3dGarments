@@ -20,6 +20,7 @@ import sys
 
 import numpy as np
 from scipy import ndimage as nd, sparse
+from scipy.spatial import cKDTree
 
 import glb
 
@@ -286,7 +287,8 @@ def mannequin_head(V, F, J, W, part, cut_y, head_bone, neck_bone, blur=0.015, vo
     if np.mean(np.sum(nrm * outward, 1)) < 0:
         HF = HF[:, ::-1]
     # body: drop the old head and every non-skin part up there (eyes, teeth, tongue)
-    kill = (V[:, 1] > cut_y) | (~skin & (V[:, 1] > cut_y - 0.05))
+    face_parts = (part == PART['eye']) | (part == PART['teeth']) | (part == PART['tongue'])
+    kill = (V[:, 1] > cut_y) | face_parts                   # never the clothing (bra straps reach up here)
     F = F[~kill[F].any(1)]
     wh = np.clip((HV[:, 1] - (cut_y - 0.02)) / 0.04, 0, 1)
     HJ = np.zeros((len(HV), J.shape[1]), int)
@@ -348,6 +350,27 @@ def rigged(name, src, MAP, keep, faceless=False):
         off += len(V)
     V, F = np.concatenate(Vs), np.concatenate(Fs)
     J, W, part = np.concatenate(Js), np.concatenate(Ws), np.concatenate(Ps).astype(np.float32)
+    # clothing moves exactly like the skin under it: copy the nearest skin vertex's weights
+    # (its own weights drift from the skin's when the shoulders move, and the skin pokes through)
+    cloth = part == PART['fabric']
+    if cloth.any():
+        skin_i = np.nonzero(part == PART['skin'])[0]
+        _, k = cKDTree(V[skin_i]).query(V[cloth])
+        J[cloth], W[cloth] = J[skin_i[k]], W[skin_i[k]]
+        # and never below it: the source model hides skin under clothes, so some fabric (the
+        # straps over the shoulders) was modelled inside the skin — lift it to 2.5 mm above
+        Ns = vertex_normals(V, F)
+        ci = np.nonzero(cloth)[0]
+        near = skin_i[k]
+        # skin surface point + normal around each fabric vertex (average of a few neighbours: smoother)
+        dist, kk = cKDTree(V[skin_i]).query(V[ci], k=6)
+        base = V[skin_i[kk]].mean(1)
+        nrm = Ns[skin_i[kk]].mean(1)
+        nrm /= np.linalg.norm(nrm, axis=1, keepdims=True) + 1e-9
+        h = np.sum((V[ci] - base) * nrm, 1)
+        lift = np.maximum(0, 0.0025 - h)
+        V[ci] += nrm * lift[:, None]
+        print(f'  fabric lifted out of the skin: {(lift > 0.0005).sum()} verts (max {lift.max() * 1000:.1f} mm)')
     body = part == 0
     shift = np.array([-(V[body, 0].max() + V[body, 0].min()) / 2, -V[:, 1].min(), -(V[body, 2].max() + V[body, 2].min()) / 2])
     V = V + shift

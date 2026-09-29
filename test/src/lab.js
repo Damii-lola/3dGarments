@@ -6,7 +6,7 @@ import './lab.css';
 import * as THREE from 'three';
 import { createStage } from '@web/scene/stage.js';
 import { Human } from '@web/human/human.js';
-import { ModelController, SKINS, RANGES, fmtIn, IN } from '@web/human/body.js';
+import { ModelController, RANGES, fmtIn, IN, DEFAULT_TONE } from '@web/human/body.js';
 import { POSES, composePose } from '@web/human/poses.js';
 
 const $ = (s) => document.querySelector(s);
@@ -17,7 +17,7 @@ const t0 = performance.now();
 const human = await Human.load();
 const tLoad = performance.now() - t0;
 const sex = params.get('gender') === 'male' ? 'male' : 'female';
-const M = { sex, ...RANGES[sex].defaults, skin: params.get('skin') || 'gray' };
+const M = { sex, ...RANGES[sex].defaults, tone: params.get('tone') != null ? +params.get('tone') : DEFAULT_TONE };
 const model = new ModelController(human, M);
 model.apply();
 stage.root.add(human.object);
@@ -56,18 +56,7 @@ function buildBody() {
   const [wLo, wHi] = model.reach('width'), [hLo, hHi] = model.reach('height');
   slider(host, { label: 'Width (shoulder point to point)', min: wLo, max: wHi, step: 0.5, value: M.width, fmt: (v) => `${v.toFixed(1)} cm` }, (v) => { M.width = v; reshape(); });
   slider(host, { label: 'Height', min: hLo, max: hHi, step: 0.5, value: M.height, fmt: (v) => `${fmtIn(v)} · ${Math.round(v * IN)} cm` }, (v) => { M.height = v; reshape(); });
-  const skins = document.createElement('div');
-  skins.className = 'chips';
-  skins.innerHTML = SKINS.map((k) => `<button data-skin="${k.id}" class="${k.id === M.skin ? 'on' : ''}" title="${k.label}"><i class="dot" style="--c:${k.hex}"></i>${k.label}</button>`).join('');
-  skins.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-skin]');
-    if (!b) return;
-    M.skin = b.dataset.skin;
-    model.apply();
-    human.setPose(pose);
-    buildBody();
-  });
-  host.append(skins);
+  slider(host, { label: 'Skin tone', min: 0, max: 1, step: 0.01, value: M.tone, fmt: (v) => v.toFixed(2) }, (v) => { M.tone = v; model.applyLook(); });
 }
 $('#presets').innerHTML = '<button data-g="female">Female</button><button data-g="male">Male</button>';
 const markSex = () => $('#presets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.g === M.sex));

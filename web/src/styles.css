@@ -185,11 +185,13 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius
 
 /* ---------- tablet ---------- */
 @media (max-width: 1180px) {
-  .app { grid-template-columns: 290px 1fr 250px; }
+  .app { grid-template-columns: 280px 1fr 262px; }
+  .panel-right .chip { padding: 0 6px; font-size: 12px; }
+  .panel-right .chips.grid4 { gap: 4px; }
 }
 
-/* ---------- mobile: full-bleed stage + bottom sheet ---------- */
-@media (max-width: 860px) {
+/* ---------- mobile: full-bleed stage + bottom sheet (phones, tablets in portrait, phones in landscape) ---------- */
+@media (max-width: 860px), (max-height: 540px) and (orientation: landscape) and (max-width: 1100px) {
   /* phones: stage on top, the active panel below it (in the layout, so the stage and crop frame resize) */
   .app { grid-template-columns: 1fr; grid-template-rows: 56px minmax(0, 1fr) 46dvh calc(52px + env(safe-area-inset-bottom)); grid-template-areas: 'top' 'stage' 'sheet' 'tabs'; }
   .app.sheet-closed { grid-template-rows: 56px minmax(0, 1fr) 0 calc(52px + env(safe-area-inset-bottom)); }
@@ -293,10 +295,44 @@ body.flash .stage::after { content: ''; position: absolute; inset: 0; background
 
 /* model tab: sex toggle + labelled skin picker */
 .chips.seg.big .chip { height: 42px; font-size: 14px; font-weight: 600; }
-.skins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.skin { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 10px 0 6px; border-radius: 11px; border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--text); cursor: pointer; font-size: 12.5px; text-align: left; }
-.skin:hover { background: rgba(255,255,255,.07); }
-.skin i { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c) 70%, #fff), var(--c) 60%, color-mix(in srgb, var(--c) 75%, #000)); flex: none; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
-.skin span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.skin.on { border-color: var(--accent); background: rgba(255,91,58,.14); box-shadow: 0 0 0 1px var(--accent); }
-.skin.clay { grid-column: 1 / -1; }
+
+/* skin tone slider: the track is the tone ramp itself, no fill, no labels */
+.slider.tone input[type='range'] { height: 28px; }
+.slider.tone input[type='range']::-webkit-slider-runnable-track { height: 14px; border-radius: 8px; background: var(--track); }
+.slider.tone input[type='range']::-moz-range-track { height: 14px; border-radius: 8px; background: var(--track); }
+.slider.tone input[type='range']::-moz-range-progress { background: transparent; }
+.slider.tone input[type='range']::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -4px; border: 3px solid #fff; background: transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.5); }
+.slider.tone input[type='range']::-moz-range-thumb { width: 16px; height: 16px; border: 3px solid #fff; background: transparent; }
+
+/* tablets in portrait: roomier sheet */
+@media (min-width: 600px) and (max-width: 860px) and (orientation: portrait) {
+  .app { grid-template-rows: 60px minmax(0, 1fr) 40dvh calc(56px + env(safe-area-inset-bottom)); }
+  .panel { padding: 20px 24px; }
+  .tabs { margin: -20px -24px 14px; padding: 14px 24px 10px; }
+  .sheet-tabs button { height: 56px; font-size: 15px; }
+  .stage-toolbar .tool:not(.tool-icon) { width: 64px; height: 36px; font-size: 13px; }
+}
+
+/* phones in landscape: stage left, panel right, tabs under the panel */
+@media (max-height: 540px) and (orientation: landscape) and (max-width: 1100px) {
+  .app, .app.sheet-closed {
+    grid-template-columns: minmax(0, 1fr) min(360px, 44vw);
+    grid-template-rows: 48px minmax(0, 1fr) calc(46px + env(safe-area-inset-bottom));
+    grid-template-areas: 'top top' 'stage sheet' 'stage tabs';
+  }
+  .app.sheet-closed { grid-template-columns: minmax(0, 1fr) min(360px, 44vw); }
+  .panel { border-top: 0; border-left: 1px solid var(--line-2); border-radius: 0; padding: 12px 14px; }
+  .tabs { margin: -12px -14px 10px; padding: 10px 14px 6px; }
+  .sheet-tabs button { height: 46px; }
+}
+
+/* touch screens: finger-sized targets */
+@media (pointer: coarse) {
+  .chip { height: 40px; }
+  .chips.seg.big .chip { height: 46px; }
+  input[type='range'] { height: 34px; }
+  input[type='range']::-webkit-slider-thumb { width: 26px; height: 26px; margin-top: -11px; }
+  input[type='range']::-moz-range-thumb { width: 26px; height: 26px; }
+  .slider.tone input[type='range']::-webkit-slider-thumb { width: 28px; height: 28px; margin-top: -7px; }
+  .stage-toolbar .tool { min-height: 34px; }
+}

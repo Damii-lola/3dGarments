@@ -19,10 +19,10 @@ float n3(vec3 x) {
              mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
 }`;
 
-export function createBodyMaterial({ tone = '#8e8f93', clay = true, eyes = {} } = {}) {
+export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {} } = {}) {
   const uniforms = {
     uSSS: { value: new THREE.Vector3(0.3, 0.3, 0.3) },
-    uClay: { value: 1 },
+    uClay: { value: 0 },
     uEyeL: { value: new THREE.Vector3().fromArray(eyes.l || [0, -9, 0]) },
     uEyeR: { value: new THREE.Vector3().fromArray(eyes.r || [0, -9, 0]) },
   };
@@ -40,7 +40,7 @@ export function createBodyMaterial({ tone = '#8e8f93', clay = true, eyes = {} } 
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vRest;\nattribute float _part;\nvarying float vPart;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvPart = _part;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvPart = _part;\n// clothing sits a hair off the skin so it never z-fights or sinks in\nif (_part > 3.5 && _part < 4.5) transformed += objectNormal * 0.0025;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nuniform vec3 uSSS; uniform float uClay; uniform vec3 uEyeL; uniform vec3 uEyeR;\nvarying vec3 vRest; varying float vPart;\n${NOISE}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -56,8 +56,8 @@ float isFabric = step(3.5, vPart) * step(vPart, 4.5);
     vec3 irisC = mix(vec3(0.3, 0.2, 0.13) * (0.8 + 0.4 * n3(vRest * 900.0)), grey * 0.72, uClay);
     vec3 pupilC = mix(vec3(0.02), grey * 0.35, uClay);
     diffuseColor.rgb = mix(mix(sclera, irisC, iris), pupilC, pupil) * (1.0 - 0.35 * limbal);
-  } else if (isFabric > 0.5) {                               // underwear knit
-    diffuseColor.rgb = mix(vec3(0.17, 0.17, 0.19), vec3(0.37, 0.375, 0.39), uClay) * (0.94 + 0.12 * n3(vRest * 2200.0));
+  } else if (isFabric > 0.5) {                               // underwear: always black knit, whatever the skin
+    diffuseColor.rgb = vec3(0.012, 0.012, 0.014) * (0.9 + 0.2 * n3(vRest * 2200.0));
   } else if (vPart > 4.5 && vPart < 5.5) {                  // teeth
     diffuseColor.rgb = mix(vec3(0.91, 0.89, 0.84), grey * 1.1, uClay);
   } else if (vPart > 5.5) {                                  // tongue
@@ -71,8 +71,10 @@ float isFabric = step(3.5, vPart) * step(vPart, 4.5);
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor *= 0.93 + 0.14 * n3(vRest * 60.0);
-roughnessFactor = mix(roughnessFactor, 0.85, isFabric);
+roughnessFactor = mix(roughnessFactor, 0.78, isFabric);
 if (vPart > 0.5 && vPart < 1.5) roughnessFactor = 0.12;`)
+      .replace('#include <lights_fragment_begin>', `material.sheenColor *= 1.0 - isFabric; // no warm skin sheen on the black fabric
+#include <lights_fragment_begin>`)
       .replace('#include <lights_physical_pars_fragment>', THREE.ShaderChunk.lights_physical_pars_fragment.replace(
         'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );',
         `{

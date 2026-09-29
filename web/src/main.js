@@ -4,7 +4,7 @@
 import './styles.css';
 import { createStage, HDRIS, LIGHTING } from './scene/stage.js';
 import { Human } from './human/human.js';
-import { SKINS, RANGES, ModelController, fmtIn, IN } from './human/body.js';
+import { RANGES, ModelController, fmtIn, IN, DEFAULT_TONE, toneGradient } from './human/body.js';
 import { POSES, HANDS, DEFAULT_POSE, composePose } from './human/poses.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -13,14 +13,14 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 /* ================================================================ state */
 
 const DEFAULTS = {
-  model: { sex: 'female', width: RANGES.female.defaults.width, height: RANGES.female.defaults.height, skin: 'gray' },
+  model: { sex: 'female', width: RANGES.female.defaults.width, height: RANGES.female.defaults.height, tone: DEFAULT_TONE },
   pose: { preset: DEFAULT_POSE, hands: '', adjust: {} },
   env: { kind: 'studio', color: '#e9e6e1', hdri: 'lobby', blur: 0.35, rotation: 0, intensity: 1, image: null },
   light: { preset: 'soft', rotation: 0, intensity: 1, exposure: 1 },
   shot: { aspect: '4:5', size: 2048, transparent: false, shadow: true, format: 'png' },
 };
 
-const STORE = '3dg.studio.v4';
+const STORE = '3dg.studio.v5';
 const state = structuredClone(DEFAULTS);
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
@@ -39,7 +39,7 @@ if (params.get('model') === 'male' || params.get('model') === 'female') {
   M.sex = params.get('model');
   Object.assign(M, RANGES[M.sex].defaults);
 }
-if (params.get('skin') && SKINS.some((k) => k.id === params.get('skin'))) M.skin = params.get('skin');
+if (params.get('tone') != null && !Number.isNaN(+params.get('tone'))) M.tone = Math.min(1, Math.max(0, +params.get('tone')));
 if (params.get('pose') && POSES[params.get('pose')]) state.pose.preset = params.get('pose');
 if (params.get('scene') && HDRIS[params.get('scene')]) Object.assign(state.env, { kind: 'hdri', hdri: params.get('scene') });
 
@@ -202,18 +202,11 @@ function buildModelTab() {
     onInput: (v) => { M.height = v; queueShape(); },
   });
 
-  const skin = document.createElement('div');
-  skin.className = 'skins';
-  skin.innerHTML = SKINS.map((k) => `<button type="button" class="skin${k.id === M.skin ? ' on' : ''}${k.clay ? ' clay' : ''}" data-v="${k.id}" title="${esc(k.label)}">
-      <i style="--c:${k.hex}"></i><span>${esc(k.label)}</span></button>`).join('');
-  skin.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-v]');
-    if (!b || b.dataset.v === M.skin) return;
-    M.skin = b.dataset.v;
-    skin.querySelectorAll('.skin').forEach((x) => x.classList.toggle('on', x === b));
-    applyShape(); // faces follow the chosen skin's ethnicity
-    applyLook();
-  });
+  // skin tone: one unlabelled slider along real-world tones (light → dark)
+  const skin = slider({ label: '', min: 0, max: 1, step: 0.001, value: M.tone ?? DEFAULT_TONE, onInput: (v) => { M.tone = v; applyLook(); } });
+  skin.classList.add('tone');
+  skin.querySelector('.slider-head').remove();
+  skin.querySelector('input').style.setProperty('--track', toneGradient());
 
   host.append(section('Model', sex), section('Measurements', width, height), section('Skin', skin));
 }
@@ -409,7 +402,7 @@ window.addEventListener('keydown', (e) => {
 
 // mobile: bottom sheets
 const sheets = { edit: $('#panel-edit'), shot: $('#panel-shot') };
-const mobile = window.matchMedia('(max-width: 860px)');
+const mobile = window.matchMedia('(max-width: 860px), (max-height: 540px) and (orientation: landscape) and (max-width: 1100px)'); // keep in sync with styles.css
 let activeSheet = 'edit';
 function layoutSheets() {
   for (const [k, el] of Object.entries(sheets)) el.classList.toggle('sheet-hidden', mobile.matches && k !== activeSheet);
