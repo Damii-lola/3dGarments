@@ -132,6 +132,8 @@ class Body {
     const torso = new Set(['spine_02', 'spine_03', 'clavicle_l', 'clavicle_r'].map((n) => bi[n]).filter((x) => x != null));
     const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     const v = new THREE.Vector3();
+    this.armpit = { l: [], r: [] };
+    this.armpitK = { l: null, r: null };
     for (const s of ['l', 'r']) {
       const sg = s === 'l' ? 1 : -1, arm = bi[`upperarm_${s}`], A = this.bindPos[arm];
       for (let i = 0; i < P.count; i++) {
@@ -145,18 +147,42 @@ class Body {
         const lat = smooth(sg * A.x - 0.12, sg * A.x - 0.03, sg * v.x);
         const w = max * lat * (1 - smooth(0.05, reach, v.distanceTo(A))) * wt;
         if (w < 0.01) continue;
-        // move `w` from the torso bones to the upper arm, keep the 4 largest influences
-        const inf = new Map();
+        // the bound weights (w0) and the armpit weights (w1: `w` moved from the torso bones to the
+        // upper arm); applyArmpit() blends between them by how far the arm is lowered
+        const bones = [], w0 = [], w1 = [];
+        const put = (b, a, c) => { let j = bones.indexOf(b); if (j < 0) { j = bones.push(b) - 1; w0.push(0); w1.push(0); } w0[j] += a; w1[j] += c; };
         for (let k = 0; k < 4; k++) {
           const b = si.getComponent(i, k), x = sw.getComponent(i, k);
-          if (x) inf.set(b, (inf.get(b) || 0) + (torso.has(b) ? x * (1 - w / wt) : x));
+          if (x) put(b, x, torso.has(b) ? x * (1 - w / wt) : x);
         }
-        inf.set(arm, (inf.get(arm) || 0) + w);
-        const top = [...inf].sort((a, b) => b[1] - a[1]).slice(0, 4), sum = top.reduce((a, [, x]) => a + x, 0);
-        for (let k = 0; k < 4; k++) { si.setComponent(i, k, top[k]?.[0] ?? 0); sw.setComponent(i, k, top[k] ? top[k][1] / sum : 0); }
+        put(arm, 0, w);
+        this.armpit[s].push({ i, bones, w0, w1 });
       }
     }
-    si.needsUpdate = sw.needsUpdate = true;
+    this.applyArmpit({ l: 1, r: 1 });
+  }
+
+  /**
+   * Blend the armpit weights per side: k = 1 with the arm hanging (the lats tuck in with it),
+   * 0 once it is raised toward the bind pose and above (the armpit keeps its hollow and the
+   * side of the torso isn't dragged up with an overhead arm).
+   */
+  applyArmpit(k) {
+    if (!this.armpit) return;
+    const g = this.mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    let changed = false;
+    for (const s of ['l', 'r']) {
+      const f = Math.round(k[s] * 50) / 50;          // quantised: only rewrite when it really moves
+      if (f === this.armpitK[s]) continue;
+      this.armpitK[s] = f;
+      changed = true;
+      for (const { i, bones, w0, w1 } of this.armpit[s]) {
+        const w = bones.map((b, j) => [b, w0[j] + (w1[j] - w0[j]) * f]).sort((a, b) => b[1] - a[1]).slice(0, 4);
+        const sum = w.reduce((a, [, x]) => a + x, 0) || 1;
+        for (let c = 0; c < 4; c++) { si.setComponent(i, c, w[c]?.[0] ?? 0); sw.setComponent(i, c, w[c] ? w[c][1] / sum : 0); }
+      }
+    }
+    if (changed) si.needsUpdate = sw.needsUpdate = true;
   }
 
   /** Put the skeleton on the (width-morphed) body in its bind pose and bind it there. */
@@ -424,6 +450,19 @@ export class Human {
     if (hang.length) {
       this.#skinTorso();
       for (const s of hang) this.#hangArm(s);
+    }
+    if (B.armpit) {
+      // armpit weights by arm elevation (angle of shoulder → elbow from straight down): full up to
+      // 25°, gone by 70° (the bind pose is ~58°, where any weights give the same shape — seamless)
+      const k = {};
+      for (const s of ['l', 'r']) {
+        const a = B.bones[B.boneIndex[`upperarm_${s}`]].getWorldPosition(_v1), e = B.bones[B.boneIndex[`lowerarm_${s}`]].getWorldPosition(_v2);
+        const d = e.sub(a).normalize().transformDirection(_m.copy(this.object.matrixWorld).invert());
+        const elev = THREE.MathUtils.radToDeg(Math.acos(Math.min(1, Math.max(-1, -d.y))));
+        const t = Math.min(1, Math.max(0, (elev - 25) / 45));
+        k[s] = 1 - t * t * (3 - 2 * t);
+      }
+      B.applyArmpit(k);
     }
     if (pose.$ground !== false) {
       root.position.y -= this.lowestPoint();
