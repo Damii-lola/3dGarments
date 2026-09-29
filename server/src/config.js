@@ -8,6 +8,8 @@ export const config = Object.freeze({
   supabase: Object.freeze({
     url: process.env.SUPABASE_URL || '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    // public (browser-safe) key; handed to the web app by GET /api/public-config
+    anonKey: process.env.SUPABASE_ANON_KEY || '',
     bucket: process.env.SUPABASE_BUCKET || 'garments',
   }),
   cloudflare: Object.freeze({

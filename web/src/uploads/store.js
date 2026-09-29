@@ -3,12 +3,12 @@
  *
  *   group = { id, name, created, images: [{ id, name, type, blob?, path?, url? }] }
  *
- * Cloud (when VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are set): rows in public.garment_groups,
+ * Cloud (Supabase settings from the API on Render, see services/config.js): rows in public.garment_groups,
  * files in the private "garments" bucket at <user_id>/groups/<group_id>/<image_id>.<ext>, written
  * with the user's own session (anonymous sign-in when nobody is logged in), shown via signed URLs.
  * Local (no cloud, or the cloud refused): IndexedDB in this browser, and in memory as a last resort.
  */
-import { CLOUD_AVAILABLE } from '../services/config.js';
+import { cloudConfig } from '../services/config.js';
 import { supabaseClient as client, ensureSession } from '../services/auth.js';
 
 export const MAX_PER_GROUP = 10;
@@ -115,20 +115,22 @@ const cloud = {
 
 /* ================================================================ which one */
 
-let backend = null;
-/** 'cloud' | 'local' (decided on first use) */
-export async function storageMode() {
-  if (backend) return backend.mode;
-  backend = local;
-  if (CLOUD_AVAILABLE) {
-    try {
-      await ensureSession();
-      backend = cloud;
-    } catch (err) {
-      console.warn('garment groups: cloud unavailable, keeping them in this browser', err);
+let backend = null, picking = null;
+/** 'cloud' | 'local' (decided once, on first use; concurrent callers share the decision) */
+export function storageMode() {
+  picking ||= (async () => {
+    backend = local;
+    if (await cloudConfig()) {
+      try {
+        await ensureSession();
+        backend = cloud;
+      } catch (err) {
+        console.warn('garment groups: cloud unavailable, keeping them in this browser', err);
+      }
     }
-  }
-  return backend.mode;
+    return backend.mode;
+  })();
+  return picking;
 }
 
 export async function listGroups() {

@@ -69,7 +69,9 @@ render.yaml             Render blueprint
 
 ## Commands
 - API: `cd server && npm i && npm run dev` (port 8787). Secrets live **only** in Render env vars. Never commit `.env` files. Live API: https://threedgarments.onrender.com
-- Web: `cd web && npm i && npm run dev` (port 5173). Without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` it runs in **local mode**, which does all processing in the browser and needs no backend.
+- **All keys live in Render's env only** (none in GitHub): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, CLOUDFLARE_*. The static web app gets the public ones (URL + anon key) at runtime from `GET /api/public-config` (services/config.js, cached in localStorage; a cold Render start is waited for once, then it falls back to local mode).
+- Database: paste `supabase/setup.sql` (all migrations concatenated, idempotent) into the Supabase SQL editor. Regenerate it when adding a migration. Anonymous sign-ins must be enabled in Supabase Auth for uploads to reach the cloud.
+- Web: `cd web && npm i && npm run dev` (port 5173). `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` override the Render config for local development; with neither it runs in **local mode** (everything in the browser).
 - URL shortcuts: `?model=male|female&pose=hips&scene=city&view=three`. `window.__3dg` exposes `{stage, human, state, takeShot}`.
 - Lab: `cd test && npm i && npm run dev` (port 5174). Do all human/rig/pose work here: it has skeleton, wireframe, weight views, a bone editor and stats. `window.__lab` is exposed.
 - Rebuild the body models (after changing assets/ or tools/body): with the lab dev server running, `node tools/body/extract.mjs && python3 tools/body/prepare.py` (pip: numpy scipy). Commit web/public/body/*.glb.

@@ -1,11 +1,12 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY, CLOUD_AVAILABLE } from './config.js';
+import { cloudConfig } from './config.js';
 
 let client = null;
 async function sb() {
-  if (!CLOUD_AVAILABLE) return null;
+  const cfg = await cloudConfig();
+  if (!cfg) return null;
   if (!client) {
     const { createClient } = await import('@supabase/supabase-js');
-    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+    client = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
   }
   return client;
 }

@@ -28,6 +28,15 @@ app.use(express.json({ limit: '256kb' }));
 
 app.get('/', (_req, res) => res.json({ service: '3dgarments-api', docs: '/health' }));
 app.use('/health', health);
+// the web app (GitHub Pages) reads its public Supabase settings from here, so every key lives in
+// Render's env. Only browser-safe values: the project URL and the anon key (RLS guards the data).
+app.get('/api/public-config', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({
+    supabaseUrl: config.supabase.anonKey ? config.supabase.url : '',
+    supabaseAnonKey: config.supabase.anonKey,
+  });
+});
 app.use('/api/garments', garments);
 app.use('/api/me', me);
 
