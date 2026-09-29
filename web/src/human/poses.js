@@ -21,11 +21,13 @@ export function mirrorName(name) {
 export function buildPose({ c = {}, both = {}, l = {}, r = {}, ...rest } = {}) {
   const out = {};
   for (const [k, v] of Object.entries(rest)) if (k.startsWith('$')) out[k] = v;
-  for (const [k, v] of Object.entries(c)) out[k] = [...v];
+  for (const [k, v] of Object.entries(c)) out[k] = Array.isArray(v) ? [...v] : { ...v };
   const put = (side, name, v) => {
     const key = `${name}_${side}`;
     // right side = mirror image: flex stays, twist and side flip
-    out[key] = side === 'l' ? [...v] : [v[0], -v[1], -v[2]];
+    const mirror = (e) => (side === 'l' ? [...e] : [e[0], -e[1], -e[2]]);
+    // hang specs are anatomical (Human mirrors them); only their euler `extra` needs mirroring
+    out[key] = Array.isArray(v) ? mirror(v) : { ...v, ...(v.extra ? { extra: mirror(v.extra) } : {}) };
   };
   for (const [k, v] of Object.entries(both)) { put('l', k, v); put('r', k, v); }
   for (const [k, v] of Object.entries(l)) put('l', k, v);
@@ -79,9 +81,15 @@ const withHands = (pose, left = 'relaxed', right = left) => {
 
 /* ---------------------------------------------------------------- body poses */
 
-// relaxed arms: collarbones dropped (no shrug), arms hanging just behind the hip line,
-// soft elbows, forearms pronated so the palms face the thighs — calibrated on the fit bodies
-const armsDown = { clavicle: [0, 0, -8], upperarm: [-22, -24, -43], lowerarm: [12, 50, 0], hand: [4, 0, 0] };  // forearm pronated: palms face the thighs
+// relaxed arms: collarbones dropped (no shrug); each arm HANGS — the solver in human.js points it
+// down and tilts it out only as far as this body's chest, lats and hips require, so the whole
+// arm stays beside the body (never swung behind it or sunk into it); soft elbow, palm to thigh
+const armsDown = {
+  clavicle: [0, 0, -7],
+  upperarm: { hang: true, fwd: 2 },
+  lowerarm: { hang: true, fwd: 12, twist: 45 },
+  hand: [4, 0, 0],
+};
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
 const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
 
@@ -92,14 +100,14 @@ export const POSES = {
   },
   catalog: {
     label: 'Catalogue',
-    pose: withHands({ both: { clavicle: [0, 0, -7], upperarm: [-20, -24, -39], lowerarm: [10, 48, 0], hand: [0, 0, 4], thigh: [0, 0, 1.5] } }, 'soft'),
+    pose: withHands({ both: { ...armsDown, upperarm: { hang: true, fwd: 2, out: 4 }, lowerarm: { hang: true, fwd: 10, out: 3, twist: 45 }, thigh: [0, 0, 1.5] } }, 'soft'),
   },
   contrapposto: {
     label: 'Contrapposto',
     pose: withHands({
       c: { pelvis: [0, -4, 5], spine_01: [0, 1, -2], spine_02: [0, 3, -3], spine_03: [0, 2, -2], neck_01: [0, 0, -2], head: [-2, 4, 4] },
-      l: { ...armsDown, upperarm: [-22, -22, -44], thigh: [0, 0, -6], calf: [0, 0, 0], foot: [0, 0, 0] },
-      r: { ...armsDown, upperarm: [-18, -24, -40], lowerarm: [14, 48, 0], thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
+      l: { ...armsDown, thigh: [0, 0, -6], calf: [0, 0, 0], foot: [0, 0, 0] },
+      r: { ...armsDown, lowerarm: { hang: true, fwd: 16, twist: 45 }, thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
     }, 'relaxed', 'soft'),
   },
   hips: {
@@ -171,7 +179,9 @@ export function composePose(preset, adjust = {}, hands = null) {
   for (const [k, v] of Object.entries(merged.both)) { merged.l[k] ??= v; merged.r[k] ??= v; }
   merged.both = {};
   if (hands && HANDS[hands]) for (const side of ['l', 'r']) Object.assign(merged[side], HANDS[hands].pose);
-  const add = (a = [0, 0, 0], b = [0, 0, 0]) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const sum = (a = [0, 0, 0], b = [0, 0, 0]) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  // offsets on a hanging limb ride on top of the solved hang
+  const add = (a, b) => (a && !Array.isArray(a) ? { ...a, extra: sum(a.extra, b) } : sum(a, b));
   for (const g of ['c', 'l', 'r']) for (const [k, v] of Object.entries(adjust[g] || {})) merged[g][k] = add(merged[g][k], v);
   return buildPose(merged);
 }

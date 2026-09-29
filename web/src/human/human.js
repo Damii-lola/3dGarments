@@ -23,6 +23,11 @@ const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 
+const eulerQ = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(
+  THREE.MathUtils.degToRad(r[0] || 0), THREE.MathUtils.degToRad(r[1] || 0), THREE.MathUtils.degToRad(r[2] || 0), 'XZY'));
+/** Pose value `{ hang: true, out?, fwd?, twist?, extra? }` = solve the limb so it hangs clear of the body. */
+const isHang = (v) => !!(v && !Array.isArray(v) && v.hang);
+
 export class Human {
   constructor(assets, { shape = DEFAULT_SHAPE, pose = {}, skin = {}, hair = {} } = {}) {
     const { manifest, sections: S } = assets;
@@ -352,6 +357,47 @@ export class Human {
     this.underwear.bind(this.skeleton, this.underwear.matrixWorld);
     this.eyes.bind(this.skeleton, this.eyes.matrixWorld);
     this.#pickSoles();
+    this.#measureArms();
+  }
+
+  /**
+   * For hanging arms: segment lengths, limb radii (from the mesh) and the torso/hip
+   * vertices the arms must clear.
+   */
+  #measureArms() {
+    const W = this.W, si = this.assets.sections['skin.index'];
+    const bi = this.boneIndex;
+    const J = (n) => this.joints[this.boneDefs[bi[n]].head];
+    const radius = (bone, a, b) => {
+      const ab = _v1.subVectors(b, a), len2 = ab.lengthSq(), d = [];
+      for (let v = 0; v < 13380; v++) {
+        if (si[v * 4] !== bi[bone]) continue;
+        _v2.fromArray(W, v * 3).sub(a);
+        const t = Math.max(0, Math.min(1, _v2.dot(ab) / len2));
+        d.push(_v3.copy(ab).multiplyScalar(t).sub(_v2).length());
+      }
+      d.sort((x, y) => x - y);
+      return d.length ? d[Math.floor(d.length * 0.7)] : 0.04;
+    };
+    this.arm = {};
+    for (const s of ['l', 'r']) {
+      const sh = J(`upperarm_${s}`), el = J(`lowerarm_${s}`), wr = J(`hand_${s}`);
+      this.arm[s] = {
+        upper: sh.distanceTo(el), fore: el.distanceTo(wr),
+        rUpper: radius(`upperarm_${s}`, sh, el), rFore: radius(`lowerarm_${s}`, el, wr),
+      };
+    }
+    // torso + hips (upper thighs) the arms hang beside
+    const torsoBones = new Set(['pelvis', 'spine_01', 'spine_02', 'spine_03'].map((n) => bi[n]));
+    const thighs = new Set([bi.thigh_l, bi.thigh_r]);
+    const hipY = J('thigh_l').y - 0.12;
+    const list = [];
+    for (let v = 0; v < 13380; v++) {
+      const b = si[v * 4];
+      if (torsoBones.has(b) || (thighs.has(b) && W[v * 3 + 1] > hipY)) list.push(v);
+    }
+    this.torsoVerts = Uint16Array.from(list);
+    this.torsoPos = new Float32Array(list.length * 3);
   }
 
   #pickSoles() {
@@ -377,9 +423,8 @@ export class Human {
       const R = this.rest[i];
       bone.position.copy(R.p);
       const r = pose[bone.name];
-      if (r) {
-        _e.set(THREE.MathUtils.degToRad(r[0] || 0), THREE.MathUtils.degToRad(r[1] || 0), THREE.MathUtils.degToRad(r[2] || 0), 'XZY');
-        bone.quaternion.copy(R.q).multiply(_q.setFromEuler(_e));
+      if (Array.isArray(r)) {
+        bone.quaternion.copy(R.q).multiply(eulerQ(r));
       } else {
         bone.quaternion.copy(R.q);
       }
@@ -387,10 +432,96 @@ export class Human {
     const root = this.bones[0];
     if (pose.$root) root.position.add(_v1.fromArray(pose.$root));
     this.object.updateMatrixWorld(true);
+    const hang = ['l', 'r'].filter((s) => isHang(pose[`upperarm_${s}`]) || isHang(pose[`lowerarm_${s}`]));
+    if (hang.length) {
+      this.#skinTorso();
+      for (const s of hang) this.#hangArm(s);
+    }
     if (pose.$ground !== false) {
       root.position.y -= this.lowestPoint();
       this.object.updateMatrixWorld(true);
     }
+  }
+
+  /** Skinned positions (human-local space) of the torso/hip vertices, in the current pose. */
+  #skinTorso() {
+    this.skeleton.update();
+    const bm = this.skeleton.boneMatrices;
+    const si = this.assets.sections['skin.index'], sw = this.assets.sections['skin.weight'];
+    const W = this.W, out = this.torsoPos;
+    const toLocal = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
+    const bind = this.body.bindMatrix, M = new THREE.Matrix4(), p = new THREE.Vector3(), acc = new THREE.Vector3(), tmp = new THREE.Vector3();
+    this.torsoVerts.forEach((v, n) => {
+      p.fromArray(W, v * 3).applyMatrix4(bind);
+      acc.set(0, 0, 0);
+      for (let k = 0; k < 4; k++) {
+        const w = sw[v * 4 + k] / 65535;
+        if (!w) continue;
+        M.fromArray(bm, si[v * 4 + k] * 16);
+        acc.addScaledVector(tmp.copy(p).applyMatrix4(M), w);
+      }
+      acc.applyMatrix4(toLocal).toArray(out, n * 3);
+    });
+  }
+
+  /** Is the segment from `a` along unit `d` (length L, radius r) clear of the torso on side `sg` by `gap`? */
+  #clear(a, d, L, r0, r1, sg, gap, ts = [0.25, 0.5, 0.75, 1]) {
+    const T = this.torsoPos;
+    for (const t of ts) {
+      const px = a.x + d.x * L * t, py = a.y + d.y * L * t, pz = a.z + d.z * L * t;
+      const r = r0 + (r1 - r0) * t;
+      const limit = sg * px - r - gap;
+      for (let i = 0; i < T.length; i += 3) {
+        if (Math.abs(T[i + 1] - py) > 0.018 || Math.abs(T[i + 2] - pz) > r) continue;
+        if (sg * T[i] > limit) return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Let an arm hang naturally: the upper arm points down, tilted out only as far as it
+   * takes to clear the chest/lats; the forearm hangs with a soft bend, tilted out only
+   * as far as it takes to clear the hips. Works for any body width.
+   */
+  #hangArm(s) {
+    const sg = s === 'l' ? 1 : -1;
+    const A = this.arm[s];
+    const U = this.pose[`upperarm_${s}`], F = this.pose[`lowerarm_${s}`];
+    const ua = this.bones[this.boneIndex[`upperarm_${s}`]], la = this.bones[this.boneIndex[`lowerarm_${s}`]];
+    const toLocal = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
+    const rad = THREE.MathUtils.degToRad;
+    const dir = (out, fwd) => new THREE.Vector3(sg * Math.sin(rad(out)), -Math.cos(rad(out)) * Math.cos(rad(fwd)), Math.cos(rad(out)) * Math.sin(rad(fwd)));
+
+    if (isHang(U)) {
+      const a = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
+      let out = 0;
+      // test from the armpit down: at the root the arm is always joined to the torso
+      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, A.rUpper * 0.85, A.rUpper * 0.7, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
+      this.#aim(ua, dir(out + (U.out || 0), U.fwd || 0), sg * (U.twist || 0), U.extra);
+    }
+    if (isHang(F)) {
+      la.updateWorldMatrix(true, false);
+      const a = la.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
+      let out = 0;
+      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, A.rFore * 0.9, A.rFore * 0.7, sg, 0.01, [0.4, 0.7, 1])) out += 0.5;
+      this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
+    }
+  }
+
+  /** Point a bone's +y along `dirLocal` (human space), then twist about it and add euler `extra`. */
+  #aim(bone, dirLocal, twistDeg, extra) {
+    const i = this.bones.indexOf(bone);
+    bone.parent.updateWorldMatrix(true, false);
+    const parentQ = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+    const restWorld = parentQ.clone().multiply(this.rest[i].q);
+    const cur = new THREE.Vector3(0, 1, 0).applyQuaternion(restWorld);
+    const want = dirLocal.clone().transformDirection(this.object.matrixWorld);
+    const world = new THREE.Quaternion().setFromUnitVectors(cur, want).multiply(restWorld);
+    bone.quaternion.copy(parentQ.invert().multiply(world))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(_v1.set(0, 1, 0), THREE.MathUtils.degToRad(twistDeg)));
+    if (extra) bone.quaternion.multiply(eulerQ(extra));
+    bone.updateMatrixWorld(true);
   }
 
   /** Lowest skinned sole vertex, in the human's local space. */
