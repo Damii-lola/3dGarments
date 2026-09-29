@@ -82,8 +82,14 @@ if not os.path.exists(f'{CK}/pytorch_model.bin'):
         url = f'https://huggingface.co/{repo}/resolve/main/pytorch_model.bin'
         dst = f'{TMP}/ckpt.bin'
         sh(f'curl -sSIL --max-time 60 "{url}" | grep -iE "^(HTTP|content-length|location)" | tail -6', check=False)
-        r = sh(f'curl -sSL --retry 5 --retry-delay 5 -o {dst} "{url}"', check=False)
-        if r.returncode == 0 and os.path.exists(dst) and os.path.getsize(dst) > 10 * 2**30:
+        # 15 GB over one connection breaks now and then: resume (-C -) until the file is whole
+        SIZE = 14987210682
+        for attempt in range(40):
+            sh(f'curl -sS -L --http1.1 -C - --retry 3 --retry-delay 3 --speed-limit 1000000 --speed-time 60 -o {dst} "{url}"', check=False)
+            have = os.path.getsize(dst) if os.path.exists(dst) else 0
+            log(f'attempt {attempt + 1}: {have / 2**30:.2f} of {SIZE / 2**30:.2f} GB')
+            if have >= SIZE: break
+        if os.path.exists(dst) and os.path.getsize(dst) == SIZE:
             got = dst
             break
         log('failed from', repo)
