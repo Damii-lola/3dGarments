@@ -1,4 +1,8 @@
 import { Router } from 'express';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const PYDEPS = fileURLToPath(new URL('../../.pydeps', import.meta.url));
 import { config, missingConfig } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, verifyCloudflare } from '../lib/cloudflare.js';
@@ -35,6 +39,12 @@ health.get('/deep', async (_req, res) => {
   }
   out.cloudflare_ai = await verifyCloudflare();
   out.cloudflare_ai.model = config.cloudflare.visionModel;
-  const ok = Object.values(out).every((v) => v.ok);
+  // the sewing-pattern builder (GarmentCode) is Python: is it available on this machine?
+  out.python = await new Promise((resolve) => {
+    execFile('python3', ['-c', 'import sys, importlib.util as u; print(sys.version.split()[0], *[m for m in ("numpy","scipy","yaml","svgpathtools","svgwrite") if u.find_spec(m)])'],
+      { timeout: 15_000, env: { ...process.env, PYTHONPATH: PYDEPS } },
+      (err, stdout, stderr) => resolve(err ? { ok: false, error: String(stderr || err.message).slice(0, 300) } : { ok: true, version: stdout.trim() }));
+  });
+  const ok = Object.entries(out).every(([k, v]) => k === 'python' || v.ok);
   res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
 });
