@@ -16,6 +16,7 @@ server/                 Express API (Render). ESM, Node 22.
   test/                 node --test (runs the real pipeline on fixtures/samples.js SVG flat-lays)
   scripts/verify.mjs    live integration check (npm run verify)
 tools/human/            asset pipeline: fetch.sh (sparse-clone MakeHuman + MPFB), build.py, paint.py
+  design.py             fits the FIT male / thick-fit female presets to real tape measurements (scipy least_squares)
 web/                    Vite + three.js SPA (GitHub Pages)
   public/human/         BUILT assets: human.json + human.bin (brotli), skin/detail/underwear masks, eye.png
   src/main.js           studio UI: Model (sex, width cm, height in, skin) / Pose / Scene tabs, Shot panel, state in localStorage
@@ -23,6 +24,7 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/human/assets.js   loads + decodes human.bin (brotli-dec-wasm)
   src/human/modifiers.js  MakeHuman macro maths (gender/age/muscle/weight/height/proportions/breast/ethnicity)
   src/human/human.js    Human: CPU morph → joints from cubes → bone frames → rebind; pose; feet on floor; underwear
+  src/human/subdivide.js  one Catmull–Clark level as a sparse stencil (render mesh = 4× the coarse quads)
   src/human/materials.js  skin (masks, SSS wrap, pores), eyes, lashes, underwear knit
   src/human/hair.js     shell-textured hair styles
   src/human/poses.js    pose + hand library, composePose()
@@ -49,6 +51,8 @@ render.yaml             Render blueprint
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.
 - Model controls are real measurements: width = shoulder point to point (biacromial, probe verts at the shoulder tips) in cm, height = crown to sole in inches. `Human.measure()` evaluates only probe vertices; `Human.solve()` inverts exactly because targets blend linearly on each half-range. Keep the width frame within FRAME_RANGE (the torso turns boxy above +0.6).
 - Body-surface overlays (underwear, later tight garments) reuse the body's triangles and skin weights, pushed out along the normal in the shader, with the outline cut by a UV mask painted in paint.py from 3D curves.
+- The body renders subdivided; joints, measurements, hair and soles use the coarse mesh (`human.coarse`, `human.W`). When the sports bra is worn, the coarse chest under it is relaxed (Taubin + compression, border pinned) before subdivision, so skin and knit share one smooth surface.
+- Body presets come from `tools/human/design.py` (reference measurements in `REF`). Refit there and paste the result into `FIT` in body.js; don't hand-tune the numbers in one place only.
 
 ## Coordinate conventions (garment pipeline)
 - **Garment space** (output of silhouette.js): unit = texture height; x ∈ [0, aspect]; y ∈ [0,1] with y pointing **down**.

@@ -81,9 +81,8 @@ export class Hair {
     if (!S || !S.length) return;
 
     const W = human.W, NO = human.normalsOrig, src = human.src;
-    const bodyGeo = human.body.geometry;
-    const skinI = bodyGeo.attributes.skinIndex.array, skinW = bodyGeo.attributes.skinWeight.array;
-    const uv = bodyGeo.attributes.uv.array;
+    // the scalp shells grow from the coarse control mesh
+    const skinI = human.coarse.skinIndex, skinW = human.coarse.skinWeight, uv = human.coarse.uv;
     const J = (n) => human.joints[human.jointByName[n]];
     const top = J('joint-head-2'), base = J('joint-head');
     const up = new THREE.Vector3().subVectors(top, base).normalize();

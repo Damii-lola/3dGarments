@@ -257,6 +257,12 @@ def main():
         'measure/measure-shoulder-dist-*', 'torso/torso-scale-horiz-*', 'hip/hip-scale-horiz-*',
         'torso/torso-vshape-*', 'torso/torso-muscle-pectoral-*', 'torso/torso-muscle-dorsi-*',
         'stomach/stomach-tone-*', 'buttocks/buttocks-volume-*',
+        # body design: limb muscle/fat and circumferences
+        'armslegs/?-upperarm-muscle-*', 'armslegs/?-upperarm-shoulder-muscle-*', 'armslegs/?-lowerarm-muscle-*',
+        'armslegs/?-upperleg-muscle-*', 'armslegs/?-lowerleg-muscle-*', 'armslegs/?-upperleg-fat-*',
+        'measure/measure-waist-circ-*', 'measure/measure-hips-circ-*', 'measure/measure-thigh-circ-*',
+        'measure/measure-bust-circ-*', 'measure/measure-upperarm-circ-*', 'measure/measure-calf-circ-*',
+        'measure/measure-neck-circ-*',
     ]
     files = []
     for p in patterns:
@@ -278,7 +284,7 @@ def main():
         gaps.append(g.astype(np.uint16))
         vals.append(q[nz].astype(np.int16))
         name = os.path.relpath(f, T).replace('macrodetails/', '').replace('.target', '')
-        if name.split('/')[0] in ('measure', 'torso', 'hip', 'stomach', 'buttocks'):
+        if name.split('/')[0] in ('measure', 'torso', 'hip', 'stomach', 'buttocks', 'armslegs'):
             name = 'local/' + name.split('/')[1]
         targets.append([name, int(len(nz))])
     g = np.concatenate(gaps)

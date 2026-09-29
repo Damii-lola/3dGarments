@@ -10,7 +10,7 @@ if [ ! -d makehuman ]; then
   git clone --depth 1 --filter=blob:none --sparse https://github.com/makehumancommunity/makehuman.git
   git -C makehuman sparse-checkout set \
     makehuman/data/3dobjs makehuman/data/targets/macrodetails makehuman/data/targets/breast makehuman/data/eyes \
-    makehuman/data/targets/measure makehuman/data/targets/torso makehuman/data/targets/hip makehuman/data/targets/stomach makehuman/data/targets/buttocks
+    makehuman/data/targets/measure makehuman/data/targets/torso makehuman/data/targets/hip makehuman/data/targets/stomach makehuman/data/targets/buttocks makehuman/data/targets/armslegs
 fi
 
 if [ ! -d mpfb2 ]; then

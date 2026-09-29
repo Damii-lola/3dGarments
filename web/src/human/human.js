@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { DEFAULT_SHAPE, targetWeights } from './modifiers.js';
 import { createSkinMaterial, createEyeMaterial, createSimpleMaterials, createFabricMaterial } from './materials.js';
 import { Hair } from './hair.js';
+import { buildSubdivision, applyStencil } from './subdivide.js';
 
 const DM = 0.1; // MakeHuman decimetres → metres
 const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
@@ -54,31 +55,41 @@ export class Human {
     this.joints = manifest.joints.map(() => new THREE.Vector3());
     this.jointByName = Object.fromEntries(manifest.joints.map((j, i) => [j.name, i]));
 
-    /* ---------- body (+ lashes, teeth, tongue) ---------- */
+    /* ---------- coarse control mesh (joints, hair, feet, measurements use this) ---------- */
     const src = S['render.src'];
     this.src = src;
     const R = src.length;
+    const { index: si, weight: sw } = { index: S['skin.index'], weight: S['skin.weight'] };
+    const cSkinIndex = new Uint16Array(R * 4), cSkinWeight = new Float32Array(R * 4);
+    for (let r = 0; r < R; r++) for (let k = 0; k < 4; k++) {
+      cSkinIndex[r * 4 + k] = si[src[r] * 4 + k];
+      cSkinWeight[r * 4 + k] = sw[src[r] * 4 + k] / 65535;
+    }
+    this.coarse = { src, uv: S['render.uv'], skinIndex: cSkinIndex, skinWeight: cSkinWeight };
+    const parts = ['body', 'lashes', 'teeth', 'tongue'];
+    this.bodyTrisOrig = Uint32Array.from(parts.flatMap((p) => [...S[`index.${p}`]]), (r) => src[r]); // coarse normals, no seams
+    this.helperIndex = { tights: S['index.tights'], skirt: S['index.skirt'], hair: S['index.hair'] };
+
+    /* ---------- rendered body: one level of Catmull–Clark (4× the polygons, smooth silhouettes) ---------- */
+    const sub = buildSubdivision(src, S['render.uv'], S['index.body'], this.N,
+      { lashes: S['index.lashes'], teeth: S['index.teeth'], tongue: S['index.tongue'] }, { index: si, weight: sw });
+    this.sub = sub;
+    this.WS = new Float32Array(sub.N2 * 3);
+    this.normalsSub = new Float32Array(sub.N2 * 3);
+    const R2 = sub.renderSrc.length;
     const geo = new THREE.BufferGeometry();
-    this.pos = new THREE.BufferAttribute(new Float32Array(R * 3), 3);
-    this.nrm = new THREE.BufferAttribute(new Float32Array(R * 3), 3);
+    this.pos = new THREE.BufferAttribute(new Float32Array(R2 * 3), 3);
+    this.nrm = new THREE.BufferAttribute(new Float32Array(R2 * 3), 3);
     geo.setAttribute('position', this.pos);
     geo.setAttribute('normal', this.nrm);
-    geo.setAttribute('uv', new THREE.BufferAttribute(S['render.uv'], 2));
-    const { index: si, weight: sw } = { index: S['skin.index'], weight: S['skin.weight'] };
-    const skinIndex = new Uint16Array(R * 4), skinWeight = new Float32Array(R * 4);
-    for (let r = 0; r < R; r++) for (let k = 0; k < 4; k++) {
-      skinIndex[r * 4 + k] = si[src[r] * 4 + k];
-      skinWeight[r * 4 + k] = sw[src[r] * 4 + k] / 65535;
-    }
-    geo.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4));
-    geo.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
-    const parts = ['body', 'lashes', 'teeth', 'tongue'];
+    geo.setAttribute('uv', new THREE.BufferAttribute(sub.renderUV, 2));
+    geo.setAttribute('skinIndex', new THREE.BufferAttribute(sub.skinIndex, 4));
+    geo.setAttribute('skinWeight', new THREE.BufferAttribute(sub.skinWeight, 4));
     const idx = [], ranges = {};
-    for (const p of parts) { ranges[p] = [idx.length, S[`index.${p}`].length]; for (const i of S[`index.${p}`]) idx.push(i); }
+    for (const p of parts) { ranges[p] = [idx.length, sub.index[p].length]; for (const i of sub.index[p]) idx.push(i); }
     geo.setIndex(idx);
     parts.forEach((p, m) => geo.addGroup(ranges[p][0], ranges[p][1], m));
-    this.bodyTrisOrig = Uint32Array.from(idx, (r) => src[r]); // normals on the unsplit mesh: no seams
-    this.helperIndex = { tights: S['index.tights'], skirt: S['index.skirt'], hair: S['index.hair'] };
+    this.subTris = Uint32Array.from(idx, (r) => sub.renderSrc[r]);
 
     this.skin = createSkinMaterial(skin);
     const simple = createSimpleMaterials();
@@ -90,8 +101,48 @@ export class Human {
 
     /* ---------- underwear: the body's own surface, pushed out a hair, outline cut by a painted mask ---------- */
     const ugeo = new THREE.BufferGeometry();
-    for (const k of ['position', 'normal', 'uv', 'skinIndex', 'skinWeight']) ugeo.setAttribute(k, geo.attributes[k]);
-    this.underwearIndex = { briefs: S['index.briefs'], boxers: S['index.boxers'], bra: S['index.bra'] };
+    for (const k of ['normal', 'uv', 'skinIndex', 'skinWeight']) ugeo.setAttribute(k, geo.attributes[k]);
+    // own positions: stretched knit bridges over small surface detail (see #smoothUnderwear)
+    this.uwPos = new THREE.BufferAttribute(new Float32Array(R2 * 3), 3);
+    ugeo.setAttribute('position', this.uwPos);
+    const coarseTriId = new Map();
+    const cb = S['index.body'];
+    for (let t = 0; t < cb.length / 3; t++) coarseTriId.set(`${cb[t * 3]},${cb[t * 3 + 1]},${cb[t * 3 + 2]}`, t);
+    const toSub = (coarse) => {
+      const quadsSeen = new Set();
+      for (let t = 0; t < coarse.length; t += 3) quadsSeen.add(coarseTriId.get(`${coarse[t]},${coarse[t + 1]},${coarse[t + 2]}`) >> 1);
+      const out = [];
+      const bi = sub.index.body;
+      for (const q of quadsSeen) for (let k = q * 24; k < q * 24 + 24; k++) out.push(bi[k]);
+      return Uint32Array.from(out);
+    };
+    this.underwearIndex = { briefs: toSub(S['index.briefs']), boxers: toSub(S['index.boxers']), bra: toSub(S['index.bra']) };
+    // bra region on the coarse mesh (neighbour lists; the border ring stays pinned)
+    {
+      const cs = src, cbra = S['index.bra'], call = S['index.body'];
+      const region = new Set();
+      for (let t = 0; t < cbra.length; t++) region.add(cs[cbra[t]]);
+      const nb = new Map();
+      const link = (a, b) => { if (region.has(a) && a !== b) { if (!nb.has(a)) nb.set(a, new Set()); nb.get(a).add(b); } };
+      for (let t = 0; t < call.length; t += 6) { // fan pairs = quads: link along quad edges only
+        const q = [cs[call[t]], cs[call[t + 1]], cs[call[t + 2]], cs[call[t + 5]]];
+        for (let i = 0; i < 4; i++) { link(q[i], q[(i + 1) & 3]); link(q[(i + 1) & 3], q[i]); }
+      }
+      const inner = [...nb].filter(([, set]) => [...set].every((u) => region.has(u)));
+      this.braSmooth = inner.map(([v, set]) => [v, Uint32Array.from(set)]);
+      // rings from the pinned border: compression fades in over 2 rings
+      const ring = new Map(), inSet = new Set(inner.map(([v]) => v));
+      let front = [...region].filter((v) => !inSet.has(v));
+      front.forEach((v) => ring.set(v, 0));
+      for (let d = 1; front.length; d++) {
+        const next = [];
+        for (const v of front) for (const u of nb.get(v) || []) if (!ring.has(u) && region.has(u)) { ring.set(u, d); next.push(u); }
+        front = next;
+      }
+      this.braPress = Float32Array.from(this.braSmooth, ([v]) => Math.min(1, (ring.get(v) || 0) / 2));
+      this.Wbra = new Float32Array(this.N * 3);
+      this.braPressIters = 4;
+    }
     this.underwearMats = { briefs: createFabricMaterial({ channel: 0 }), boxers: createFabricMaterial({ channel: 1 }), bra: createFabricMaterial({ channel: 2 }) };
     this.underwear = new THREE.SkinnedMesh(ugeo, [this.underwearMats.bra, this.underwearMats.briefs]);
     this.underwear.name = 'human:underwear';
@@ -158,7 +209,9 @@ export class Human {
     g.addGroup(top.length, bottom.length, 1);
     this.underwear.material[1] = st === 'boxers' ? this.underwearMats.boxers : this.underwearMats.briefs;
     this.underwear.visible = idx.length > 0;
+    const changed = this.underwearResolved !== st;
     this.underwearResolved = st;
+    if (changed && this.WS) this.#updateBodyGeometry();
   }
 
   /* ================================================================ shape */
@@ -257,17 +310,66 @@ export class Human {
   }
 
   #updateBodyGeometry() {
-    this.#computeNormals();
-    const { W, src, normalsOrig: NO } = this;
-    const pos = this.pos.array, nrm = this.nrm.array;
-    for (let r = 0; r < src.length; r++) {
-      const o = src[r] * 3, d = r * 3;
-      pos[d] = W[o]; pos[d + 1] = W[o + 1]; pos[d + 2] = W[o + 2];
-      const l = Math.hypot(NO[o], NO[o + 1], NO[o + 2]) || 1;
-      nrm[d] = NO[o] / l; nrm[d + 1] = NO[o + 1] / l; nrm[d + 2] = NO[o + 2] / l;
+    this.#computeNormals(); // coarse (hair, soles)
+    applyStencil(this.sub, this.#relaxUnderBra() ? this.Wbra : this.W, this.WS);
+    this.#subNormals();
+    const { WS, normalsSub: NS } = this;
+    const rs = this.sub.renderSrc, pos = this.pos.array, nrm = this.nrm.array;
+    for (let r = 0; r < rs.length; r++) {
+      const o = rs[r] * 3, d = r * 3;
+      pos[d] = WS[o]; pos[d + 1] = WS[o + 1]; pos[d + 2] = WS[o + 2];
+      const l = Math.hypot(NS[o], NS[o + 1], NS[o + 2]) || 1;
+      nrm[d] = NS[o] / l; nrm[d + 1] = NS[o + 1] / l; nrm[d + 2] = NS[o + 2] / l;
     }
     this.pos.needsUpdate = this.nrm.needsUpdate = true;
     this.body.geometry.computeBoundingSphere();
+    this.#smoothUnderwear();
+  }
+
+  /** area-weighted vertex normals of the subdivided body (unnormalised) */
+  #subNormals() {
+    const { WS, normalsSub: NS, subTris: T } = this;
+    NS.fill(0);
+    for (let t = 0; t < T.length; t += 3) {
+      const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3;
+      _v1.set(WS[b] - WS[a], WS[b + 1] - WS[a + 1], WS[b + 2] - WS[a + 2]);
+      _v2.set(WS[c] - WS[a], WS[c + 1] - WS[a + 1], WS[c + 2] - WS[a + 2]);
+      _v3.crossVectors(_v1, _v2);
+      NS[a] += _v3.x; NS[a + 1] += _v3.y; NS[a + 2] += _v3.z;
+      NS[b] += _v3.x; NS[b + 1] += _v3.y; NS[b + 2] += _v3.z;
+      NS[c] += _v3.x; NS[c + 1] += _v3.y; NS[c + 2] += _v3.z;
+    }
+  }
+
+  /**
+   * When the bra is worn, relax the chest under it with Taubin smoothing (removes small bumps
+   * such as the nipples, keeps the breast volume). That skin is hidden, so the body and the
+   * knit both follow it — the bra reads as a sports bra pressing the chest smooth.
+   */
+  #relaxUnderBra() {
+    if (!this.braSmooth?.length || this.underwearResolved !== 'set') return false;
+    const cur = this.Wbra, tmp = new Float32Array(this.braSmooth.length * 3), k = this.braPress;
+    cur.set(this.W);
+    const pass = (lambda, weighted) => {
+      this.braSmooth.forEach(([v, n], i) => {
+        let x = 0, y = 0, z = 0;
+        for (const u of n) { x += cur[u * 3]; y += cur[u * 3 + 1]; z += cur[u * 3 + 2]; }
+        const o = v * 3, l = weighted ? lambda * k[i] : lambda, f = l / n.length;
+        tmp[i * 3] = cur[o] + f * x - l * cur[o];
+        tmp[i * 3 + 1] = cur[o + 1] + f * y - l * cur[o + 1];
+        tmp[i * 3 + 2] = cur[o + 2] + f * z - l * cur[o + 2];
+      });
+      this.braSmooth.forEach(([v], i) => { cur[v * 3] = tmp[i * 3]; cur[v * 3 + 1] = tmp[i * 3 + 1]; cur[v * 3 + 2] = tmp[i * 3 + 2]; });
+    };
+    for (let it = 0; it < 10; it++) { pass(0.6, false); pass(-0.63, false); } // detail (nipples) off, volume kept
+    for (let it = 0; it < this.braPressIters; it++) pass(0.5, true);         // compression rounds the cone
+    return true;
+  }
+
+  #smoothUnderwear() {
+    const rs = this.sub.renderSrc, cur = this.WS, out = this.uwPos.array;
+    for (let r = 0; r < rs.length; r++) { const o = rs[r] * 3, d = r * 3; out[d] = cur[o]; out[d + 1] = cur[o + 1]; out[d + 2] = cur[o + 2]; }
+    this.uwPos.needsUpdate = true;
   }
 
   #computeNormals() {

@@ -5,15 +5,20 @@
 import { DEFAULT_SHAPE } from './modifiers.js';
 import { Human } from './human.js';
 
-/** Fit, athletic bases (MakeHuman macro + local targets). */
+/**
+ * The two bodies, fitted by tools/human/design.py to REAL measurements of people in each
+ * category (tape-measure circumferences on the mesh; see REF in design.py):
+ *   male   — fit muscular (men's physique): chest ≈ 113, waist ≈ 77, arm ≈ 37, thigh ≈ 57, calf ≈ 41 cm
+ *   female — thick fit (wellness): bust ≈ 96, waist ≈ 66, hips ≈ 106, thigh ≈ 62, calf ≈ 38 cm
+ */
 export const FIT = {
   female: {
-    gender: 0, ageYears: 26, muscle: 0.74, weight: 0.4, proportions: 1, breastSize: 0.45, breastFirmness: 0.7,
-    local: { 'stomach-tone': 0.8, 'buttocks-volume': 0.2, 'torso-muscle-dorsi': 0.15 },
+    ...{ gender: 0, ageYears: 26, proportions: 1, breastFirmness: 0.5, muscle: 0.708, weight: 0.641, breastSize: 0.62 },
+    local: { "buttocks-volume": 1.0, "hip-scale-horiz": 0.104, "stomach-tone": 0.9, "l-upperleg-muscle": 0.95, "r-upperleg-muscle": 0.95, "l-upperleg-fat": 0.45, "r-upperleg-fat": 0.45, "l-lowerleg-muscle": 0.333, "r-lowerleg-muscle": 0.333, "measure-thigh-circ": 0.15, "nipple-point": -1, "nipple-size": -0.6, "breast-point": -1 },
   },
   male: {
-    gender: 1, ageYears: 27, muscle: 0.92, weight: 0.44, proportions: 1, breastSize: 0.5, breastFirmness: 0.5,
-    local: { 'torso-vshape': 0.35, 'torso-muscle-pectoral': 0.45, 'torso-muscle-dorsi': 0.3, 'stomach-tone': 1 },
+    ...{ gender: 1, ageYears: 27, proportions: 1, breastSize: 0.5, breastFirmness: 0.5, muscle: 0.939, weight: 0.411 },
+    local: { "torso-vshape": 0.426, "torso-muscle-pectoral": 0.489, "torso-muscle-dorsi": 0.522, "stomach-tone": 1.0, "l-upperarm-muscle": 0.639, "r-upperarm-muscle": 0.639, "l-upperarm-shoulder-muscle": 0.52, "r-upperarm-shoulder-muscle": 0.52, "l-lowerarm-muscle": 0.5, "r-lowerarm-muscle": 0.5, "l-upperleg-muscle": 1.0, "r-upperleg-muscle": 1.0, "l-lowerleg-muscle": 0.55, "r-lowerleg-muscle": 0.55, "measure-thigh-circ": 0.6, "measure-hips-circ": -0.65, "measure-neck-circ": 1 },
   },
 };
 
@@ -36,8 +41,8 @@ export const SKINS = [
 
 /** Slider ranges (real measurements) and fit-model defaults. */
 export const RANGES = {
-  female: { width: [32, 46], height: [58, 78], defaults: { width: 39, height: 69 } },
-  male: { width: [42, 57], height: [62, 82], defaults: { width: 48, height: 73 } },
+  female: { width: [36, 50], height: [58, 78], defaults: { width: 44, height: 67 } },
+  male: { width: [46, 62], height: [62, 82], defaults: { width: 57, height: 73 } },
 };
 export const FRAME_RANGE = [-1.8, 0.6]; // beyond +0.6 the torso turns boxy
 

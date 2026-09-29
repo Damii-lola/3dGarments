@@ -163,11 +163,18 @@ def paint_underwear(V, VT, faces, lm):
         briefs = np.minimum(lm['waist'] - y, (y - cut) * 0.7)
         # boxer briefs: waistband + a hem around the upper thigh
         boxers = np.minimum(lm['waist'] + 0.12 - y, y - (lm['crotch'] - 1.3))
-        # bra: band with a scooped neckline in front, narrower band at the back, plus straps
-        neck = lm['apex'][1] + 0.5 - 0.32 * np.exp(-(P[:, 0] / 0.38) ** 2)
-        top = neck * front + (lm['ub'] + 0.55) * (1 - front)
+        # bra: athletic sports bra. Scooped front, deep band, wide straps over the middle of the
+        # shoulder that cross into a racerback panel between the shoulder blades.
+        ay = lm['apex'][1]
+        scoop = ay + 0.62 + 0.22 * smoothstep(0.0, 0.7, x) + 0.3 * smoothstep(0.95, 1.5, x)
+        top = scoop * front + (lm['ub'] + 0.5) * (1 - front)
         band = np.minimum.reduce([y - lm['ub'], top - y, 1.75 - x])
-        strap = np.minimum.reduce([x - 0.52, 0.84 - x, y - lm['ub'], lm['apex'][1] + 2.6 - y])
+        s = np.clip((y - ay) / (5.75 - ay), 0, 1)
+        xf = lm['apex'][0] + 0.1 + 0.3 * s                                  # front strap line
+        xb = 0.24 + 0.86 * smoothstep(4.45, 5.75, y)                       # racerback line
+        xc = xf * front + xb * (1 - front)
+        hw = 0.19 + 0.05 * (1 - front)                                     # ~3.8 cm straps, wider at the back
+        strap = np.minimum.reduce([hw - np.abs(x - xc), y - lm['ub'], 6.3 - y])
         bra = np.maximum(band, strap)
         for ch, d in enumerate((briefs, boxers, bra)):
             v = ramp(d).astype(np.float32)
