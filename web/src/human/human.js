@@ -32,8 +32,16 @@ const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
  * The male's big lats hold the upper arm out from the body with the forearm hanging down from the
  * elbow; the female's arm lies close with the forearm continuing its line.
  */
-const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.9, follow: -14, maxOut: 22, minOut: 22 } };
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.48, follow: 1, maxOut: 90, minOut: 12 } };
 const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
+/**
+ * Armpit skinning fix. A model sculpted with raised arms (A-pose) has its lats and armpit skin
+ * stretched out toward the arm and bound 100 % to the spine: when the arm comes down that skin
+ * stays flared like a wing, fills the armpit and glues the upper arm to the torso. Torso skin
+ * below and beside the shoulder joint gets a share of the upper arm's weight (up to `max`, fading
+ * out by `reach` metres from the joint), so it tucks in as the arm lowers — like a real armpit.
+ */
+const ARMPIT = { male: { reach: 0.2, max: 0.55 }, female: null };
 const FWD = new THREE.Vector3(0, 0, 1), DOWN = new THREE.Vector3(0, -1, 0);
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -112,9 +120,43 @@ class Body {
       const p = this.parents[i];
       return p < 0 ? this.zeroQuat[i].clone() : this.zeroQuat[p].clone().invert().multiply(this.zeroQuat[i]);
     });
+    if (ARMPIT[sex]) this.#armpitWeights(ARMPIT[sex]);
     this.#dominantBones();
     this.rebind(0);
     this.#measureArms();
+  }
+
+  #armpitWeights({ reach, max }) {
+    const g = this.mesh.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    const part = g.attributes._part, bi = this.boneIndex;
+    const torso = new Set(['spine_02', 'spine_03', 'clavicle_l', 'clavicle_r'].map((n) => bi[n]).filter((x) => x != null));
+    const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    const v = new THREE.Vector3();
+    for (const s of ['l', 'r']) {
+      const sg = s === 'l' ? 1 : -1, arm = bi[`upperarm_${s}`], A = this.bindPos[arm];
+      for (let i = 0; i < P.count; i++) {
+        if (part && part.getX(i) !== 0) continue;
+        v.fromBufferAttribute(P, i);
+        if (sg * v.x <= 0 || v.y > A.y - 0.01) continue;
+        let wt = 0;
+        for (let k = 0; k < 4; k++) if (torso.has(si.getComponent(i, k))) wt += sw.getComponent(i, k);
+        if (wt < 0.05) continue;
+        // lateral: from 12 cm inside the joint (the ribcage) out to the joint; fades with distance
+        const lat = smooth(sg * A.x - 0.12, sg * A.x - 0.03, sg * v.x);
+        const w = max * lat * (1 - smooth(0.05, reach, v.distanceTo(A))) * wt;
+        if (w < 0.01) continue;
+        // move `w` from the torso bones to the upper arm, keep the 4 largest influences
+        const inf = new Map();
+        for (let k = 0; k < 4; k++) {
+          const b = si.getComponent(i, k), x = sw.getComponent(i, k);
+          if (x) inf.set(b, (inf.get(b) || 0) + (torso.has(b) ? x * (1 - w / wt) : x));
+        }
+        inf.set(arm, (inf.get(arm) || 0) + w);
+        const top = [...inf].sort((a, b) => b[1] - a[1]).slice(0, 4), sum = top.reduce((a, [, x]) => a + x, 0);
+        for (let k = 0; k < 4; k++) { si.setComponent(i, k, top[k]?.[0] ?? 0); sw.setComponent(i, k, top[k] ? top[k][1] / sum : 0); }
+      }
+    }
+    si.needsUpdate = sw.needsUpdate = true;
   }
 
   /** Put the skeleton on the (width-morphed) body in its bind pose and bind it there. */
