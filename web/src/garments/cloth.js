@@ -52,6 +52,21 @@ export class Cloth {
           x[j] -= dx * l * wj; x[j + 1] -= dy * l * wj; x[j + 2] -= dz * l * wj;
         }
       }
+      // strain limit: woven / knit fabric gives a few percent, then stops (hard, whatever the compliance)
+      for (let it = 0; it < 2; it++) for (const g of this.groups) {
+        if (!g.limit) continue;
+        const { a, b, rest } = g, lim = g.limit;
+        for (let k = 0; k < a.length; k++) {
+          const i = a[k] * 3, j = b[k] * 3, wi = w[a[k]], wj = w[b[k]], ws = wi + wj;
+          if (!ws) continue;
+          const dx = x[i] - x[j], dy = x[i + 1] - x[j + 1], dz = x[i + 2] - x[j + 2];
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz), max = rest[k] * lim;
+          if (d <= max) continue;
+          const l = -(d - max) / ws / d;
+          x[i] += dx * l * wi; x[i + 1] += dy * l * wi; x[i + 2] += dz * l * wi;
+          x[j] -= dx * l * wj; x[j + 1] -= dy * l * wj; x[j + 2] -= dz * l * wj;
+        }
+      }
       if (col) this.#collide(col, thick);
     }
   }

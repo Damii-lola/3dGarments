@@ -44,7 +44,7 @@ def push(photos=None):
     json.dump({
         'id': f'{u}/{SLUG_K}', 'title': '3dGarments ChatGarment', 'code_file': 'run.py', 'language': 'python',
         'kernel_type': 'script', 'is_private': True, 'enable_gpu': True, 'enable_internet': True,
-        'machine_shape': 'NvidiaTeslaT4', 'dataset_sources': [f'{u}/{SLUG_D}'] if photos else [],
+        'machine_shape': 'NvidiaTeslaT4', 'dataset_sources': [f'{u}/{SLUG_D}'],   # the last uploaded photos
         'competition_sources': [], 'kernel_sources': [],
     }, open(f'{k}/kernel-metadata.json', 'w'), indent=1)
     kg('kernels', 'push', '-p', k)

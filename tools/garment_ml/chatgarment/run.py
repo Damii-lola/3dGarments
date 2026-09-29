@@ -73,22 +73,32 @@ if not os.path.exists(f'{CG}/system.json'): shutil.copy(f'{GC}/system.template.j
 CK = f'{CG}/checkpoints/try_7b_lr1e_4_v3_garmentcontrol_4h100_v4_final'
 os.makedirs(CK, exist_ok=True)
 if not os.path.exists(f'{CK}/pytorch_model.bin'):
-    url = ('https://sjtueducn-my.sharepoint.com/:u:/g/personal/biansiyuan_sjtu_edu_cn/'
-           'EQayoB8ie7ZIsFrjLWdBASQBFexZHXcGjrS6ghgGCjIMzw?e=o60Y65&download=1')
-    dl = f'{TMP}/weights.download'
-    sh(f'curl -sSL --retry 5 -o {dl} "{url}"')
-    kind = sh(f'file -b {dl}').stdout.strip()
-    size = os.path.getsize(dl)
-    log('weights file:', kind, size // 2**20, 'MB')
-    summary(weights={'type': kind, 'mb': size // 2**20})
-    if size < 50 * 2**20: raise RuntimeError('the weights link did not give the checkpoint (see log.txt)')
-    if 'Zip' in kind:
-        with zipfile.ZipFile(dl) as z: z.extractall(f'{TMP}/weights')
-        found = glob.glob(f'{TMP}/weights/**/pytorch_model.bin', recursive=True)
-        if not found: raise RuntimeError('no pytorch_model.bin inside the weights zip')
-        shutil.move(found[0], f'{CK}/pytorch_model.bin')
-        os.remove(dl)
+    # the authors' checkpoint, mirrored on Hugging Face (two independent mirrors carry the identical file,
+    # sha256 3d6ca6dc52d4…); the authors' SharePoint link is the fallback
+    SHA = '3d6ca6dc52d4400d5603ac0dcb163aeb82d1021d99c90686253f6cc4a72b8a3a'
+    log('HF env:', {k: v for k, v in os.environ.items() if k.startswith(('HF_', 'HUGGING', 'TRANSFORMERS'))})
+    got = None
+    for repo in ['dirkneu/chatgarment-ckpt', 'SeonbinKyndof/chatgarment-checkpoint']:
+        url = f'https://huggingface.co/{repo}/resolve/main/pytorch_model.bin'
+        dst = f'{TMP}/ckpt.bin'
+        sh(f'curl -sSIL --max-time 60 "{url}" | grep -iE "^(HTTP|content-length|location)" | tail -6', check=False)
+        r = sh(f'curl -sSL --retry 5 --retry-delay 5 -o {dst} "{url}"', check=False)
+        if r.returncode == 0 and os.path.exists(dst) and os.path.getsize(dst) > 10 * 2**30:
+            got = dst
+            break
+        log('failed from', repo)
+    if got:
+        sha = sh(f'sha256sum {got}').stdout.split()[0]
+        log('sha256', sha, 'OK' if sha == SHA else 'MISMATCH')
+        summary(weights={'source': repo, 'sha256_ok': sha == SHA, 'mb': os.path.getsize(got) // 2**20})
+        if sha != SHA: raise RuntimeError('checkpoint hash mismatch')
+        shutil.move(got, f'{CK}/pytorch_model.bin')
     else:
+        url = ('https://sjtueducn-my.sharepoint.com/:u:/g/personal/biansiyuan_sjtu_edu_cn/'
+               'EQayoB8ie7ZIsFrjLWdBASQBFexZHXcGjrS6ghgGCjIMzw?e=o60Y65&download=1')
+        dl = f'{TMP}/weights.download'
+        sh(f'curl -sSL --retry 5 -o {dl} "{url}"')
+        if os.path.getsize(dl) < 50 * 2**20: raise RuntimeError('no source gave the checkpoint (see log.txt)')
         shutil.move(dl, f'{CK}/pytorch_model.bin')
 summary(stage='weights')
 
@@ -155,7 +165,7 @@ args = ('--lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5
         '--evaluation_strategy no --save_strategy no --learning_rate 2e-4 --weight_decay 0. --warmup_ratio 0.03 '
         '--lr_scheduler_type cosine --logging_steps 1 --model_max_length 3072 --gradient_checkpointing True '
         '--dataloader_num_workers 1 --lazy_preprocess True --report_to none')
-env = f'cd {CG} && HF_HOME={TMP}/hf PYTHONPATH={CG}:{GC} TOKENIZERS_PARALLELISM=false'
+env = f'cd {CG} && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 HF_HOME={TMP}/hf PYTHONPATH={CG}:{GC} TOKENIZERS_PARALLELISM=false'
 summary(stage='inference')
 r = sh(f'{env} python scripts/kaggle_imggen.py {args} 2>&1 | tee {WORK}/inference.log | tail -60', check=False)
 

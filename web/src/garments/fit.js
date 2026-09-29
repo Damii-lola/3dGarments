@@ -545,7 +545,7 @@ function sewAndDrape(body, human, item, atlas, under, warm) {
     for (const o of [0, n]) { sp.push(a + o, b + o); sr.push(d2(a, b)); }
     if (d != null) for (const o of [0, n]) { bp.push(c + o, d + o); br.push(d2(c, d)); }
   }
-  cloth.addGroup(sp, sr, fab.stretch);
+  cloth.addGroup(sp, sr, fab.stretch).limit = 1.08;
   cloth.addGroup(bp, br, fab.bend);
   const sewn = [...pat.sewn], seamPairs = [], seamRest = [];
   for (const v of sewn) { seamPairs.push(v, n + v); seamRest.push(warm ? 0 : zF - zB); }
@@ -591,8 +591,15 @@ function sewAndDrape(body, human, item, atlas, under, warm) {
       // arms down to the pose shown: the cloth is carried by the skin under it (as the finished
       // garment will be), then settles there under gravity and collisions
       const X = cloth.x, W = [], A0 = [], a = new Float64Array(12);
+      // a point of a sleeve (outside the photo's torso edges) is carried by its arm; the rest by the skin under it
+      const armOf = (k) => {
+        const i = k % n, gx = P2[i * 2], gy = P2[i * 2 + 1], e = F.torsoAt(gy);
+        if (!e || (gx > e[0] - 0.01 && gx < e[1] + 0.01) || !(geo.sleeves?.left || geo.sleeves?.right)) return null;
+        return gx < geo.centerX ? 'arm_r' : 'arm_l';            // image-left = the body's right
+      };
       for (let k = 0; k < NP; k++) {
-        const i = ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], (v) => reg[v] !== 'head' && reg[v] !== 'hand', 6);
+        const arm = armOf(k);
+        const i = ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], arm ? (v) => reg[v] === arm : (v) => reg[v] !== 'head' && reg[v] !== 'hand', 8);
         W.push(i >= 0 ? ctx.WL[i] : [[body.boneIndex.pelvis, 1]]);
       }
       const MEs = sk.ME;
@@ -616,6 +623,7 @@ function sewAndDrape(body, human, item, atlas, under, warm) {
         for (let r = 0; r < 3; r++) cloth.step(dt, SUB, G, col, thick);
       }
       log('carried');
+      if (globalThis.__simStop === 'carried') return stopAt('carried');
     }
   }
   setPose(bones, display);
@@ -624,6 +632,7 @@ function sewAndDrape(body, human, item, atlas, under, warm) {
   log('display');
   for (let t = 0; t < (warm ? 50 : 90); t++) { cloth.step(dt, SUB, G, col, thick, t > 60 ? 0.97 : 0.995); if (t % 10 === 9) log('settle' + t); }
 
+  if (globalThis.__simStop === 'final') return stopAt('final');
   /* ---------------- mesh ---------------- */
   // front faces outward (+z): fix the winding from the photo's y-down grid
   const X = cloth.x;

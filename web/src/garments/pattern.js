@@ -88,6 +88,31 @@ export function buildPattern(F, B, s, { h = 0.015, kind = 'upper' } = {}) {
     for (const v of [a, b]) { nrm[v * 2] += px; nrm[v * 2 + 1] += py; isB[v] = 1; }
   }
 
+  /* ---- the outline follows the photo's true edge, not the grid's staircase ---- */
+  const nb = new Map();
+  for (let t = 0; t < tris.length; t += 3) for (let q = 0; q < 3; q++) {
+    const a = tris[t + q], b = tris[t + ((q + 1) % 3)];
+    if (!nb.has(a)) nb.set(a, new Set()); nb.get(a).add(b);
+  }
+  for (let v = 0; v < n; v++) {
+    if (!isB[v]) continue;
+    const l = Math.hypot(nrm[v * 2], nrm[v * 2 + 1]) || 1, ux = nrm[v * 2] / l, uy = nrm[v * 2 + 1] / l;
+    const x = pos2[v * 2], y = pos2[v * 2 + 1];
+    // search along the outward normal for the 50 % edge, within ±0.7 grid cells
+    let lo = -0.7 * hu, hi = 0.7 * hu;
+    if (!inside(x + ux * lo, y + uy * lo)) continue;
+    if (inside(x + ux * hi, y + uy * hi)) { pos2[v * 2] = x + ux * hi; pos2[v * 2 + 1] = y + uy * hi; continue; }
+    for (let it = 0; it < 12; it++) { const m = (lo + hi) / 2; if (inside(x + ux * m, y + uy * m)) lo = m; else hi = m; }
+    pos2[v * 2] = x + ux * lo; pos2[v * 2 + 1] = y + uy * lo;
+  }
+  // interior points next to the outline relax toward their neighbours' mean (no slivers)
+  for (let it = 0; it < 2; it++) for (let v = 0; v < n; v++) {
+    if (isB[v] || ![...(nb.get(v) || [])].some((u) => isB[u])) continue;
+    let sx = 0, sy = 0, k = 0;
+    for (const u of nb.get(v)) { sx += pos2[u * 2]; sy += pos2[u * 2 + 1]; k++; }
+    pos2[v * 2] = 0.5 * pos2[v * 2] + 0.5 * sx / k; pos2[v * 2 + 1] = 0.5 * pos2[v * 2 + 1] + 0.5 * sy / k;
+  }
+
   /* ---- which parts of the outline are openings ---- */
   const cx = geo.centerX, top = geo.top, bottom = geo.bottom;
   const sleeves = [geo.sleeves?.left, geo.sleeves?.right].filter(Boolean);
