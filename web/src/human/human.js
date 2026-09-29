@@ -28,10 +28,11 @@ const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
  *   lat     how much of the upper arm's radius must clear the chest / lats (less = rests further in)
  *   follow  forearm tilt relative to the upper arm, degrees (+ out, − back toward the thigh)
  *   maxOut  upper-arm tilt cap, degrees (a heavy body's arm rests into the soft tissue instead)
+ *   minOut  upper-arm tilt floor, degrees: a visible gap under the armpit whatever the lats do
  * The male's big lats hold the upper arm out from the body with the forearm hanging down from the
  * elbow; the female's arm lies close with the forearm continuing its line.
  */
-const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90 }, male: { lat: 0.9, follow: -10, maxOut: 13 } };
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.9, follow: -14, maxOut: 22, minOut: 22 } };
 const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
 const FWD = new THREE.Vector3(0, 0, 1), DOWN = new THREE.Vector3(0, -1, 0);
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -492,7 +493,7 @@ export class Human {
     if (isHang(U)) {
       // (the arm may rest a little into the lats: soft tissue gives, so the radius is taken small)
       while (upper < 50 && !this.#clear(shoulder, dir(upper, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat * 0.875, sg, 0.002, [0.6, 0.8, 1])) upper += 0.5;
-      upper = Math.min(upper, fit.maxOut) + (U.out || 0);
+      upper = Math.max(fit.minOut, Math.min(upper, fit.maxOut)) + (U.out || 0);
       this.#aim(ua, dir(upper, U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
     if (isHang(F)) {

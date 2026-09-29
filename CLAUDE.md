@@ -38,7 +38,7 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         hips/thighs push it out only as needed (the hand is part of that test, following its fingers' curl, down
                         to mid-thigh), and if that is > 8° past the upper arm, the upper arm tilts out instead. Per-model ARM_FIT in
                         human.js: the male's upper arm stands out from his lats (elbow away from the body, forearm hanging
-                        back down, capped 13° for heavy bodies); the female's lies close. Check arms with an
+                        back down; fixed at 22° so the gap under the armpit shows on every body — clearance numbers lie, check the render); the female's lies close. Check arms with an
                         orthographic silhouette of the skinned arm, not bone angles)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
