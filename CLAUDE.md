@@ -34,9 +34,10 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/human/assets.js   model URLs
   src/human/human.js    Human: loads both GLBs, re-bases limb bones on pose zero, width morph + rebind, pose, hang solver, feet on floor
                         (the hang solver runs per slider tick: typed-array torso skinning + 1 cm y-slices; keep it that cheap.
-                        It also keeps the arm STRAIGHT as seen from the front: it skins a ~900-vertex sample of each arm and tilts
-                        the forearm until the outer contour runs straight shoulder → wrist (#armBow), capped at 21°; the hand is
-                        part of the clearance test, following the fingers' curl, down to mid-thigh)
+                        Arms hang straight down: the forearm continues the upper arm's line (+1°) and never angles back in;
+                        hips/thighs push it out only as needed (the hand is part of that test, following its fingers' curl, down
+                        to mid-thigh), and if that is > 8° past the upper arm, the upper arm tilts out instead. Check arms with an
+                        orthographic silhouette of the skinned arm, not bone angles)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()

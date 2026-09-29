@@ -204,23 +204,6 @@ class Body {
       }
       for (let k = 0; k < 4; k++) { t.bi[n * 4 + k] = si.getComponent(v, k); t.bw[n * 4 + k] = sw.getComponent(v, k); }
     });
-    // each arm's own skin (upper arm + forearm), for the straight-arm check of the hang solver
-    const pack = (vs) => {
-      const P = { n: vs.length, verts: Uint32Array.from(vs), base: new Float32Array(vs.length * 3), dPos: new Float32Array(vs.length * 3), rest: new Float32Array(vs.length * 3), bi: new Uint16Array(vs.length * 4), bw: new Float32Array(vs.length * 4) };
-      vs.forEach((v, n) => {
-        for (let k = 0; k < 3; k++) { P.base[n * 3 + k] = pos.getComponent(v, k); P.dPos[n * 3 + k] = morph ? morph.getComponent(v, k) : 0; }
-        for (let k = 0; k < 4; k++) { P.bi[n * 4 + k] = si.getComponent(v, k); P.bw[n * 4 + k] = sw.getComponent(v, k); }
-      });
-      return P;
-    };
-    const part = this.mesh.geometry.attributes._part;
-    this.armSet = {};
-    for (const s of ['l', 'r']) {
-      const own = new Set([bi[`upperarm_${s}`], bi[`lowerarm_${s}`]]), vs = [];
-      for (let v = 0; v < n; v++) if (own.has(this.dom[v]) && (!part || part.getX(v) === 0)) vs.push(v);
-      const st = Math.max(1, Math.floor(vs.length / 900));
-      this.armSet[s] = pack(vs.filter((_, i) => i % st === 0));
-    }
     this.#refreshTorso();
   }
 
@@ -273,7 +256,7 @@ class Body {
   /** the torso sample the arms must clear, in the current shape (rest space) */
   #refreshTorso() {
     if (!this.torso) return;
-    const sets = [this.torso, ...Object.values(this.armSet || {})];
+    const sets = [this.torso];
     const p = this.shape ? this.shape.positions({ ...this.morphs, width: this.width }) : null;
     const w = this.width || 0;
     for (const t of sets) {
@@ -448,30 +431,6 @@ export class Human {
     return { X, Y, Z };
   }
 
-  /**
-   * How far the arm's OUTER contour (seen from the front) bulges past the straight line from the
-   * shoulder's outer edge to the wrist's outer edge, in metres. A muscular forearm hanging straight
-   * down pushes the elbow outside that line — the arm then reads as bent outward.
-   */
-  #armBow(s, sh, wr) {
-    const B = this.active, sg = s === 'l' ? 1 : -1, { X, Y } = this.#skinPacked(B.armSet[s]);
-    const yT = sh.y - 0.06, yB = wr.y + 0.01, n = Math.max(2, Math.round((yT - yB) / 0.01));
-    const outer = new Float32Array(n + 1).fill(-1);
-    for (let i = 0; i < X.length; i++) {
-      const k = Math.round((yT - Y[i]) / (yT - yB) * n);
-      if (k >= 0 && k <= n) outer[k] = Math.max(outer[k], sg * X[i]);
-    }
-    let top = 0, bot = n;
-    while (top < n && outer[top] < 0) top++;
-    while (bot > 0 && outer[bot] < 0) bot--;
-    let bow = 0;
-    for (let k = top + 3; k <= bot - 3; k++) {
-      if (outer[k] < 0) continue;
-      const chord = outer[top] + (outer[bot] - outer[top]) * (k - top) / (bot - top);
-      bow = Math.max(bow, outer[k] - chord);
-    }
-    return bow;
-  }
 
   /** Is the segment from `a` along unit `d` (length L, radius r) clear of the torso on side `sg` by `gap`? */
   #clear(a, d, L, r0, r1, sg, gap, ts, hook = 0) {
@@ -506,33 +465,35 @@ export class Human {
     const toLocal = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
     const rad = THREE.MathUtils.degToRad;
     const dir = (out, fwd) => new THREE.Vector3(sg * Math.sin(rad(out)), -Math.cos(rad(out)) * Math.cos(rad(fwd)), Math.cos(rad(out)) * Math.sin(rad(fwd)));
+    const elbow = () => { la.updateWorldMatrix(true, false); return la.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal); };
+    const shoulder = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
+    // forearm: continues the upper arm's line (+1°, a hint of carrying angle), never angles back in
+    // past it (that reads as an elbow bent outward), and tilts out only as far as the hips and
+    // thighs require (the hand included, following its fingers' curl, so it rests beside the thigh)
+    const forearm = () => {
+      const a = elbow();
+      const upOut = THREE.MathUtils.radToDeg(Math.atan2(sg * (a.x - shoulder.x), shoulder.y - a.y));
+      let out = Math.max(0, upOut + 1);
+      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.012, [0.4, 0.7, 1, 1.25, 1.45], 0.3)) out += 0.5;
+      return { out, upOut };
+    };
+    let upper = 0;
     if (isHang(U)) {
-      const a = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
-      let out = 0;
       // (the arm may rest a little into the lats: soft tissue gives, so the radius is taken small)
-      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.48, (A.rUpper + B.armGrowth(s, 'upper')) * 0.42, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
-      this.#aim(ua, dir(out + (U.out || 0), U.fwd || 0), sg * (U.twist || 0), U.extra);
+      while (upper < 50 && !this.#clear(shoulder, dir(upper, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.48, (A.rUpper + B.armGrowth(s, 'upper')) * 0.42, sg, 0.002, [0.6, 0.8, 1])) upper += 0.5;
+      upper += U.out || 0;
+      this.#aim(ua, dir(upper, U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
     if (isHang(F)) {
-      la.updateWorldMatrix(true, false);
-      const a = la.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
-      // the forearm never angles back in past the upper arm (that reads as an elbow bent outward):
-      // it starts from the upper arm's own tilt, which gives the natural carrying angle
-      const sh = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
-      const upOut = THREE.MathUtils.radToDeg(Math.atan2(sg * (a.x - sh.x), sh.y - a.y));
-      let out = Math.max(0, upOut - 3);
-      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.012, [0.4, 0.7, 1, 1.25, 1.45], 0.3)) out += 0.5;   // (past 1: the hand, so it rests beside the thigh, not in it)
-      this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
-      // straight arm: tilt the forearm out until the arm's outer contour runs straight from the
-      // shoulder to the wrist (a thick forearm hanging plumb makes the elbow bulge out)
-      const hd = B.bones[B.boneIndex[`hand_${s}`]];
-      const wrist = () => hd.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
-      // (capped: a heavy forearm can't make a perfect line, and past ~15° off the upper arm it looks posed)
-      const cap = Math.min(upOut + 15, 21);
-      for (let it = 0; it < 30 && out + 1 <= cap && this.#armBow(s, sh, wrist()) > 0.003; it++) {
-        out += 1;
-        this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
+      let f = forearm();
+      // the whole arm hangs straight: if the hips push the forearm out more than 8° past the upper
+      // arm, the upper arm tilts out instead of the elbow tucking into the waist
+      for (let it = 0; isHang(U) && it < 30 && f.out - f.upOut > 8; it++) {
+        upper += 1;
+        this.#aim(ua, dir(upper, U.fwd || 0), sg * (U.twist || 0), U.extra);
+        f = forearm();
       }
+      this.#aim(la, dir(f.out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
     }
   }
 

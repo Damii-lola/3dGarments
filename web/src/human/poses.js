@@ -66,8 +66,8 @@ const hand = (curl, spread = 0, thumb = [0, 0, 0]) => {
 };
 
 export const HANDS = {
-  relaxed: { label: 'Relaxed', pose: hand([9, 20, 12, 3.5], -1.6, [8, 10, -12]) },  // fingers together, curling a little more toward the pinky; thumb along the index
-  soft: { label: 'Soft', pose: hand([16, 24, 14, 4], -0.5, [10, 14, -18]) },
+  relaxed: { label: 'Relaxed', pose: hand([5, 12, 7, 3], -1.2, [10, 6, -46]) },  // a hanging hand: fingers nearly straight, a little more curl toward the pinky; thumb resting along the index
+  soft: { label: 'Soft', pose: hand([10, 18, 10, 3.5], -1, [12, 10, -44]) },  // a little more curl than relaxed; thumb along the index
   open: { label: 'Open', pose: hand([2, 3, 2, 0], 5, [-5, 2, 10]) },
   fist: { label: 'Fist', pose: hand([80, 95, 60, 3], 0, [25, 40, -10]) },
   point: { label: 'Point', pose: { ...hand([80, 95, 60, 3], 0, [25, 40, -10]), index_01: [0, 0, 0], index_02: [2, 0, 0], index_03: [2, 0, 0] } },
@@ -88,7 +88,7 @@ const armsDown = {
   clavicle: [0, 0, -4],
   upperarm: { hang: true, fwd: 2 },
   lowerarm: { hang: true, fwd: 10, twist: 16 },   // palm to the thigh, rolled ~15° back (a relaxed forearm)
-  hand: [-28, 0, -4],                                // hand in line with the forearm (seen from the front it bends in only ~5°)
+  hand: [-18, 0, -4],                                // hand in line with the forearm, a very slight inward bend seen from the front
 };
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
 const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
