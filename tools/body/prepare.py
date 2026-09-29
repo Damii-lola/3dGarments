@@ -305,8 +305,33 @@ def mannequin_head(V, F, J, W, part, cut_y, head_bone, neck_bone, blur=0.015, vo
     return V2[used], remap[F2], J2[used], W2[used], part2[used]
 
 
+# --------------------------------------------------------------------------- boxer briefs
+def boxer_briefs(V, F, J, W, part, top, hem):
+    """
+    Black boxer briefs: a copy of the skin between the waistband (`top`) and the leg hems (`hem`),
+    tagged as fabric (the runtime floats fabric 2.5 mm off the skin). Its open edges are snapped onto
+    the two cut heights so the waistband and the hems are clean straight lines.
+    """
+    skin = part == PART['skin']
+    inside = skin & (V[:, 1] <= top) & (V[:, 1] >= hem)
+    tri = F[inside[F].all(1)]
+    used = np.unique(tri)
+    remap = -np.ones(len(V), int)
+    remap[used] = np.arange(len(used)) + len(V)
+    BV = V[used].copy()
+    e = np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), 1)
+    u, cnt = np.unique(e, axis=0, return_counts=True)
+    edge_v = np.unique(u[cnt == 1])
+    k = remap[edge_v] - len(V)
+    y = BV[k, 1]
+    BV[k, 1] = np.where(np.abs(y - top) < np.abs(y - hem), top, hem)
+    print(f'  boxer briefs: {len(used)} verts, {len(tri)} tris, waistband {top:.3f} m, hems {hem:.3f} m')
+    return (np.concatenate([V, BV]), np.concatenate([F, remap[tri]]), np.concatenate([J, J[used]]),
+            np.concatenate([W, W[used]]), np.concatenate([part, np.full(len(used), PART['fabric'], np.float32)]))
+
+
 # --------------------------------------------------------------------------- rigged models
-def rigged(name, src, MAP, keep, faceless=False):
+def rigged(name, src, MAP, keep, faceless=False, boxers=False):
     """
     keep: {mesh name: (part, [material names to drop])} — meshes not listed are left out
     (transparent cards: lashes, brows, tear lines … read as floating strips in a clay render).
@@ -375,6 +400,12 @@ def rigged(name, src, MAP, keep, faceless=False):
     shift = np.array([-(V[body, 0].max() + V[body, 0].min()) / 2, -V[:, 1].min(), -(V[body, 2].max() + V[body, 2].min()) / 2])
     V = V + shift
     heads = np.array([B[MAP[n]]['p'] for n in names]) / 100 + shift
+    if boxers:
+        H = lambda n: heads[names.index(n)]
+        top = H('pelvis')[1] + 0.055                                        # waistband, just under the navel
+        hem = H('calf_l')[1] + 0.5 * (H('thigh_l')[1] - H('calf_l')[1])     # mid-thigh
+        V, F, J, W, part = boxer_briefs(V, F, J, W, part, top, hem)
+        body = part == 0
     # tails: end bones where the rig has them, else the top of the head / extrapolated
     extra_t = {'head': np.array([heads[names.index('head')][0], V[body, 1].max(), heads[names.index('head')][2]])}
     for sd, S in (('l', 'Left'), ('r', 'Right')):
@@ -401,7 +432,7 @@ def rigged(name, src, MAP, keep, faceless=False):
 if __name__ == '__main__':
     which = sys.argv[1:] or ['male', 'female']
     if 'male' in which:
-        rigged('male', 'MaleModel', MIXAMO, {'Ch36': (PART['skin'], [])})
+        rigged('male', 'MaleModel', MIXAMO, {'Ch36': (PART['skin'], [])}, boxers=True)
     if 'female' in which:
         rigged('female', 'FemaleModel', CC, {
             'CC_Base_Body': (PART['skin'], ['Std_Eyelash']),
