@@ -1,15 +1,17 @@
 name: Deploy web → GitHub Pages
 
+# Runs on EVERY push to main: if the repo is also set to "Deploy from a branch", GitHub publishes
+# the raw repository on each push, and only a fresh deploy of the built site can replace it.
 on:
   push:
     branches: [main]
-    paths: ['web/**', 'test/**', 'server/src/shared/**', '.github/workflows/deploy-web.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 concurrency:
   group: pages
@@ -48,6 +50,23 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Serve Pages from this workflow (not the raw branch)
+        continue-on-error: true
+        run: |
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow \
+            && echo "Pages source is now GitHub Actions" \
+            || echo "::warning::Could not switch Pages to 'GitHub Actions' (Settings → Pages → Source). Deploying after the branch build instead."
+      - name: Let any branch build of this commit finish first, so this deploy lands last
+        run: |
+          for i in $(seq 1 60); do
+            states=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=50" \
+              --jq '[.workflow_runs[] | select(.name == "pages build and deployment") | .status] | join(" ")')
+            if [ -z "$states" ] && [ "$i" -ge 4 ]; then echo "no branch build"; break; fi
+            if [ -n "$states" ] && ! echo "$states" | grep -qE 'queued|in_progress|waiting|requested|pending'; then echo "branch build done: $states"; break; fi
+            sleep 10
+          done
       - id: deployment
         uses: actions/deploy-pages@v4
