@@ -33,9 +33,8 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/scene/stage.js    renderer, studio rig (cyclorama + lights follow camera), HDRIs, views, WYSIWYG capture
                         renders ON DEMAND: after changing anything in the scene call stage.invalidate(n, live) (live = a slider is
                         being dragged; main.js does it for shape, look, pose). LOW_POWER tier (touch / small screen / ≤4 cores):
-                        pixel ratio ≤1.5, 1K shadows, half-res AO; while anything moves it skips AO, then draws one full frame
-                        when it settles. NEVER change the pixel ratio / canvas size during interaction (a buffer realloc stalls
-                        phones for 100+ ms — that was the drag stutter). Resizes reallocate only once the size settles
+                        pixel ratio ≤1.5, 1K shadows, half-res AO; while anything moves it skips AO and renders at an adaptive
+                        pixel ratio, then draws one full frame when it settles. Resizes reallocate only once the size settles
                         (iOS rotation); a lost WebGL context rebuilds the PMREM environments. No preserveDrawingBuffer (capture
                         calls toBlob in the same task as the draw). N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget.
                         Mobile CSS has no backdrop-filter, and the crop dim is a clip-path hole (not a 100vmax box-shadow)
