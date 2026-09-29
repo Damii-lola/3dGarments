@@ -182,7 +182,7 @@ class Body {
     }
     const torsoBones = new Set(['pelvis', 'spine_01', 'spine_02', 'spine_03'].map((k) => bi[k]).filter((x) => x != null));
     const thighs = new Set([bi.thigh_l, bi.thigh_r]);
-    const hipY = head('thigh_l').y - 0.12;
+    const hipY = head('thigh_l').y - 0.3;  // down to mid-thigh: the hands hang beside it
     const list = [];
     for (let v = 0; v < n; v++) {
       const b = this.dom[v];
@@ -426,10 +426,11 @@ export class Human {
   }
 
   /** Is the segment from `a` along unit `d` (length L, radius r) clear of the torso on side `sg` by `gap`? */
-  #clear(a, d, L, r0, r1, sg, gap, ts) {
+  #clear(a, d, L, r0, r1, sg, gap, ts, hook = 0) {
     const { x: TX, y: TY, z: TZ, y0, S, start } = this.active.torso;
     for (const t of ts) {
-      const px = a.x + d.x * L * t, py = a.y + d.y * L * t, pz = a.z + d.z * L * t;
+      // past t = 1 the points are the hand, whose relaxed fingers curl in toward the body by `hook`
+      const px = a.x + d.x * L * t - sg * hook * L * Math.max(0, t - 1), py = a.y + d.y * L * t, pz = a.z + d.z * L * t;
       const r = r0 + (r1 - r0) * t;
       const limit = sg * px - r - gap;
       const k0 = Math.floor((py - 0.02 - y0) / 0.01), k1 = Math.floor((py + 0.02 - y0) / 0.01);
@@ -461,7 +462,7 @@ export class Human {
       const a = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
       let out = 0;
       // (the arm may rest a little into the lats: soft tissue gives, so the radius is taken small)
-      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.6, (A.rUpper + B.armGrowth(s, 'upper')) * 0.52, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
+      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.48, (A.rUpper + B.armGrowth(s, 'upper')) * 0.42, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
       this.#aim(ua, dir(out + (U.out || 0), U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
     if (isHang(F)) {
@@ -471,8 +472,8 @@ export class Human {
       // it starts from the upper arm's own tilt, which gives the natural carrying angle
       const sh = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
       const upOut = THREE.MathUtils.radToDeg(Math.atan2(sg * (a.x - sh.x), sh.y - a.y));
-      let out = Math.max(0, upOut - 2);
-      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.01, [0.4, 0.7, 1])) out += 0.5;
+      let out = Math.max(0, upOut - 3);
+      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.012, [0.4, 0.7, 1, 1.25, 1.45], 0.3)) out += 0.5;   // (past 1: the hand, so it rests beside the thigh, not in it)
       this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
     }
   }
