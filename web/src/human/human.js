@@ -32,7 +32,7 @@ const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
  * The male's big lats hold the upper arm out from the body with the forearm hanging down from the
  * elbow; the female's arm lies close with the forearm continuing its line.
  */
-const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.48, follow: 1, maxOut: 90, minOut: 12 } };
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.48, follow: -12, maxOut: 90, minOut: 20 } };
 const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
 /**
  * Armpit skinning fix. A model sculpted with raised arms (A-pose) has its lats and armpit skin
