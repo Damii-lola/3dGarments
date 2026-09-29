@@ -208,22 +208,26 @@ def normalise(V, height=None):
 
 
 # --------------------------------------------------------------------------- male (Mixamo rig)
-def male():
-    d = json.load(open(os.path.join(OUT, 'MaleModel.json')))
-    P = np.array(d['P'], float).reshape(-1, 3) / 100  # cm → m
+def rigged(name, src, height=None):
+    """A model that ships with a Mixamo-style rig: keep its skeleton and skin weights."""
+    d = json.load(open(os.path.join(OUT, f'{src}.json')))
+    P = np.array(d['P'], float).reshape(-1, 3)
+    unit = 1 / 100 if height is None else height / (P[:, 1].max() - P[:, 1].min())  # cm → m, or to a height
+    P = P * unit
     SI = np.array(d['SI']).reshape(-1, 4)
     SW = np.array(d['SW'], float).reshape(-1, 4)
     V, F, first, inv = weld(P, None)
     V, s, off = normalise(V)
+    s *= unit
     SI, SW = SI[first], SW[first]
     mb = d['bones']
     mnames = [b['name'].replace('mixamorig1', '').replace('mixamorig', '') for b in mb]
     names = [n for n in MIXAMO if MIXAMO[n] in mnames]
-    src = [mnames.index(MIXAMO[n]) for n in names]
-    heads = np.array([mb[i]['p'] for i in src], float) / 100 * s + off
+    src_i = [mnames.index(MIXAMO[n]) for n in names]
+    heads = np.array([mb[i]['p'] for i in src_i], float) * s + off
     # parent: nearest mapped ancestor
     parents = []
-    for i in src:
+    for i in src_i:
         p = mb[i]['parent']
         while p >= 0 and mnames[p] not in [MIXAMO[n] for n in names]:
             p = mb[p]['parent']
@@ -236,15 +240,15 @@ def male():
             j = mb[j]['parent']
         remap[i] = names.index([n for n in names if MIXAMO[n] == mnames[j]][0])
     J = np.vectorize(remap.get)(SI)
-    ends = {e['name'].replace('mixamorig1', '').replace('mixamorig', ''): np.array(e['p']) / 100 * s + off for e in d.get('ends', [])}
+    ends = {e['name'].replace('mixamorig1', '').replace('mixamorig', ''): np.array(e['p']) * s + off for e in d.get('ends', [])}
     extra_t = {'head': ends.get('HeadTop_End', heads[names.index('head')] + [0, 0.2, 0])}
     for sd, S in (('l', 'Left'), ('r', 'Right')):
         extra_t[f'ball_{sd}'] = ends.get(f'{S}Toe_End', None)
         for f, Fn in (('thumb', 'Thumb'), ('index', 'Index'), ('middle', 'Middle'), ('ring', 'Ring'), ('pinky', 'Pinky')):
-            extra_t[f'{f}_03_{sd}'] = np.array([mb[k]['p'] for k in range(len(mb)) if mnames[k] == f'{S}Hand{Fn}4'][0]) / 100 * s + off
+            extra_t[f'{f}_03_{sd}'] = np.array([mb[k]['p'] for k in range(len(mb)) if mnames[k] == f'{S}Hand{Fn}4'][0]) * s + off
     extra_t = {k: v for k, v in extra_t.items() if v is not None}
     tails = tails_of(names, parents, heads, extra_t)
-    export('male', V, F, names, parents, heads, tails, J, SW)
+    export(name, V, F, names, parents, heads, tails, J, SW)
 
 
 # --------------------------------------------------------------------------- female (auto-rig)
@@ -454,6 +458,10 @@ def female():
 if __name__ == '__main__':
     which = sys.argv[1:] or ['male', 'female']
     if 'male' in which:
-        male()
-    if 'female' in which and 'female' in globals():
-        globals()['female']()
+        rigged('male', 'MaleModel')
+    if 'female' in which:
+        d = json.load(open(os.path.join(OUT, 'FemaleModel.json')))
+        if d.get('bones'):
+            rigged('female', 'FemaleModel', height=1.70)  # a rigged female: keep her own rig
+        else:
+            female()                                     # unrigged: auto-rig
