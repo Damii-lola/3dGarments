@@ -70,7 +70,7 @@ export function createStage(container) {
   camera.position.set(0, 1.1, 5.2);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
+  controls.dampingFactor = LOW_POWER ? 0.14 : 0.08; // snappier under a finger
   controls.minDistance = 0.5;
   controls.maxDistance = 12;
   controls.maxPolarAngle = Math.PI * 0.58;
@@ -266,17 +266,16 @@ export function createStage(container) {
   const clock = new THREE.Clock();
   // Render on demand: only while something moves (drag, damping, view tween, turntable, a slider
   // being dragged = invalidate(n, true)) or for a few frames after invalidate(); plus a slow safety
-  // redraw. While live on a phone, frames skip AO and render at an adaptive pixel ratio; when it
-  // settles, one full-quality frame (AO, full resolution) is drawn.
-  const SAFETY_MS = LOW_POWER ? 2000 : 1000;
+  // redraw. While live on a phone, frames skip AO; when it settles, one full-quality frame is drawn.
+  // Never resize the canvas mid-interaction: reallocating the drawing buffer stalls a phone for
+  // tens to hundreds of ms (that was the stutter at the start and end of every drag).
+  const SAFETY_MS = LOW_POWER ? 6000 : 1500;
   const lastCam = new THREE.Vector3();
   let frames = 3, lastDraw = 0, controlsMoved = false, liveUntil = 0, wasLive = false, lost = false;
-  let liveRatio = LOW_POWER ? Math.min(REST_RATIO, 1) : REST_RATIO, ema = 16, liveFrames = 0, lastT = 0, downgraded = false;
   const invalidate = (n = 3, live = false) => {
     frames = Math.max(frames, n);
     if (live) liveUntil = performance.now() + 250;
   };
-  const setRatio = (r) => { if (renderer.getPixelRatio() !== r) renderer.setPixelRatio(r); };
   controls.addEventListener('change', () => { controlsMoved = true; });
   controls.addEventListener('start', () => { dragging = true; invalidate(); });
   controls.addEventListener('end', () => { dragging = false; invalidate(4); });
@@ -293,21 +292,9 @@ export function createStage(container) {
     const live = !!(controlsMoved || tween || autoRotate || dragging || performance.now() < liveUntil);
     if (wasLive && !live) frames = Math.max(frames, 2); // settle: one full-quality frame
     wasLive = live;
-    if (!live && frames <= 0 && t - lastDraw < SAFETY_MS) { lastT = 0; return; }
+    if (!live && frames <= 0 && t - lastDraw < SAFETY_MS) return;
     frames = Math.max(0, frames - 1);
-    if (live && LOW_POWER) {
-      // adaptive resolution: drop when frames run long, probe upward only until the first drop
-      if (lastT) {
-        ema += (Math.min(t - lastT, 100) - ema) * 0.15;
-        if (++liveFrames % 20 === 0) {
-          if (ema > 24 && liveRatio > 0.6) { liveRatio = Math.max(0.6, liveRatio - 0.15); downgraded = true; }
-          else if (!downgraded && ema < 18 && liveRatio < REST_RATIO) liveRatio = Math.min(REST_RATIO, liveRatio + 0.125);
-        }
-      }
-      lastT = t;
-    } else lastT = 0;
     cheap = LOW_POWER && live;
-    setRatio(cheap ? liveRatio : REST_RATIO);
     rig.rotation.y = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
     draw();
     lastDraw = t;
