@@ -19,7 +19,7 @@ import os
 import sys
 
 import numpy as np
-from scipy import sparse
+from scipy import ndimage as nd, sparse
 
 import glb
 
@@ -224,8 +224,87 @@ def normalise(V, height=None):
     return V + off, s, off
 
 
+# --------------------------------------------------------------------------- mannequin head
+def mannequin_head(V, F, J, W, part, cut_y, head_bone, neck_bone, blur=0.015, vox=0.0018):
+    """
+    Turn the head into a plain mannequin head: the real head (skin + eyeballs + teeth, which fill the
+    sockets and the mouth) becomes a solid, the ears are shaved off, and the solid is blurred by
+    `blur` (m) — nose, lips and eye sockets melt away while the skull and jaw keep their shape. Its
+    surface replaces everything above `cut_y`; it reaches a little way down into the kept neck,
+    so the joint reads like the male mannequin's head/neck line.
+    """
+    import trimesh
+    from skimage import measure as skm
+    skin = part == 0
+    fill = (part == 0) | (part == PART['eye']) | (part == PART['teeth'])
+    y0 = cut_y - 0.05
+    rel_c = np.median(V[skin & (V[:, 1] > cut_y), 0])
+    tri = F[(V[F, 1] > y0).all(1) & fill[F].all(1)]
+    # sample the surface densely
+    A, Bv, C = V[tri[:, 0]], V[tri[:, 1]], V[tri[:, 2]]
+    area = 0.5 * np.linalg.norm(np.cross(Bv - A, C - A), axis=1)
+    n = np.maximum(1, (area / (vox * vox * 0.25)).astype(int))
+    idx = np.repeat(np.arange(len(tri)), n)
+    u, v = np.random.default_rng(0).random((2, len(idx)))
+    flip = u + v > 1
+    u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+    pts = A[idx] + (Bv - A)[idx] * u[:, None] + (C - A)[idx] * v[:, None]
+    lo = pts.min(0) - 0.03
+    hi = pts.max(0) + 0.03
+    shape = np.ceil((hi - lo) / vox).astype(int) + 1
+    occ = np.zeros(shape[[1, 2, 0]], bool)                      # (y, z, x)
+    ijk = np.round((pts - lo) / vox).astype(int)
+    occ[ijk[:, 1], ijk[:, 2], ijk[:, 0]] = True
+    occ = nd.binary_dilation(occ, iterations=1)
+    for k in range(occ.shape[0]):                               # every horizontal slice: fill inside the outline
+        occ[k] = nd.binary_fill_holes(occ[k])
+    occ = nd.binary_closing(occ, iterations=2)
+    for k in range(occ.shape[0]):
+        occ[k] = nd.binary_fill_holes(occ[k])
+    # shave the ears: in every slice, open with a 2.4 cm disk — thin flaps go, the skull stays
+    rr = int(round(0.012 / vox))
+    yy, xx = np.mgrid[-rr:rr + 1, -rr:rr + 1]
+    disk = xx * xx + yy * yy <= rr * rr
+    cut_k = int((cut_y + 0.03 - lo[1]) / vox)
+    for k in range(cut_k, occ.shape[0]):
+        occ[k] = nd.binary_opening(occ[k], structure=disk)
+    fld = nd.gaussian_filter(occ.astype(np.float32), blur / vox)
+    fld[: int((cut_y - 0.035 - lo[1]) / vox)] = 0              # open bottom, inside the neck
+    vv, ff, _, _ = skm.marching_cubes(fld, 0.5, spacing=(vox, vox, vox))
+    HV = np.stack([vv[:, 2], vv[:, 0], vv[:, 1]], 1) + lo       # (y, z, x) → x, y, z
+    hm = trimesh.Trimesh(HV, ff, process=True)
+    hm = max(hm.split(only_watertight=False), key=lambda m: len(m.faces))
+    trimesh.smoothing.filter_taubin(hm, lamb=0.5, nu=-0.53, iterations=25)   # voxel steps → smooth shell
+    hm = hm.simplify_quadric_decimation(face_count=12000)
+    trimesh.smoothing.filter_taubin(hm, lamb=0.5, nu=-0.53, iterations=20)
+    HV, HF = np.asarray(hm.vertices), np.asarray(hm.faces)
+    cen = HV[HF].mean(1)
+    nrm = np.cross(HV[HF[:, 1]] - HV[HF[:, 0]], HV[HF[:, 2]] - HV[HF[:, 0]])
+    axis = np.array([rel_c, 0, np.median(HV[:, 2])])
+    outward = cen - axis
+    outward[:, 1] = 0
+    if np.mean(np.sum(nrm * outward, 1)) < 0:
+        HF = HF[:, ::-1]
+    # body: drop the old head and every non-skin part up there (eyes, teeth, tongue)
+    kill = (V[:, 1] > cut_y) | (~skin & (V[:, 1] > cut_y - 0.05))
+    F = F[~kill[F].any(1)]
+    wh = np.clip((HV[:, 1] - (cut_y - 0.02)) / 0.04, 0, 1)
+    HJ = np.zeros((len(HV), J.shape[1]), int)
+    HW = np.zeros((len(HV), W.shape[1]))
+    HJ[:, 0], HJ[:, 1] = head_bone, neck_bone
+    HW[:, 0], HW[:, 1] = wh, 1 - wh
+    n0 = len(V)
+    V2, F2 = np.concatenate([V, HV]), np.concatenate([F, HF + n0])
+    J2, W2 = np.concatenate([J, HJ]), np.concatenate([W, HW])
+    part2 = np.concatenate([part, np.zeros(len(HV), np.float32)])
+    used = np.unique(F2)
+    remap = -np.ones(len(V2), int)
+    remap[used] = np.arange(len(used))
+    return V2[used], remap[F2], J2[used], W2[used], part2[used]
+
+
 # --------------------------------------------------------------------------- rigged models
-def rigged(name, src, MAP, keep):
+def rigged(name, src, MAP, keep, faceless=False):
     """
     keep: {mesh name: (part, [material names to drop])} — meshes not listed are left out
     (transparent cards: lashes, brows, tear lines … read as floating strips in a clay render).
@@ -282,6 +361,11 @@ def rigged(name, src, MAP, keep):
                 extra_t[f'{f}_03_{sd}'] = B[e]['p'] / 100 + shift
         if f'{S}Toe_End' in B:
             extra_t[f'ball_{sd}'] = B[f'{S}Toe_End']['p'] / 100 + shift
+    if faceless:
+        cut = heads[names.index('neck_01')][1] + 0.03       # under the jaw: the new head covers the neck end
+        V, F, J, W, part = mannequin_head(V, F, J, W, part, cut, names.index('head'), names.index('neck_01'))
+        body = part == 0
+        extra_t['head'] = np.array([heads[names.index('head')][0], V[body, 1].max(), heads[names.index('head')][2]])
     tails = tails_of(names, parents, heads, extra_t)
     eyes = {}
     for sd, sg in (('l', 1), ('r', -1)):
@@ -298,9 +382,8 @@ if __name__ == '__main__':
     if 'female' in which:
         rigged('female', 'FemaleModel', CC, {
             'CC_Base_Body': (PART['skin'], ['Std_Eyelash']),
-            'CC_Game_Eye': (PART['eye'], []),
+            'CC_Game_Eye': (PART['eye'], []),      # fill the sockets for the mannequin head, then dropped
             'CC_Game_Teeth': (PART['teeth'], []),
-            'CC_Base_Tongue': (PART['tongue'], []),
             'Bra': (PART['fabric'], []),
             'Underwear_Bottoms': (PART['fabric'], []),
-        })
+        }, faceless=True)  # plain mannequin head, like the male
