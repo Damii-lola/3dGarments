@@ -185,8 +185,11 @@ export function buildShape(mesh, bones, sex, bindPosArr) {
   const nS = smoothField(Float32Array.from(nrm), 3, 10);
   for (let i = 0; i < N; i++) { const l = hyp(nS[i * 3], nS[i * 3 + 1], nS[i * 3 + 2]) || 1; nS[i * 3] /= l; nS[i * 3 + 1] /= l; nS[i * 3 + 2] /= l; }
   // surface detail: position minus its smoothed self (muscle / core definition)
+  // (Taubin λ/μ smoothing: plain Laplacian smoothing shrinks the body, and that shrinkage would leak
+  // into the muscle target as a uniform inflate / deflate of several kilos)
   const detail = (() => {
-    const s = smoothField(Float32Array.from(pos), 3, 14);
+    let s = Float32Array.from(pos);
+    for (let it = 0; it < 14; it++) { s = smoothField(s, 3, 1, 0.5); s = smoothField(s, 3, 1, -0.53); }
     const d = new Float32Array(N * 3);
     for (let i = 0; i < N * 3; i++) d[i] = pos[i] - s[i];
     return d;

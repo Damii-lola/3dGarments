@@ -40,12 +40,29 @@ class Body {
     this.root.traverse((o) => { if (o.isSkinnedMesh) this.mesh = o; });
     const mesh = this.mesh;
     this.material = createBodyMaterial({ eyes: mesh.userData?.eyes });
-    mesh.material = [this.material]; // array: the lab swaps in debug materials by index
+    // garments render double-sided (their own group): a source garment folds over itself in places
+    // (the boxers' pouch), and its back face must read as cloth, not a hole
+    this.clothMaterial = createBodyMaterial({ eyes: mesh.userData?.eyes, side: THREE.DoubleSide });
+    mesh.material = [this.material, this.clothMaterial]; // array: the lab swaps in debug materials by index
     const g = mesh.geometry;
     for (const [k, v] of [['_part', 0], ['_edge', 9], ['_band', 9]]) {
       if (!g.attributes[k]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
     }
-    if (!mesh.geometry.groups.length) mesh.geometry.addGroup(0, Infinity, 0);
+    {
+      // skin triangles first (group 0), garment triangles last (group 1)
+      const idx = g.index.array, part = g.attributes._part.array, T = idx.length / 3;
+      const skinT = [], clothT = [];
+      for (let t = 0; t < T; t++) {
+        const cloth = part[idx[t * 3]] > 3.5 && part[idx[t * 3]] < 4.5 && part[idx[t * 3 + 1]] > 3.5 && part[idx[t * 3 + 2]] > 3.5;
+        (cloth ? clothT : skinT).push(t);
+      }
+      const out = new idx.constructor(idx.length);
+      [...skinT, ...clothT].forEach((t, k) => { out[k * 3] = idx[t * 3]; out[k * 3 + 1] = idx[t * 3 + 1]; out[k * 3 + 2] = idx[t * 3 + 2]; });
+      g.setIndex(new THREE.BufferAttribute(out, 1));
+      g.clearGroups();
+      g.addGroup(0, skinT.length * 3, 0);
+      if (clothT.length) g.addGroup(skinT.length * 3, clothT.length * 3, 1);
+    }
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     const extras = mesh.userData || {};
@@ -485,7 +502,7 @@ export class Human {
   }
 
   /** @param opts { tone?: css colour, clay?: bool (uniform grey sculpt look) } */
-  setSkin(opts = {}) { for (const b of Object.values(this.bodies)) b.material.userData.setSkin(opts); }
+  setSkin(opts = {}) { for (const b of Object.values(this.bodies)) for (const m of [b.material, b.clothMaterial]) m.userData.setSkin(opts); }
 
   dispose() {
     for (const b of Object.values(this.bodies)) { b.mesh.geometry.dispose(); b.mesh.skeleton.dispose(); b.material.dispose(); }

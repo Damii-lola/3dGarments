@@ -18,7 +18,7 @@ server/                 Express API (Render). ESM, Node 22.
     silhouette.js       segmentation, cut-out, silhouette measurements, categories
   test/                 node --test (runs the real pipeline on fixtures/samples.js SVG flat-lays)
   scripts/verify.mjs    live integration check (npm run verify)
-assets/                 SOURCE body models from the owner: MaleModel.fbx (Mixamo rig), FemaleModel.fbx (Character Creator rig + face, eyes, teeth, underwear)
+assets/                 SOURCE body models from the owner: MaleModel.fbx, FemaleModel.fbx (both Character Creator: rig + face, eyes, teeth, underwear)
 tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab page test/extract.html; test/meshes.html lists an FBX's meshes),
                         prepare.py (merge kept meshes, tag parts, weld, metres, rename the rig to our bones, width morph,
                         shoulder probes, eye centres → GLB), glb.py
@@ -63,15 +63,15 @@ render.yaml             Render blueprint
 
 ## Human conventions (don't break these)
 - Models are in metres, y up, facing +z, feet on y = 0, left = +x (prepare.py normalises them).
-- Bone names are ours (pelvis, spine_01…03, neck_01, head, clavicle/upperarm/lowerarm/hand/thigh/calf/foot/ball_l|r, fingers thumb|index|middle|ring|pinky_01…03_l|r). prepare.py maps Mixamo (male) and Character Creator (female) names; helper bones (twist, share, breast, face, toes) fold into their parents.
-- Both models are faceless mannequins. The female's face is removed in prepare.py (`mannequin_head`): the real head + eyes + teeth become a solid, ears are shaved per slice, the solid is blurred (~1.5 cm) and re-meshed, replacing everything above the jaw.
-- Vertex parts (_PART): 0 skin, 1 eye, 4 fabric, 5 teeth, 6 tongue (only skin + fabric remain after the mannequin head). The male's boxer briefs are generated in prepare.py (`boxer_briefs`: a copy of his skin from the waistband to mid-thigh, hems snapped straight). Fabric is always black, copies the nearest skin vertex's weights and is lifted ≥ 2.5 mm off the skin in prepare.py (the source hides skin under clothes). materials.js colours them (clay or skin tone; the iris is drawn around each eyeball centre from the GLB extras). Transparent cards (lashes, brows, tear lines) are dropped.
+- Bone names are ours (pelvis, spine_01…03, neck_01, head, clavicle/upperarm/lowerarm/hand/thigh/calf/foot/ball_l|r, fingers thumb|index|middle|ring|pinky_01…03_l|r). prepare.py maps the Character Creator names (both models); helper bones (twist, share, breast, face, toes) fold into their parents.
+- Both models are faceless mannequins, made in prepare.py (`mannequin_head`): the real head + eyes + teeth become a solid, ears are shaved per slice, the solid is blurred (~1.5 cm) and re-meshed, replacing everything above a cut under the jaw (`head_cut` above the neck bone: 3 cm female, 5 cm male). The skin is clipped exactly on the cut plane, its top 3 cm is snapped radially onto the shell, the shell dips under the neck below the cut, and the shell's lower part copies the neck's skin weights — one clean line, no rim/teeth.
+- Vertex parts (_PART): 0 skin, 1 eye, 4 fabric, 5 teeth, 6 tongue (only skin + fabric remain after the mannequin head). Underwear comes from the models (female Bra + Underwear_Bottoms, male Boxers). Garment triangles render double-sided in their own material group (human.js; source garments fold over themselves), small holes are closed (`fill_holes`), fabric that bridges off the skin (the crotch gusset) gets surface-smoothed weights so it stretches instead of folding, fabric is only lifted where the skin normals under it agree, and skin > 2 cm under a garment is sunk 2 mm (never visible, can't poke through). Fabric is always black, copies the nearest skin vertex's weights and is lifted ≥ 2.5 mm off the skin in prepare.py (the source hides skin under clothes). materials.js colours them (clay or skin tone; the iris is drawn around each eyeball centre from the GLB extras). Transparent cards (lashes, brows, tear lines) are dropped.
 - Bone frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. Feet/toes take their roll from "up" (x = y × +y) in BOTH prepare.py and human.js — a switching reference axis twists the foot. +z moves a left limb outward, and +y on the upper arm is internal rotation.
-- Pose zero (rig.js): every limb bone is re-based onto these directions whatever the model's bind pose (T-pose male, arms-down female), so all poses mean the same on every model. Don't edit rig.js without recalibrating poses.js.
+- Pose zero (rig.js): every limb bone is re-based onto these directions whatever the model's bind pose (T-pose male, A-pose female), so all poses mean the same on every model. Don't edit rig.js without recalibrating poses.js.
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.
 - Body shape (shape.js): each target is a displacement field placed with skin weights + mesh landmarks (breast/glute apexes,
-  natural waist, crotch) and surface-smoothed; clothing copies the nearest skin (inverse-square, so the boxers follow their source
-  vertex) and skin under clothing gets no surface-detail change (it would poke through). Targets are appended after the GLB's
+  natural waist, crotch) and surface-smoothed; clothing copies the nearest skin (inverse-square, so a skin-tight garment follows the skin right under it)
+  and skin under clothing gets no surface-detail change (it would poke through). Targets are appended after the GLB's
   width target (slot 0), with normal deltas. The other sex's targets are built in idle time after load.
 - Sync + limits (body.js): the proportion sliders are −1 … +1 across LIMITS (calibrated on renders: past them the body stops
   looking real), damped by body fat (`room()`: a heavy body has less room to add, a lean one less to lose). Body fat is the

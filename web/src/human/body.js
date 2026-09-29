@@ -27,7 +27,7 @@ export const toneGradient = () => `linear-gradient(90deg, ${SKIN_STOPS.join(', '
 /** Slider ranges (real measurements) and fit-model defaults. */
 export const RANGES = {
   female: { width: [30, 42], height: [58, 78], defaults: { width: 34, height: 68 } },
-  male: { width: [36, 50], height: [62, 82], defaults: { width: 42, height: 70 } },
+  male: { width: [38, 52], height: [62, 82], defaults: { width: 44, height: 72 } },
 };
 export const WIDTH_RANGE = [-1, 1.2]; // width morph: ±20 % shoulders per unit
 
@@ -52,7 +52,7 @@ export const ABDOMEN = {
  */
 export const LIMITS = {
   female: { fat: [-0.4, 1.5], muscle: [-1, 0.8], waist: [-1, 1], bust: [-1, 1], chest: [-1, 1], glutes: [-0.8, 0.9], hips: [-1, 1], thighs: [-1, 1] },
-  male: { fat: [-0.4, 1.5], muscle: [-1, 1], waist: [-1, 1], bust: [-0.6, 1], chest: [-1, 1], glutes: [-0.8, 0.8], hips: [-1, 1], thighs: [-1, 1] },
+  male: { fat: [-0.4, 1.05], muscle: [-1, 1], waist: [-1, 1], bust: [-0.6, 1], chest: [-1, 1], glutes: [-0.8, 0.8], hips: [-1, 1], thighs: [-1, 1] },
 };
 /** Proportion sliders (−1 … +1). Everything a slider adds is damped by body fat (see ModelController#room). */
 export const SHAPE_KEYS = ['waist', 'bust', 'chest', 'glutes', 'hips', 'thighs'];

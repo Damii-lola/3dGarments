@@ -16,7 +16,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 /* ================================================================ state */
 
 const modelDefaults = (sex = 'female') => ({ sex, ...RANGES[sex].defaults, tone: DEFAULT_TONE, ...SHAPE_DEFAULTS });
-const STORE = '3dg.tryon.v1';
+const STORE = '3dg.tryon.v2'; // v2: the new male model (other defaults)
 let M = modelDefaults();
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');

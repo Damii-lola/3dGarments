@@ -42,7 +42,7 @@ float n3(vec3 x) {
              mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
 }`;
 
-export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {} } = {}) {
+export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {}, side = THREE.FrontSide } = {}) {
   const uniforms = {
     uSSS: { value: new THREE.Vector3(0.3, 0.3, 0.3) },
     uClay: { value: 0 },
@@ -57,6 +57,7 @@ export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {} }
     sheen: 0.3,
     sheenRoughness: 0.6,
     sheenColor: new THREE.Color('#d8d8dc'),
+    side,
   });
   mat.name = 'body';
   mat.onBeforeCompile = (shader) => {

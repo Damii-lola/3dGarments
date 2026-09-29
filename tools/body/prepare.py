@@ -8,10 +8,12 @@ Turn the studio's body models (assets/*.fbx) into web-ready rigged GLBs.
 - welds the mesh (one vertex per position → smooth shading, no texture seams), metres, feet on
   y = 0, centred, facing +z
 - skeleton renamed to the pose library's bone names (pelvis, spine_01…, upperarm_l, thumb_01_l …)
-  from the model's own rig (Mixamo for the male, Character Creator for the female), keeping its
+  from the models' own Character Creator rigs, keeping their
   skin weights; helper bones (twist, share, breast, face, toes) fold into their parents
 - several meshes (body, eyes, teeth, underwear …) merge into one skinned mesh; each vertex is
   tagged with its part (_PART) so the runtime material can colour skin / eyes / fabric / mouth
+- both get a plain mannequin head (mannequin_head: skin clipped on a plane under the jaw, blended
+  into a blurred, re-meshed head shell, same skin weights across the seam)
 - bone rest frames follow the runtime's convention (y head → tail, x = y × +z; hands use the palm)
 """
 import json
@@ -28,15 +30,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'out')
 PUB = os.path.join(HERE, '..', '..', 'web', 'public', 'body')
 
-# ours ← Mixamo
-MIXAMO = {'pelvis': 'Hips', 'spine_01': 'Spine', 'spine_02': 'Spine1', 'spine_03': 'Spine2', 'neck_01': 'Neck', 'head': 'Head'}
-for s, S in (('l', 'Left'), ('r', 'Right')):
-    MIXAMO.update({f'clavicle_{s}': f'{S}Shoulder', f'upperarm_{s}': f'{S}Arm', f'lowerarm_{s}': f'{S}ForeArm',
-                   f'hand_{s}': f'{S}Hand', f'thigh_{s}': f'{S}UpLeg', f'calf_{s}': f'{S}Leg', f'foot_{s}': f'{S}Foot',
-                   f'ball_{s}': f'{S}ToeBase'})
-    for f, F in (('thumb', 'Thumb'), ('index', 'Index'), ('middle', 'Middle'), ('ring', 'Ring'), ('pinky', 'Pinky')):
-        for k in (1, 2, 3):
-            MIXAMO[f'{f}_0{k}_{s}'] = f'{S}Hand{F}{k}'
 HAND_CHAIN = ('hand_', 'thumb_', 'index_', 'middle_', 'ring_', 'pinky_')
 
 # ours ← Character Creator (CC3/CC4, "CC_Base_" prefix stripped)
@@ -278,7 +271,39 @@ def mannequin_head(V, F, J, W, part, cut_y, head_bone, neck_bone, blur=0.015, vo
     trimesh.smoothing.filter_taubin(hm, lamb=0.5, nu=-0.53, iterations=25)   # voxel steps → smooth shell
     hm = hm.simplify_quadric_decimation(face_count=12000)
     trimesh.smoothing.filter_taubin(hm, lamb=0.5, nu=-0.53, iterations=20)
-    HV, HF = np.asarray(hm.vertices), np.asarray(hm.faces)
+    HV, HF = np.asarray(hm.vertices).copy(), np.asarray(hm.faces)
+    # blend the kept neck into the shell: the top 3 cm of the neck is drawn onto the shell's surface
+    # (fully at the cut), and the shell dips just under the neck below the cut — one continuous skin
+    # instead of a rim or a groove where two nearly coincident surfaces cross
+    # clip the skin exactly on the cut plane (dropping whole triangles leaves a zig-zag rim that shows)
+    V, F, J, W, part = clip_plane(V, F, J, W, part, cut_y, (part == 0))
+    skin = part == 0
+    nk = skin & (np.abs(V[:, 1] - (cut_y - 0.035)) < 0.006)
+    nz = (V[nk, 2].max() + V[nk, 2].min()) / 2 if nk.any() else np.median(HV[:, 2])
+    zone = skin & (V[:, 1] > cut_y - 0.03) & (V[:, 1] <= cut_y + 1e-6)
+    if zone.any():
+        # radial snap: same height, same angle around the neck axis, the shell's radius there
+        sp, _ = trimesh.sample.sample_surface_even(trimesh.Trimesh(HV, HF, process=False), 250000, seed=0)
+        ang = lambda P: np.arctan2(P[:, 2] - nz, P[:, 0] - rel_c)
+        rad = lambda P: np.hypot(P[:, 0] - rel_c, P[:, 2] - nz)
+        key = lambda P: np.stack([P[:, 1], np.unwrap(ang(P)) * 0 + ang(P) * 0.07], 1)   # (height, arc length)
+        tree = cKDTree(np.concatenate([key(sp), key(sp) + [0, 2 * np.pi * 0.07], key(sp) - [0, 2 * np.pi * 0.07]]))
+        R = np.tile(rad(sp), 3)
+        _, ki = tree.query(key(V[zone]))
+        t = np.clip((V[zone, 1] - (cut_y - 0.03)) / 0.03, 0, 1)
+        w = t * t * (3 - 2 * t)
+        r0 = rad(V[zone])
+        r1 = r0 * (1 - w) + R[ki] * w
+        a0 = ang(V[zone])
+        V = V.copy()
+        V[zone, 0] = rel_c + np.cos(a0) * r1
+        V[zone, 2] = nz + np.sin(a0) * r1
+    low = HV[:, 1] < cut_y + 0.004
+    if low.any():
+        d = np.stack([HV[low, 0] - rel_c, np.zeros(low.sum()), HV[low, 2] - nz], 1)
+        r = np.linalg.norm(d, axis=1, keepdims=True) + 1e-9
+        t = np.clip((cut_y + 0.004 - HV[low, 1]) / 0.024, 0, 1)
+        HV[low] -= d / r * (0.01 * t * t * (3 - 2 * t))[:, None]
     cen = HV[HF].mean(1)
     nrm = np.cross(HV[HF[:, 1]] - HV[HF[:, 0]], HV[HF[:, 2]] - HV[HF[:, 0]])
     axis = np.array([rel_c, 0, np.median(HV[:, 2])])
@@ -288,13 +313,27 @@ def mannequin_head(V, F, J, W, part, cut_y, head_bone, neck_bone, blur=0.015, vo
         HF = HF[:, ::-1]
     # body: drop the old head and every non-skin part up there (eyes, teeth, tongue)
     face_parts = (part == PART['eye']) | (part == PART['teeth']) | (part == PART['tongue'])
-    kill = (V[:, 1] > cut_y) | face_parts                   # never the clothing (bra straps reach up here)
+    kill = (V[:, 1] > cut_y + 1e-6) | face_parts                   # never the clothing (bra straps reach up here)
     F = F[~kill[F].any(1)]
-    wh = np.clip((HV[:, 1] - (cut_y - 0.02)) / 0.04, 0, 1)
+    # skin weights: the shell's lower part moves EXACTLY like the neck skin it meets (else any head /
+    # neck rotation opens the seam), blending to the head bone higher up
+    keptv = np.unique(F)
+    ring = keptv[skin[keptv] & (V[keptv, 1] > cut_y - 0.045)]
+    _, kn = cKDTree(V[ring]).query(HV)
+    a = np.clip((HV[:, 1] - (cut_y + 0.005)) / 0.04, 0, 1)
+    a = a * a * (3 - 2 * a)
     HJ = np.zeros((len(HV), J.shape[1]), int)
     HW = np.zeros((len(HV), W.shape[1]))
-    HJ[:, 0], HJ[:, 1] = head_bone, neck_bone
-    HW[:, 0], HW[:, 1] = wh, 1 - wh
+    for i in range(len(HV)):
+        acc = {}
+        for j, w in zip(J[ring[kn[i]]], W[ring[kn[i]]]):
+            if w > 0:
+                acc[int(j)] = acc.get(int(j), 0) + w * (1 - a[i])
+        acc[head_bone] = acc.get(head_bone, 0) + a[i]
+        top = sorted(acc.items(), key=lambda kv: -kv[1])[:J.shape[1]]
+        tot = sum(w for _, w in top) or 1
+        for k, (j, w) in enumerate(top):
+            HJ[i, k], HW[i, k] = j, w / tot
     n0 = len(V)
     V2, F2 = np.concatenate([V, HV]), np.concatenate([F, HF + n0])
     J2, W2 = np.concatenate([J, HJ]), np.concatenate([W, HW])
@@ -305,32 +344,43 @@ def mannequin_head(V, F, J, W, part, cut_y, head_bone, neck_bone, blur=0.015, vo
     return V2[used], remap[F2], J2[used], W2[used], part2[used]
 
 
-# --------------------------------------------------------------------------- boxer briefs
-def boxer_briefs(V, F, J, W, part, top, hem):
-    """
-    Black boxer briefs: a copy of the skin between the waistband (`top`) and the leg hems (`hem`),
-    tagged as fabric (the runtime floats fabric 2.5 mm off the skin). Its open edges are snapped onto
-    the two cut heights so the waistband and the hems are clean straight lines.
-    """
-    skin = part == PART['skin']
-    inside = skin & (V[:, 1] <= top) & (V[:, 1] >= hem)
-    tri = F[inside[F].all(1)]
-    used = np.unique(tri)
-    remap = -np.ones(len(V), int)
-    remap[used] = np.arange(len(used)) + len(V)
-    BV = V[used].copy()
-    e = np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), 1)
-    u, cnt = np.unique(e, axis=0, return_counts=True)
-    edge_v = np.unique(u[cnt == 1])
-    k = remap[edge_v] - len(V)
-    y = BV[k, 1]
-    BV[k, 1] = np.where(np.abs(y - top) < np.abs(y - hem), top, hem)
-    print(f'  boxer briefs: {len(used)} verts, {len(tri)} tris, waistband {top:.3f} m, hems {hem:.3f} m')
-    return (np.concatenate([V, BV]), np.concatenate([F, remap[tri]]), np.concatenate([J, J[used]]),
-            np.concatenate([W, W[used]]), np.concatenate([part, np.full(len(used), PART['fabric'], np.float32)]))
+def clip_plane(V, F, J, W, part, y, sel):
+    """Split every triangle of `sel` vertices that crosses the plane y = const, so the part below
+    ends in a straight edge on the plane (new vertices take the lower vertex's weights)."""
+    above = V[F, 1] > y
+    na = above.sum(1)
+    cross = (na > 0) & (na < 3) & sel[F].all(1)
+    if not cross.any():
+        return V, F, J, W, part
+    newV, newJ, newW, newP, key = [], [], [], [], {}
+    n0 = len(V)
+
+    def cut(a, b):
+        k = (min(a, b), max(a, b))
+        if k not in key:
+            lo, hi = (a, b) if V[a, 1] <= y else (b, a)
+            t = (y - V[lo, 1]) / (V[hi, 1] - V[lo, 1])
+            key[k] = n0 + len(newV)
+            newV.append(V[lo] + (V[hi] - V[lo]) * t); newJ.append(J[lo]); newW.append(W[lo]); newP.append(part[lo])
+        return key[k]
+    faces = []
+    for f in F[cross]:
+        up = [V[v, 1] > y for v in f]
+        for r in range(3):                       # rotate so the pattern starts at a fixed position
+            a, b, c = f[r], f[(r + 1) % 3], f[(r + 2) % 3]
+            ua, ub, uc = up[r], up[(r + 1) % 3], up[(r + 2) % 3]
+            if sum(up) == 1 and ua:              # a above: keep the quad b, c + two cuts
+                ab, ca = cut(a, b), cut(c, a)
+                faces += [[ab, b, c], [ab, c, ca]]
+                break
+            if sum(up) == 2 and not ua:          # only a below: one triangle
+                faces.append([a, cut(a, b), cut(c, a)])
+                break
+    V2 = np.concatenate([V, np.array(newV)])
+    F2 = np.concatenate([F[~cross], np.array(faces, int)])
+    return V2, F2, np.concatenate([J, np.array(newJ)]), np.concatenate([W, np.array(newW)]), np.concatenate([part, np.array(newP, part.dtype)])
 
 
-# --------------------------------------------------------------------------- garment detail lines
 def garment_lines(V, F, part, band_edge, band_width):
     """
     Per fabric vertex, for the shader's stitching and elastic band:
@@ -375,6 +425,36 @@ def garment_lines(V, F, part, band_edge, band_width):
     return edge, band
 
 
+def fill_holes(V, F, J, W, part, sel, max_perimeter=0.3):
+    """
+    Close the small holes of a garment (the source can leave a gusset open where the legs hid it):
+    every open boundary loop of `sel` triangles shorter than `max_perimeter` (m) gets a fan around
+    its centroid. The hems (waist, legs, straps) are much longer and stay open.
+    """
+    Fs = F[sel[F].all(1)]
+    d = np.concatenate([Fs[:, [0, 1]], Fs[:, [1, 2]], Fs[:, [2, 0]]])      # directed edges
+    key = np.sort(d, 1)
+    _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    bd = d[cnt[inv.ravel()] == 1]
+    if not len(bd):
+        return V, F, J, W, part
+    lab = _edge_components(bd, len(V))[bd[:, 0]]
+    newV, newF, newJ, newW = [], [], [], []
+    for L in np.unique(lab):
+        E = bd[lab == L]
+        per = np.linalg.norm(V[E[:, 0]] - V[E[:, 1]], axis=1).sum()
+        print(f'  garment boundary loop: {len(E)} edges, {per * 100:.1f} cm' + (' → filled' if per < max_perimeter else ''))
+        if per >= max_perimeter:
+            continue
+        c = len(V) + len(newV)
+        newV.append(V[np.unique(E)].mean(0)); newJ.append(J[E[0, 0]]); newW.append(W[E[0, 0]])
+        newF += [[b, a, c] for a, b in E]                                      # reversed: faces the same way
+    if not newV:
+        return V, F, J, W, part
+    return (np.concatenate([V, newV]), np.concatenate([F, np.array(newF, int)]), np.concatenate([J, newJ]),
+            np.concatenate([W, newW]), np.concatenate([part, np.full(len(newV), PART['fabric'], part.dtype)]))
+
+
 def _edge_components(edges, n):
     from scipy.sparse.csgraph import connected_components
     G = sparse.coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
@@ -397,7 +477,7 @@ def _vertex_components(F, n):
 
 
 # --------------------------------------------------------------------------- rigged models
-def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', band_width=0.012):
+def rigged(name, src, MAP, keep, faceless=False, band_edge='top', band_width=0.012, head_cut=0.03):
     """
     keep: {mesh name: (part, [material names to drop])} — meshes not listed are left out
     (transparent cards: lashes, brows, tear lines … read as floating strips in a clay render).
@@ -448,6 +528,8 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', 
     J, W, part = np.concatenate(Js), np.concatenate(Ws), np.concatenate(Ps).astype(np.float32)
     # clothing moves exactly like the skin under it: copy the nearest skin vertex's weights
     # (its own weights drift from the skin's when the shoulders move, and the skin pokes through)
+    if (part == PART['fabric']).any():
+        V, F, J, W, part = fill_holes(V, F, J, W, part, part == PART['fabric'])
     cloth = part == PART['fabric']
     if cloth.any():
         skin_i = np.nonzero(part == PART['skin'])[0]
@@ -462,21 +544,38 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', 
         dist, kk = cKDTree(V[skin_i]).query(V[ci], k=6)
         base = V[skin_i[kk]].mean(1)
         nrm = Ns[skin_i[kk]].mean(1)
-        nrm /= np.linalg.norm(nrm, axis=1, keepdims=True) + 1e-9
+        agree = np.linalg.norm(nrm, axis=1)          # ~1 on one surface; ~0 between the thighs (normals oppose)
+        nrm /= agree[:, None] + 1e-9
         h = np.sum((V[ci] - base) * nrm, 1)
-        lift = np.maximum(0, 0.0025 - h)
+        lift = np.maximum(0, 0.0025 - h) * np.clip((agree - 0.6) / 0.3, 0, 1)
         V[ci] += nrm * lift[:, None]
         print(f'  fabric lifted out of the skin: {(lift > 0.0005).sum()} verts (max {lift.max() * 1000:.1f} mm)')
+        # fabric that bridges away from the skin (the crotch gusset between the legs) would split
+        # between the two thighs' weights and fold over when the legs part: smooth its weights over
+        # the garment, the more the farther it floats off the skin, so it stretches like cloth
+        gap = np.maximum(0, dist.min(1) - 0.004)
+        alpha = np.clip(gap / 0.012, 0, 1)
+        if (alpha > 0).any():
+            nb_ = int(J.max()) + 1
+            Wd = np.zeros((len(ci), nb_))
+            np.add.at(Wd, (np.repeat(np.arange(len(ci)), J.shape[1]), J[ci].ravel()), W[ci].ravel())
+            loc = -np.ones(len(V), int); loc[ci] = np.arange(len(ci))
+            Fc = loc[F[cloth[F].all(1)]]
+            A = adjacency(len(ci), Fc)
+            deg = np.asarray(A.sum(1)).ravel(); deg[deg == 0] = 1
+            W0, Wc = Wd.copy(), Wd.copy()
+            a_ = alpha[:, None]
+            for _ in range(25):
+                Wc = (1 - a_) * W0 + a_ * (A @ Wc) / deg[:, None]
+            top = np.argsort(-Wc, 1)[:, :J.shape[1]]
+            tw = np.take_along_axis(Wc, top, 1)
+            tw /= tw.sum(1, keepdims=True) + 1e-12
+            J[ci], W[ci] = top, tw
+            print(f'  bridging fabric re-weighted: {(alpha > 0).sum()} verts')
     body = part == 0
     shift = np.array([-(V[body, 0].max() + V[body, 0].min()) / 2, -V[:, 1].min(), -(V[body, 2].max() + V[body, 2].min()) / 2])
     V = V + shift
     heads = np.array([B[MAP[n]]['p'] for n in names]) / 100 + shift
-    if boxers:
-        H = lambda n: heads[names.index(n)]
-        top = H('pelvis')[1] + 0.055                                        # waistband, just under the navel
-        hem = H('calf_l')[1] + 0.5 * (H('thigh_l')[1] - H('calf_l')[1])     # mid-thigh
-        V, F, J, W, part = boxer_briefs(V, F, J, W, part, top, hem)
-        body = part == 0
     # tails: end bones where the rig has them, else the top of the head / extrapolated
     extra_t = {'head': np.array([heads[names.index('head')][0], V[body, 1].max(), heads[names.index('head')][2]])}
     for sd, S in (('l', 'Left'), ('r', 'Right')):
@@ -487,7 +586,7 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', 
         if f'{S}Toe_End' in B:
             extra_t[f'ball_{sd}'] = B[f'{S}Toe_End']['p'] / 100 + shift
     if faceless:
-        cut = heads[names.index('neck_01')][1] + 0.03       # under the jaw: the new head covers the neck end
+        cut = heads[names.index('neck_01')][1] + head_cut   # under the jaw: the new head covers the neck end
         V, F, J, W, part = mannequin_head(V, F, J, W, part, cut, names.index('head'), names.index('neck_01'))
         body = part == 0
         extra_t['head'] = np.array([heads[names.index('head')][0], V[body, 1].max(), heads[names.index('head')][2]])
@@ -498,6 +597,16 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', 
         if m.any():
             eyes[sd] = [round(float(x), 5) for x in V[m].mean(0)]
     edge, band = garment_lines(V, F, part, band_edge, band_width)
+    # skin deep under a garment (> 2 cm from any hem) is never seen: sink it 2 mm, so it can't poke
+    # through folds; near the hems it keeps its exact fit
+    cloth = np.nonzero(part == PART['fabric'])[0]
+    if len(cloth):
+        sk = np.nonzero(part == 0)[0]
+        dd, kf = cKDTree(V[cloth]).query(V[sk])
+        deep = np.clip((edge[cloth[kf]] - 0.02) / 0.015, 0, 1) * (dd < 0.015)
+        Ns = vertex_normals(V, F)
+        V = V.copy()
+        V[sk] -= Ns[sk] * (0.002 * deep)[:, None]
     export(name, V, F, names, parents, heads, tails, J, W, extra={'_PART': part, '_EDGE': edge, '_BAND': band},
            part=part, eyes=eyes)
 
@@ -505,7 +614,12 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', 
 if __name__ == '__main__':
     which = sys.argv[1:] or ['male', 'female']
     if 'male' in which:
-        rigged('male', 'MaleModel', MIXAMO, {'Ch36': (PART['skin'], [])}, boxers=True, band_edge='top', band_width=0.035)
+        rigged('male', 'MaleModel', CC, {
+            'CC_Base_Body': (PART['skin'], ['Std_Eyelash']),
+            'CC_Game_Eye': (PART['eye'], []),      # fill the sockets for the mannequin head, then dropped
+            'CC_Game_Teeth': (PART['teeth'], []),
+            'Boxers': (PART['fabric'], []),
+        }, faceless=True, band_edge='top', band_width=0.035, head_cut=0.05)  # plain mannequin head, his own boxers
     if 'female' in which:
         rigged('female', 'FemaleModel', CC, {
             'CC_Base_Body': (PART['skin'], ['Std_Eyelash']),
