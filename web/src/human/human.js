@@ -20,6 +20,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ZERO_DIRS, ZERO_PALM } from './rig.js';
 import { createBodyMaterial } from './materials.js';
 import { assetUrl } from './assets.js';
+import { buildShape, SHAPE_TARGETS } from './shape.js';
 
 const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
 const FWD = new THREE.Vector3(0, 0, 1), DOWN = new THREE.Vector3(0, -1, 0);
@@ -113,6 +114,8 @@ class Body {
     // pose zero keeps each bone's offset from its parent, expressed in the parent's frame
     this.localPos = this.bones.map((b) => b.position.clone());
     if (!this.soleVerts) this.#pickSoles(); // rest-pose soles: the same for every width
+    if (this.shape) this.shape.apply({ ...this.morphs, width });
+    this.#refreshTorso();
   }
 
   /** Shoulder point to point (m) of the unscaled body at a width setting (the morph is linear). */
@@ -174,8 +177,8 @@ class Body {
     const morph = this.mesh.geometry.morphAttributes.position?.[0];
     const si = this.mesh.geometry.attributes.skinIndex, sw = this.mesh.geometry.attributes.skinWeight;
     const t = this.torso = {
-      n: N, base: new Float32Array(N * 3), dPos: new Float32Array(N * 3), bi: new Uint16Array(N * 4), bw: new Float32Array(N * 4),
-      x: new Float32Array(N), y: new Float32Array(N), z: new Float32Array(N),
+      n: N, verts: Uint32Array.from(verts), base: new Float32Array(N * 3), dPos: new Float32Array(N * 3), rest: new Float32Array(N * 3),
+      bi: new Uint16Array(N * 4), bw: new Float32Array(N * 4), x: new Float32Array(N), y: new Float32Array(N), z: new Float32Array(N),
     };
     verts.forEach((v, n) => {
       for (let k = 0; k < 3; k++) {
@@ -184,6 +187,66 @@ class Body {
       }
       for (let k = 0; k < 4; k++) { t.bi[n * 4 + k] = si.getComponent(v, k); t.bw[n * 4 + k] = sw.getComponent(v, k); }
     });
+    this.#refreshTorso();
+  }
+
+  /**
+   * Build the body-shape morph targets (shape.js) the first time this body is shown; before that
+   * the mesh carries only the width target.
+   */
+  ensureShape() {
+    if (this.shape) return this.shape;
+    this.shape = buildShape(this.mesh, this.bones, this.sex, this.bindPos);
+    this.shape.install();
+    // how much each target thickens each arm segment (mean push along the normal), for the hang solver
+    const g = this.mesh.geometry, nrm = g.attributes.normal.array, bi = this.boneIndex;
+    this.armGrow = {};
+    for (const s of ['l', 'r']) {
+      this.armGrow[s] = {};
+      for (const [seg, bone] of [['upper', `upperarm_${s}`], ['fore', `lowerarm_${s}`]]) {
+        const verts = [];
+        for (let v = 0; v < this.dom.length; v++) if (this.dom[v] === bi[bone]) verts.push(v * 3);
+        const out = {};
+        for (const k of SHAPE_TARGETS) {
+          const d = this.shape.deltas[k];
+          let sum = 0;
+          for (const o of verts) sum += d[o] * nrm[o] + d[o + 1] * nrm[o + 1] + d[o + 2] * nrm[o + 2];
+          out[k] = verts.length ? sum / verts.length : 0;
+        }
+        this.armGrow[s][seg] = out;
+      }
+    }
+    this.setMorphs(this.morphs);
+    return this.shape;
+  }
+
+  /** @param morphs { belly, waist, bust, chest, glutes, hips, thighs, fat, muscle, core } influences */
+  setMorphs(morphs = {}) {
+    this.morphs = { ...morphs };
+    this.shape?.apply({ ...this.morphs, width: this.width });
+    this.#refreshTorso();
+  }
+
+  /** extra radius (m) of an arm segment from the current morphs */
+  armGrowth(s, seg) {
+    const g = this.armGrow?.[s]?.[seg];
+    if (!g) return 0;
+    let r = 0;
+    for (const k of SHAPE_TARGETS) r += (this.morphs?.[k] || 0) * g[k];
+    return r;
+  }
+
+  /** the torso sample the arms must clear, in the current shape (rest space) */
+  #refreshTorso() {
+    const t = this.torso;
+    if (!t) return;
+    if (this.shape) {
+      const p = this.shape.positions({ ...this.morphs, width: this.width });
+      for (let n = 0; n < t.n; n++) { const v = t.verts[n] * 3; t.rest[n * 3] = p[v]; t.rest[n * 3 + 1] = p[v + 1]; t.rest[n * 3 + 2] = p[v + 2]; }
+    } else {
+      const w = this.width || 0;
+      for (let i = 0; i < t.rest.length; i++) t.rest[i] = t.base[i] + t.dPos[i] * w;
+    }
   }
 
   #pickSoles() {
@@ -210,6 +273,8 @@ export class Human {
     for (const b of Object.values(bodies)) { b.root.visible = false; this.object.add(b.root); }
     this.scale = 1;
     this.pose = {};
+    this.morphs = {};
+    this.posture = 0;
     this.setSex('female');
   }
 
@@ -224,14 +289,41 @@ export class Human {
     if (!this.bodies[sex] || sex === this.sex) return;
     this.sex = sex;
     for (const [k, b] of Object.entries(this.bodies)) b.root.visible = k === sex;
+    this.active.ensureShape();
+    this.active.setMorphs(this.morphs);
     this.#applyPose();
   }
 
-  /** @param shape { width?: morph −1…1.5 (≈ ±20 % shoulders per unit), scale?: uniform } */
-  setShape({ width, scale } = {}) {
+  /**
+   * @param shape { width?: morph −1…1.5 (≈ ±20 % shoulders per unit), scale?: uniform,
+   *   morphs?: { belly, waist, bust, chest, glutes, hips, thighs, fat, muscle, core } (shape.js) }
+   */
+  setShape({ width, scale, morphs } = {}) {
     if (width != null) this.active.rebind(width);
     if (scale != null) { this.scale = scale; this.object.scale.setScalar(scale); }
+    if (morphs) { this.morphs = { ...morphs }; this.active.setMorphs(this.morphs); }
     this.#applyPose();
+  }
+
+  /** Posture: −1 upright (chest up, shoulders back) … 0 neutral … +1 rounded (slouched, head forward). */
+  setPosture(v) {
+    this.posture = v || 0;
+    this.#applyPose();
+  }
+
+  /** per-bone posture offsets (degrees, pose axes: +x flexes forward) */
+  #postureRot(name) {
+    const v = this.posture;
+    if (!v) return null;
+    switch (name) {
+      case 'spine_01': return [v * 2, 0, 0];
+      case 'spine_02': return [v * 5, 0, 0];
+      case 'spine_03': return [v * 7, 0, 0];
+      case 'neck_01': return [v * 9, 0, 0];
+      case 'head': return [-v * 16, 0, 0];
+      case 'clavicle_l': case 'clavicle_r': return [v * 9, 0, 0];
+      default: return null;
+    }
   }
 
   /** Real measurements of the active body: { height (m), width: shoulder point to point (m) }. */
@@ -253,6 +345,8 @@ export class Human {
       bone.quaternion.copy(B.zeroLocal[i]);
       const r = pose[bone.name];
       if (Array.isArray(r)) bone.quaternion.multiply(eulerQ(r));
+      const p = this.#postureRot(bone.name);
+      if (p) bone.quaternion.multiply(eulerQ(p));
     });
     const root = B.bones[0];
     if (pose.$root) root.position.add(_v1.fromArray(pose.$root));
@@ -277,18 +371,18 @@ export class Human {
   }
 
   /**
-   * Skin the torso sample (width morph included) into the human's local space, sorted by height so
+   * Skin the torso sample (in the current body shape) into the human's local space, sorted by height so
    * #clear only visits the thin slice it tests. Typed-array skinning: this runs on every slider tick.
    */
   #skinTorso() {
     const B = this.active, m = B.mesh, T = B.torso, N = T.n;
     m.skeleton.update();
-    const bm = m.skeleton.boneMatrices, w = B.width || 0;
+    const bm = m.skeleton.boneMatrices, R = T.rest;
     const P = m.bindMatrix.elements;
     const M = _m.copy(this.object.matrixWorld).invert().multiply(m.matrixWorld).multiply(m.bindMatrixInverse).elements;
     const X = new Float32Array(N), Y = new Float32Array(N), Z = new Float32Array(N);
     for (let n = 0; n < N; n++) {
-      const bx = T.base[n * 3] + T.dPos[n * 3] * w, by = T.base[n * 3 + 1] + T.dPos[n * 3 + 1] * w, bz = T.base[n * 3 + 2] + T.dPos[n * 3 + 2] * w;
+      const bx = R[n * 3], by = R[n * 3 + 1], bz = R[n * 3 + 2];
       const vx = P[0] * bx + P[4] * by + P[8] * bz + P[12], vy = P[1] * bx + P[5] * by + P[9] * bz + P[13], vz = P[2] * bx + P[6] * by + P[10] * bz + P[14];
       let sx = 0, sy = 0, sz = 0;
       for (let k = 0; k < 4; k++) {
@@ -349,14 +443,14 @@ export class Human {
     if (isHang(U)) {
       const a = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
       let out = 0;
-      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, A.rUpper * 0.85, A.rUpper * 0.7, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
+      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.85, (A.rUpper + B.armGrowth(s, 'upper')) * 0.7, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
       this.#aim(ua, dir(out + (U.out || 0), U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
     if (isHang(F)) {
       la.updateWorldMatrix(true, false);
       const a = la.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
       let out = 0;
-      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, A.rFore * 0.9, A.rFore * 0.7, sg, 0.01, [0.4, 0.7, 1])) out += 0.5;
+      while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.01, [0.4, 0.7, 1])) out += 0.5;
       this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
     }
   }

@@ -1,6 +1,6 @@
 # 3dGarments
 
-**A 3D model studio for fashion shops.** Pick a male or female mannequin, set its real width (cm) and height (in), choose grey clay or a skin tone, pose it, put it in a studio or on location, and export product-ready shots at up to 4K, including transparent cut-outs.
+**A 3D model studio for fashion shops**, in three stages. **1 · Try-on (free):** pick a male or female mannequin and shape it to real measurements — skin tone, height, weight (from the body's volume), body type, abdomen & waist, bust & chest, shoulders & posture, glutes & thighs, with live bust / waist / hip / thigh girths and bra size — then try clothes on it. **2 · Style** (pose, backdrop, furniture, AI scene set-up) and **3 · Photoshoot** (product shots up to 4K, transparent cut-outs) are paid and come next.
 
 Next: upload the **front, side and back** of a garment and it goes onto the model.
 

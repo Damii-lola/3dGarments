@@ -1,6 +1,9 @@
 # 3dGarments: notes for Claude Code
 
-A 3D model studio for fashion shops. Users pick the male or female mannequin model (the owner's FBX models in `assets/`), set real width/height and skin, pose it, pick a studio or location backdrop, and export product shots (up to 4K, transparent PNG). Next phase: users upload the front/side/back of a garment and it goes onto the model. The server's photo → cut-out → measurement pipeline is the base for that.
+A 3D model studio for fashion shops, in three stages, each shown alone (no UI of a later stage until the user reaches it):
+1. **Try-on (free, current UI):** pick the male/female mannequin (the owner's FBX models in `assets/`), set skin, height, weight and body shape; next: upload a garment's front/side/back and it goes onto the model (the server's photo → cut-out → measurement pipeline is the base).
+2. **Style (paid, not built yet):** pose the dressed model, backdrop, furniture, an AI prompt that sets up scene + pose (stage.js HDRIs/lighting and poses.js already exist).
+3. **Photoshoot (paid, not built yet):** product shots up to 4K / transparent PNG (stage.capture exists).
 
 ## Layout
 ```
@@ -21,9 +24,13 @@ tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab pa
                         shoulder probes, eye centres → GLB), glb.py
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
-  src/main.js           studio UI: Model (sex, width cm, height in, skin-tone slider) / Pose / Scene tabs, Shot panel, state in localStorage.
-                        Responsive: desktop 3 columns; ≤860px (and phones in landscape) stage + bottom/side sheet — the matchMedia query in main.js mirrors styles.css
-  src/human/body.js     SKIN_STOPS/toneAt (one slider, light → dark, default Latino), RANGES, ModelController (cm / in → width morph + uniform scale, exact)
+  src/main.js           STAGE 1 UI: one panel (sex, skin, live measurements card, height & weight, body type, abdomen & waist,
+                        bust & chest, shoulders & posture, glutes & thighs) + the preview filling the rest. State in localStorage.
+                        Responsive: desktop panel | preview; ≤860px preview over a scrolling panel; phones in landscape preview | panel
+  src/human/body.js     SKIN_STOPS/toneAt, RANGES, BUILDS, ABDOMEN, LIMITS, ModelController: height (uniform scale) + shoulders (width morph)
+                        exact; weight = volume × density, solved with the fat target; girths/bra size; everything in sync (see below)
+  src/human/shape.js    body-shape morph targets BUILT AT LOAD from the mesh (belly, waist, bust, chest, glutes, hips, thighs, fat,
+                        muscle, core) + volume, fat solve, tape-measure girths (convex hull of slices)
   src/human/assets.js   model URLs
   src/human/human.js    Human: loads both GLBs, re-bases limb bones on pose zero, width morph + rebind, pose, hang solver, feet on floor
                         (the hang solver runs per slider tick: typed-array torso skinning + 1 cm y-slices; keep it that cheap)
@@ -62,6 +69,14 @@ render.yaml             Render blueprint
 - Bone frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. Feet/toes take their roll from "up" (x = y × +y) in BOTH prepare.py and human.js — a switching reference axis twists the foot. +z moves a left limb outward, and +y on the upper arm is internal rotation.
 - Pose zero (rig.js): every limb bone is re-based onto these directions whatever the model's bind pose (T-pose male, arms-down female), so all poses mean the same on every model. Don't edit rig.js without recalibrating poses.js.
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.
+- Body shape (shape.js): each target is a displacement field placed with skin weights + mesh landmarks (breast/glute apexes,
+  natural waist, crotch) and surface-smoothed; clothing copies the nearest skin (inverse-square, so the boxers follow their source
+  vertex) and skin under clothing gets no surface-detail change (it would poke through). Targets are appended after the GLB's
+  width target (slot 0), with normal deltas. The other sex's targets are built in idle time after load.
+- Sync + limits (body.js): the proportion sliders are −1 … +1 across LIMITS (calibrated on renders: past them the body stops
+  looking real), damped by body fat (`room()`: a heavy body has less room to add, a lean one less to lose). Body fat is the
+  stored value; weight is derived (every control moves it), and the weight slider / body-type chips solve the fat for a weight.
+  Re-check limits with grid renders of both sexes (presets, all-max, all-min) after changing any field.
 - Model controls are real measurements: width = shoulder point to point (the two acromion probe vertices baked by prepare.py) in cm, height = crown to sole in inches. Height is a uniform scale; width is the linear "width" morph (shoulders ±20 % per unit, arms move out rigidly, hips follow a little) plus a skeleton rebind, so ModelController solves both exactly.
 
 ## Coordinate conventions (garment pipeline)

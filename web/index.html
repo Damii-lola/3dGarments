@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>3dGarments Studio</title>
-  <meta name="description" content="A realistic 3D model studio: shape the body, pose it, light it, and export product-ready photos." />
+  <meta name="description" content="Try clothes on a realistic 3D model shaped to real measurements." />
   <meta name="theme-color" content="#0d0e12" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Cpath d='M10 9l3-2h6l3 2 4 4-3 3-2-2v11H11V14l-2 2-3-3z' fill='%23fff'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,64 +17,16 @@
       <a class="brand" href="./">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">3d<b>Garments</b></span>
-        <span class="brand-tag">Studio</span>
       </a>
-      <div class="topbar-mid">
-        <span id="status-pill" class="pill" hidden></span>
-      </div>
-      <button id="capture-top" class="btn btn-primary btn-sm" type="button">
-        <svg viewBox="0 0 24 24"><path d="M9 4h6l1.6 2H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.4L9 4z"/><circle cx="12" cy="13" r="4"/></svg>
-        <span>Take shot</span>
-      </button>
+      <span class="step" aria-label="Stage 1 of 3: Try-on"><b>1</b> Try-on</span>
     </header>
 
-    <aside class="panel panel-left" id="panel-edit" aria-label="Edit model">
-      <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="model" class="active" type="button">Model</button>
-        <button role="tab" data-tab="pose" type="button">Pose</button>
-        <button role="tab" data-tab="scene" type="button">Scene</button>
-      </nav>
-      <div class="tab-body" data-body="model"></div>
-      <div class="tab-body" data-body="pose" hidden></div>
-      <div class="tab-body" data-body="scene" hidden></div>
-    </aside>
+    <aside class="panel" id="panel" aria-label="Your model"></aside>
 
     <main class="stage" id="stage">
       <div class="stage-canvas" id="stage-canvas"></div>
-      <div class="crop-dim" id="crop-dim" aria-hidden="true"></div>
-      <div class="crop" id="crop" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div class="loader" id="loader"><div class="spinner"></div><span>Loading your 3D model…</span></div>
-      <div class="stage-toolbar" role="toolbar" aria-label="Camera">
-        <button class="tool" data-view="front" type="button">Front</button>
-        <button class="tool" data-view="three" type="button">¾</button>
-        <button class="tool" data-view="side" type="button">Side</button>
-        <button class="tool" data-view="back" type="button">Back</button>
-        <button class="tool" data-view="upper" type="button">Waist</button>
-        <button class="tool" data-view="portrait" type="button">Face</button>
-        <span class="tool-sep"></span>
-        <button class="tool tool-icon" id="spin-btn" type="button" title="Turntable" aria-pressed="false">
-          <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
-        </button>
-      </div>
     </main>
-
-    <aside class="panel panel-right" id="panel-shot" aria-label="Shot">
-      <section class="section" id="shot-section"></section>
-      <section class="section">
-        <div class="panel-head"><h2>Shots</h2><span class="count" id="shots-count">0</span></div>
-        <div class="shots" id="shots"><div class="grid-empty">Your shots appear here.</div></div>
-      </section>
-      <section class="section soon">
-        <div class="panel-head"><h2>Clothing</h2><span class="badge">Next</span></div>
-        <p class="muted">Upload the <b>front</b>, <b>side</b> and <b>back</b> of a garment and it goes straight onto this model.</p>
-        <div class="soon-slots"><span>Front</span><span>Side</span><span>Back</span></div>
-      </section>
-    </aside>
-
-    <nav class="sheet-tabs" aria-label="Panels">
-      <button type="button" data-sheet="edit" class="active">Edit</button>
-      <button type="button" data-sheet="shot">Shot</button>
-    </nav>
   </div>
 
   <div id="toasts" class="toasts" aria-live="assertive"></div>
