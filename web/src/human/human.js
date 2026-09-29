@@ -460,13 +460,18 @@ export class Human {
     if (isHang(U)) {
       const a = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
       let out = 0;
-      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.85, (A.rUpper + B.armGrowth(s, 'upper')) * 0.7, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
+      // (the arm may rest a little into the lats: soft tissue gives, so the radius is taken small)
+      while (out < 50 && !this.#clear(a, dir(out, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.6, (A.rUpper + B.armGrowth(s, 'upper')) * 0.52, sg, 0.002, [0.6, 0.8, 1])) out += 0.5;
       this.#aim(ua, dir(out + (U.out || 0), U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
     if (isHang(F)) {
       la.updateWorldMatrix(true, false);
       const a = la.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
-      let out = 0;
+      // the forearm never angles back in past the upper arm (that reads as an elbow bent outward):
+      // it starts from the upper arm's own tilt, which gives the natural carrying angle
+      const sh = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
+      const upOut = THREE.MathUtils.radToDeg(Math.atan2(sg * (a.x - sh.x), sh.y - a.y));
+      let out = Math.max(0, upOut - 2);
       while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.01, [0.4, 0.7, 1])) out += 0.5;
       this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
     }
