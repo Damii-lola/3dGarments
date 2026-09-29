@@ -386,7 +386,7 @@ const thicknessOf = (m) => { const k = String(m || '').toLowerCase().split(/[^a-
 
 /* ================================================================ atlas */
 
-function makeAtlas(item, photos) {
+function makeAtlas(item, photos, { bleed = 12 } = {}) {
   const F = photos.front;
   let B = photos.back;
   if (!B) { const Fm = F.mirrored(); B = item.backFill === 'mirror' ? Fm : plainBack(Fm); }
@@ -396,7 +396,7 @@ function makeAtlas(item, photos) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(F.canvas, 0, 0);
   ctx.drawImage(B.canvas, F.w, 0);
-  const normalCanvas = prepareFabric(canvas, [{ x: 0, w: F.w, h: F.h }, { x: F.w, w: B.w, h: B.h }]);
+  const normalCanvas = prepareFabric(canvas, [{ x: 0, w: F.w, h: F.h }, { x: F.w, w: B.w, h: B.h }], { bleed });
   const tex = (c, srgb) => {
     const t = new THREE.CanvasTexture(c);
     t.flipY = false;
@@ -853,8 +853,9 @@ function finish(ctx, item, atlas, r) {
   const mpp = s / atlas.front.h;
   const metresPerUV = [atlas.W * mpp, atlas.H * mpp];
   const label = item.material || item.type;
-  const outer = createFabricMaterial({ map: atlas.map, normalMap: atlas.normalMap, material: label, metresPerUV });
-  const innerM = createFabricMaterial({ map: atlas.map, normalMap: null, material: label, metresPerUV, inner: true });
+  const cutout = r.cutout !== false;
+  const outer = createFabricMaterial({ map: atlas.map, normalMap: atlas.normalMap, material: label, metresPerUV, cutout });
+  const innerM = createFabricMaterial({ map: atlas.map, normalMap: null, material: label, metresPerUV, inner: true, cutout });
   const mesh = new THREE.SkinnedMesh(g, [outer, innerM]);
   mesh.name = `garment:${item.name || item.id}`;
   mesh.castShadow = mesh.receiveShadow = true;
@@ -877,3 +878,6 @@ function finish(ctx, item, atlas, r) {
     dispose() { mesh.removeFromParent(); g.dispose(); outer.dispose(); innerM.dispose(); atlas.map.dispose(); atlas.normalMap.dispose(); },
   };
 }
+
+// shared with sew.js (GarmentCode patterns)
+export { posedBody, skinBody, snapPose, setPose, lerpPose, armsAlong, affineOf, applyA, inv3, finish, makeAtlas, fabricOf, smooth };

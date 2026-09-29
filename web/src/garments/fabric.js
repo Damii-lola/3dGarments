@@ -75,7 +75,7 @@ const toSrgb = (l) => { const c = l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 /
  * (0 = flat) for the normal map.
  * @param panels [{ x, w, h }] rectangles of the atlas that hold one photo each
  */
-export function prepareFabric(canvas, panels, { delight = 0.8 } = {}) {
+export function prepareFabric(canvas, panels, { delight = 0.8, bleed = 12 } = {}) {
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const img = ctx.getImageData(0, 0, W, H), d = img.data;
@@ -127,12 +127,13 @@ export function prepareFabric(canvas, panels, { delight = 0.8 } = {}) {
   /* ---- edge bleed: soft-edged and transparent pixels take the nearest solid colour (a cut-out's
      anti-aliased rim still holds some of the backdrop, which would show as a pale fringe) ---- */
   let filled = new Uint8Array(W * H), front = [];
+  const queued = new Uint8Array(W * H);                      // each pixel joins the fill front once
   for (let i = 0; i < W * H; i++) filled[i] = d[i * 4 + 3] > 245 ? 1 : 0;
   for (let i = 0; i < W * H; i++) if (!filled[i]) {
     const x = i % W, y = (i / W) | 0;
-    if ((x > 0 && filled[i - 1]) || (x < W - 1 && filled[i + 1]) || (y > 0 && filled[i - W]) || (y < H - 1 && filled[i + W])) front.push(i);
+    if ((x > 0 && filled[i - 1]) || (x < W - 1 && filled[i + 1]) || (y > 0 && filled[i - W]) || (y < H - 1 && filled[i + W])) { front.push(i); queued[i] = 1; }
   }
-  for (let pass = 0; pass < 12 && front.length; pass++) {
+  for (let pass = 0; pass < bleed && front.length; pass++) {
     const next = [], done = [];
     for (const i of front) {
       if (filled[i]) continue;
@@ -144,7 +145,7 @@ export function prepareFabric(canvas, panels, { delight = 0.8 } = {}) {
       if (!k) continue;
       d[i * 4] = r / k; d[i * 4 + 1] = g / k; d[i * 4 + 2] = b / k;
       done.push(i);
-      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !filled[j]) next.push(j);
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !filled[j] && !queued[j]) { queued[j] = 1; next.push(j); }
     }
     for (const i of done) filled[i] = 1;
     front = next;
@@ -227,7 +228,7 @@ vec2 weave(vec2 m) {
 /**
  * @param opts { map, normalMap, material (label), metresPerUV: [mu, mv], inner: bool }
  */
-export function createFabricMaterial({ map, normalMap, material, metresPerUV = [1, 1], inner = false }) {
+export function createFabricMaterial({ map, normalMap, material, metresPerUV = [1, 1], inner = false, cutout = true }) {
   const key = String(material || '').toLowerCase().split(/[^a-z]+/).find((w) => WEAVE[w]);
   const kind = key ? WEAVE[key] : 3;
   const [rough, sheen, sheenRough] = BRDF[kind];
@@ -241,7 +242,7 @@ export function createFabricMaterial({ map, normalMap, material, metresPerUV = [
     map,
     normalMap: inner ? null : normalMap,
     normalScale: new THREE.Vector2(1, 1),
-    alphaTest: 0.5,
+    alphaTest: cutout ? 0.5 : 0,                   // a sewn garment's shape is its pattern, not the photo's outline
     roughness: rough,
     metalness: 0,
     specularIntensity: kind === 6 ? 0.6 : kind === 4 ? 0.7 : 0.35,
