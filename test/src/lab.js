@@ -5,7 +5,6 @@
 import './lab.css';
 import * as THREE from 'three';
 import { createStage } from '@web/scene/stage.js';
-import { loadHumanAssets } from '@web/human/assets.js';
 import { Human } from '@web/human/human.js';
 import { ModelController, SKINS, RANGES, fmtIn, IN } from '@web/human/body.js';
 import { POSES, composePose } from '@web/human/poses.js';
@@ -15,11 +14,10 @@ const stage = createStage($('#view'));
 const params = new URLSearchParams(location.search);
 
 const t0 = performance.now();
-const assets = await loadHumanAssets();
+const human = await Human.load();
 const tLoad = performance.now() - t0;
 const sex = params.get('gender') === 'male' ? 'male' : 'female';
 const M = { sex, ...RANGES[sex].defaults, skin: params.get('skin') || 'gray' };
-const human = new Human(assets);
 const model = new ModelController(human, M);
 model.apply();
 stage.root.add(human.object);
@@ -82,6 +80,11 @@ $('#presets').addEventListener('click', (e) => {
   stage.setSubjectHeight(human.heightM);
   markSex();
   buildBody();
+  fillBones();
+  helper.removeFromParent();
+  helper = new THREE.SkeletonHelper(human.active.root);
+  helper.visible = dbg.skeleton;
+  stage.scene.add(helper);
 });
 markSex();
 buildBody();
@@ -95,7 +98,8 @@ $('#poses').addEventListener('click', (e) => {
   human.setPose(pose);
   selectBone($('#bone').value);
 });
-$('#bone').innerHTML = human.bones.map((b) => `<option>${b.name}</option>`).join('');
+const fillBones = () => { $('#bone').innerHTML = human.bones.map((b) => `<option>${b.name}</option>`).join(''); };
+fillBones();
 const boneSliders = ['x flex', 'y twist', 'z side'].map((label, i) => slider($('#bone-sliders'), { label, min: -180, max: 180, step: 1, value: 0, fmt: (v) => `${v}°` }, (v) => {
   const name = $('#bone').value;
   pose[name] = [...(pose[name] || [0, 0, 0])];
@@ -112,7 +116,7 @@ function selectBone(name) {
 $('#bone').addEventListener('change', (e) => selectBone(e.target.value));
 
 /* ------------------------------------------------ debug */
-const helper = new THREE.SkeletonHelper(human.object);
+let helper = new THREE.SkeletonHelper(human.active.root);
 helper.visible = false;
 stage.scene.add(helper);
 const dbg = {};

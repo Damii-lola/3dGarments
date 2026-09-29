@@ -6,10 +6,11 @@ The lab runs the real app modules directly (`web/src/human/*`, `web/src/scene/*`
 
 ```bash
 cd test && npm i && npm run dev      # http://localhost:5174   (?gender=male, ?view=portrait)
+                                     # /view.html?file=./body/male.glb&clay=1 — raw model viewer
 ```
 
 ## What's in it
-- **Body**: every macro slider (gender, age, muscle, weight, height, proportions, bust, ethnicity).
+- **Model**: the studio's controls (female/male, width in cm, height in in, skin).
 - **Pose**: the pose presets, plus a per-bone editor (flex / twist / side in each bone's anatomical frame). The live pose JSON appears under the sliders, ready to paste into `poses.js`.
 - **Debug**: skeleton overlay, wireframe, skin-weight view for the selected bone, turntable, camera views.
 - **Stats**: FPS, draw calls, triangles, asset load time, reshape time, height.
@@ -17,11 +18,9 @@ cd test && npm i && npm run dev      # http://localhost:5174   (?gender=male, ?v
 ## Where to edit
 | Want to change | File |
 |---|---|
-| Mesh, targets, rig, weights, painted masks | `tools/human/build.py`, `tools/human/paint.py` (then rebuild) |
-| Body morphing, skeleton fitting, skinning, feet-on-floor | `web/src/human/human.js` |
-| Macro slider maths (MakeHuman port) | `web/src/human/modifiers.js` |
-| Skin, eyes, lashes, underwear shaders | `web/src/human/materials.js` |
-| Hair styles and shader | `web/src/human/hair.js` |
+| Models, skeleton, weights, width morph | `assets/*.fbx` → `tools/body/prepare.py` (then rebuild the GLBs) |
+| Pose zero, pose application, hang solver, width/height, feet-on-floor | `web/src/human/human.js`, `web/src/human/rig.js` |
+| Body material (clay / skin) | `web/src/human/materials.js` |
 | Pose library, hands | `web/src/human/poses.js` |
 | Lights, backdrops, HDRIs, camera views, capture | `web/src/scene/stage.js` |
 

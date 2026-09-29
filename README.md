@@ -1,10 +1,10 @@
 # 3dGarments
 
-**A 3D model studio for fashion shops.** Shape a realistic, fully rigged human (female ↔ male, height in cm, weight, muscle, proportions, age, face features, skin tone, hair), pose it, put it in a studio or on location, and export product-ready shots at up to 4K, including transparent cut-outs.
+**A 3D model studio for fashion shops.** Pick a male or female mannequin, set its real width (cm) and height (in), choose grey clay or a skin tone, pose it, put it in a studio or on location, and export product-ready shots at up to 4K, including transparent cut-outs.
 
 Next: upload the **front, side and back** of a garment and it goes onto the model.
 
-The human is built from CC0 [MakeHuman](https://github.com/makehumancommunity/makehuman) / [MPFB](https://github.com/makehumancommunity/mpfb2) data (`tools/human/`, see `web/public/human/LICENSE.md`).
+The bodies are the models in `assets/` (FBX), turned into rigged web models (`web/public/body/*.glb`) by `tools/body/`.
 
 ```
  phone camera ──► GitHub Pages (Vite + three.js)
@@ -53,7 +53,7 @@ cd web && npm i && npm run dev       # http://localhost:5173
 ```
 URL shortcuts: `?model=male|female`, `?pose=hips` (any key of `POSES`), `?scene=city` (any HDRI), `?view=three`.
 
-Rebuild the human assets (only after changing `tools/human/*`): `tools/human/fetch.sh && python3 tools/human/build.py` (needs `pip install numpy pillow brotli`).
+Rebuild the body models (only after changing `assets/` or `tools/body/`): start the lab (`cd test && npm run dev`), then `node tools/body/extract.mjs && python3 tools/body/prepare.py` (needs `pip install numpy scipy`).
 
 ## API
 | Method | Path | |

@@ -13,6 +13,6 @@ export default defineConfig({
     dedupe: ['three'],
   },
   server: { port: 5174, fs: { allow: ['..'] } },
-  optimizeDeps: { include: ['three'], exclude: ['brotli-dec-wasm'] },
+  optimizeDeps: { include: ['three'] },
   build: { target: 'es2022' },
 });

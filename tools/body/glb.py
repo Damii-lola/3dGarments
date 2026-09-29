@@ -8,7 +8,7 @@ FLOAT, UINT, USHORT = 5126, 5125, 5123
 TYPE = {1: 'SCALAR', 2: 'VEC2', 3: 'VEC3', 4: 'VEC4', 16: 'MAT4'}
 
 
-def write(path, positions, normals, faces, attrs=None, skin=None, name='body'):
+def write(path, positions, normals, faces, attrs=None, skin=None, name='body', targets=None, extras=None):
     """
     positions/normals: (N,3) metres. faces: (F,3). attrs: {'_NAME': (N,) or (N,k) float arrays}.
     skin: {'names': [...], 'parents': [...], 'heads': (B,3) world rest positions, 'rot': (B,4) world
@@ -43,9 +43,15 @@ def write(path, positions, normals, faces, attrs=None, skin=None, name='body'):
     for k, a in (attrs or {}).items():
         prim['attributes'][k] = add(np.asarray(a, np.float32), FLOAT, 34962)
     nodes = [{'name': name, 'mesh': 0}]
+    mesh = {'name': name, 'primitives': [prim]}
+    if targets:
+        prim['targets'] = [{'POSITION': add(np.asarray(d, np.float32), FLOAT, 34962, True)} for d in targets.values()]
+        mesh['weights'] = [0.0] * len(targets)
+        mesh['extras'] = {'targetNames': list(targets)}
+    if extras:
+        nodes[0]['extras'] = extras
     gltf = {'asset': {'version': '2.0', 'generator': '3dGarments tools/body'},
-            'scene': 0, 'scenes': [{'nodes': [0]}], 'nodes': nodes,
-            'meshes': [{'name': name, 'primitives': [prim]}]}
+            'scene': 0, 'scenes': [{'nodes': [0]}], 'nodes': nodes, 'meshes': [mesh]}
     if skin is not None:
         prim['attributes']['JOINTS_0'] = add(skin['joints'].astype(np.uint16), USHORT, 34962)
         prim['attributes']['WEIGHTS_0'] = add(skin['weights'].astype(np.float32), FLOAT, 34962)

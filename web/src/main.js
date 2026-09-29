@@ -3,7 +3,6 @@
  */
 import './styles.css';
 import { createStage, HDRIS, LIGHTING } from './scene/stage.js';
-import { loadHumanAssets } from './human/assets.js';
 import { Human } from './human/human.js';
 import { SKINS, RANGES, ModelController, fmtIn, IN } from './human/body.js';
 import { POSES, HANDS, DEFAULT_POSE, composePose } from './human/poses.js';
@@ -21,7 +20,7 @@ const DEFAULTS = {
   shot: { aspect: '4:5', size: 2048, transparent: false, shadow: true, format: 'png' },
 };
 
-const STORE = '3dg.studio.v3';
+const STORE = '3dg.studio.v4';
 const state = structuredClone(DEFAULTS);
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
@@ -434,8 +433,7 @@ async function boot() {
   stage.setExposure(state.light.exposure);
   await stage.setEnvironment(state.env);
 
-  const assets = await loadHumanAssets();
-  human = new Human(assets);
+  human = await Human.load();
   model = new ModelController(human, M);
   model.apply();
   stage.root.add(human.object);

@@ -1,6 +1,6 @@
 # 3dGarments: notes for Claude Code
 
-A 3D model studio for fashion shops. Users shape a realistic rigged human (MakeHuman/MPFB CC0 data), pose it, pick a studio or location backdrop, and export product shots (up to 4K, transparent PNG). Next phase: users upload the front/side/back of a garment and it goes onto the model. The server's photo → cut-out → measurement pipeline is the base for that.
+A 3D model studio for fashion shops. Users pick the male or female mannequin model (the owner's FBX models in `assets/`), set real width/height and skin, pose it, pick a studio or location backdrop, and export product shots (up to 4K, transparent PNG). Next phase: users upload the front/side/back of a garment and it goes onto the model. The server's photo → cut-out → measurement pipeline is the base for that.
 
 ## Layout
 ```
@@ -15,20 +15,17 @@ server/                 Express API (Render). ESM, Node 22.
     silhouette.js       segmentation, cut-out, silhouette measurements, categories
   test/                 node --test (runs the real pipeline on fixtures/samples.js SVG flat-lays)
   scripts/verify.mjs    live integration check (npm run verify)
-tools/human/            asset pipeline: fetch.sh (sparse-clone MakeHuman + MPFB), build.py, paint.py
-  design.py             fits the thick-fit female preset to real tape measurements (scipy least_squares)
-  match.py              fits the male preset to reference photos: front + side silhouettes compared row by row
-  ref/                  extract.py + *_mask.png silhouettes of the reference figure (photos stay local, gitignored)
+assets/                 SOURCE body models from the owner: MaleModel.fbx (Mixamo rig), FemaleModel.fbx (unrigged)
+tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab page test/extract.html), prepare.py
+                        (weld, metres, skeleton with our bone names, female auto-rig, width morph, shoulder probes → GLB), glb.py
 web/                    Vite + three.js SPA (GitHub Pages)
-  public/human/         BUILT assets: human.json + human.bin (brotli), skin/detail/underwear masks, eye.png
+  public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
   src/main.js           studio UI: Model (sex, width cm, height in, skin) / Pose / Scene tabs, Shot panel, state in localStorage
-  src/human/body.js     the simple body model: FIT presets, width "frame", SKINS (grey clay first, each with an ethnicity blend), ranges
-  src/human/assets.js   loads + decodes human.bin (brotli-dec-wasm)
-  src/human/modifiers.js  MakeHuman macro maths (gender/age/muscle/weight/height/proportions/breast/ethnicity)
-  src/human/human.js    Human: CPU morph → joints from cubes → bone frames → rebind; pose; feet on floor; underwear
-  src/human/subdivide.js  one Catmull–Clark level as a sparse stencil (render mesh = 4× the coarse quads)
-  src/human/materials.js  skin (masks, SSS wrap, pores), eyes, lashes, underwear knit
-  src/human/hair.js     shell-textured hair styles
+  src/human/body.js     SKINS (grey clay first), RANGES, ModelController (cm / in → width morph + uniform scale, exact)
+  src/human/assets.js   model URLs
+  src/human/human.js    Human: loads both GLBs, re-bases limb bones on pose zero, width morph + rebind, pose, hang solver, feet on floor
+  src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
+  src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()
   src/scene/stage.js    renderer, studio rig (cyclorama + lights follow camera), HDRIs, views, WYSIWYG capture
   src/services/         api/auth/local/wardrobe: garment-pipeline client, waiting for the clothing phase (not wired in main.js)
@@ -43,19 +40,17 @@ render.yaml             Render blueprint
 - Web: `cd web && npm i && npm run dev` (port 5173). Without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` it runs in **local mode**, which does all processing in the browser and needs no backend.
 - URL shortcuts: `?model=male|female&pose=hips&scene=city&view=three`. `window.__3dg` exposes `{stage, human, state, takeShot}`.
 - Lab: `cd test && npm i && npm run dev` (port 5174). Do all human/rig/pose work here: it has skeleton, wireframe, weight views, a bone editor and stats. `window.__lab` is exposed.
-- Rebuild human assets (only after editing tools/human): `tools/human/fetch.sh && python3 tools/human/build.py` (pip: numpy pillow brotli). Commit the outputs in web/public/human.
+- Rebuild the body models (after changing assets/ or tools/body): with the lab dev server running, `node tools/body/extract.mjs && python3 tools/body/prepare.py` (pip: numpy scipy). Commit web/public/body/*.glb.
 - Tests: `cd server && npm test`
 - Integration check: `cd server && npm run verify`
 
 ## Human conventions (don't break these)
-- MakeHuman data stays in native space (decimetres, y up, faces +z) inside human.bin. human.js converts to metres with the feet on y = 0.
-- Bone rest frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. +z moves a left limb outward, and +y on the upper arm is internal rotation.
+- Models are in metres, y up, facing +z, feet on y = 0, left = +x (prepare.py normalises them).
+- Bone names are ours (pelvis, spine_01…03, neck_01, head, clavicle/upperarm/lowerarm/hand/thigh/calf/foot/ball_l|r, fingers thumb|index|middle|ring|pinky_01…03_l|r). The male maps Mixamo names; the female has no finger bones.
+- Bone frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. Feet/toes take their roll from "up" (x = y × +y) in BOTH prepare.py and human.js — a switching reference axis twists the foot. +z moves a left limb outward, and +y on the upper arm is internal rotation.
+- Pose zero (rig.js): every limb bone is re-based onto these directions whatever the model's bind pose (T-pose male, arms-down female), so all poses mean the same on every model. Don't edit rig.js without recalibrating poses.js.
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.
-- Model controls are real measurements: width = shoulder point to point (biacromial, probe verts at the shoulder tips) in cm, height = crown to sole in inches. `Human.measure()` evaluates only probe vertices; `Human.solve()` inverts exactly because targets blend linearly on each half-range. Keep the width frame within FRAME_RANGE (the torso turns boxy above +0.6).
-- Body-surface overlays (underwear, later tight garments) reuse the body's triangles and skin weights, pushed out along the normal in the shader, with the outline cut by a UV mask painted in paint.py from 3D curves.
-- The body renders subdivided; joints, measurements, hair and soles use the coarse mesh (`human.coarse`, `human.W`). When the sports bra is worn, the coarse chest under it is relaxed (Taubin + compression, border pinned) before subdivision, so skin and knit share one smooth surface.
-- Body presets come from `tools/human/match.py` (male, from reference photos) and `tools/human/design.py` (female, reference measurements in `REF`). Refit there and paste the result into `FIT` in body.js; don't hand-tune the numbers in one place only. In match.py the muscle-definition targets stay locked high and only scale/girth/length targets move, so the outline never costs the definition.
-- Skin shading adds a per-vertex cavity term (coarse-mesh curvature, high-passed, carried through the subdivision stencil) so muscle grooves read like a sculpt render, strongest in grey clay mode.
+- Model controls are real measurements: width = shoulder point to point (the two acromion probe vertices baked by prepare.py) in cm, height = crown to sole in inches. Height is a uniform scale; width is the linear "width" morph (shoulders ±20 % per unit, arms move out rigidly, hips follow a little) plus a skeleton rebind, so ModelController solves both exactly.
 
 ## Coordinate conventions (garment pipeline)
 - **Garment space** (output of silhouette.js): unit = texture height; x ∈ [0, aspect]; y ∈ [0,1] with y pointing **down**.
