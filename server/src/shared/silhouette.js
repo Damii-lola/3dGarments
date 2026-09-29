@@ -62,7 +62,7 @@ for (let i = 0; i < 256; i++) {
 const fLab = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
 const L_WEIGHT = 0.62; // shadows on the backdrop mostly move lightness, not chroma
 
-function rgbaToLab(rgba, n) {
+export function rgbaToLab(rgba, n) {
   const lab = new Float32Array(n * 3);
   for (let i = 0, p = 0, q = 0; i < n; i++, p += 4, q += 3) {
     const r = LIN[rgba[p]], g = LIN[rgba[p + 1]], b = LIN[rgba[p + 2]];
@@ -76,7 +76,7 @@ function rgbaToLab(rgba, n) {
   return lab;
 }
 
-function kmeansLab(lab, samples, k, iters = 12) {
+export function kmeansLab(lab, samples, k, iters = 12) {
   const m = samples.length;
   const c = new Float32Array(k * 3);
   for (let j = 0; j < k; j++) {

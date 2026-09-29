@@ -8,6 +8,8 @@ import { supabaseConfigured } from './lib/supabase.js';
 import { health } from './routes/health.js';
 import { garments } from './routes/garments.js';
 import { me } from './routes/me.js';
+import { groups } from './routes/groups.js';
+import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
 
 const app = express();
@@ -39,6 +41,7 @@ app.get('/api/public-config', (_req, res) => {
 });
 app.use('/api/garments', garments);
 app.use('/api/me', me);
+app.use('/api/groups', groups);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
 
@@ -61,6 +64,7 @@ const server = app.listen(config.port, () => {
   if (supabaseConfigured()) {
     ensureBucket().catch((e) => console.warn('bucket check failed:', e.message));
     recoverStaleJobs().catch((e) => console.warn('stale-job recovery skipped:', e.message));
+    recoverStaleGroups().catch((e) => console.warn('stale-group recovery skipped:', e.message));
   }
 });
 

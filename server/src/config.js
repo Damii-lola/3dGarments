@@ -16,6 +16,7 @@ export const config = Object.freeze({
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
     apiToken: process.env.CLOUDFLARE_API_TOKEN || '',
     visionModel: process.env.CF_VISION_MODEL || '@cf/meta/llama-4-scout-17b-16e-instruct',
+    textModel: process.env.CF_TEXT_MODEL || '', // grouping step; defaults to the vision model
     gatewayId: process.env.CF_AI_GATEWAY_ID || '',
   }),
   limits: Object.freeze({
