@@ -59,6 +59,17 @@ sh('pip install -q "transformers==4.37.2" "tokenizers==0.15.1" "sentencepiece==0
    'svgwrite svgpathtools CairoSVG pyyaml scipy')
 sh(f'pip install -q --no-deps -e {CG}')
 sh(f'pip install -q --no-deps -e {GC}', check=False)
+# ChatGarment's training module imports DeepSpeed at load time; inference never calls it
+STUB = f'{TMP}/stubs'
+os.makedirs(f'{STUB}/deepspeed/runtime/zero', exist_ok=True)
+open(f'{STUB}/deepspeed/__init__.py', 'w').write(
+    '"""stand-in: ChatGarment imports DeepSpeed for training only"""\n'
+    'from . import zero\n'
+    'def initialize(*a, **k):\n    raise RuntimeError("DeepSpeed is not installed (inference only)")\n')
+open(f'{STUB}/deepspeed/zero.py', 'w').write('class GatheredParameters:\n    def __init__(self, *a, **k): pass\n    def __enter__(self): return self\n    def __exit__(self, *a): return False\n')
+open(f'{STUB}/deepspeed/runtime/__init__.py', 'w').write('')
+open(f'{STUB}/deepspeed/runtime/zero/__init__.py', 'w').write('')
+open(f'{STUB}/deepspeed/runtime/zero/partition_parameters.py', 'w').write('class ZeroParamStatus:\n    NOT_AVAILABLE = 0\n    AVAILABLE = 1\n    INFLIGHT = 2\n')
 summary(stage='installed')
 
 # GarmentCode: its repo on the path, its assets beside ChatGarment, a system config
@@ -72,6 +83,11 @@ if not os.path.exists(f'{CG}/system.json'): shutil.copy(f'{GC}/system.template.j
 # ------------------------------------------------------------------ weights (the authors' SharePoint link)
 CK = f'{CG}/checkpoints/try_7b_lr1e_4_v3_garmentcontrol_4h100_v4_final'
 os.makedirs(CK, exist_ok=True)
+cached = [p for p in glob.glob('/kaggle/input/**/pytorch_model.bin', recursive=True)]
+if cached and not os.path.exists(f'{CK}/pytorch_model.bin'):
+    log('checkpoint from the weights kernel:', cached[0], os.path.getsize(cached[0]) // 2**20, 'MB')
+    summary(weights={'source': cached[0], 'mb': os.path.getsize(cached[0]) // 2**20})
+    os.symlink(cached[0], f'{CK}/pytorch_model.bin')
 if not os.path.exists(f'{CK}/pytorch_model.bin'):
     # the authors' checkpoint, mirrored on Hugging Face (two independent mirrors carry the identical file,
     # sha256 3d6ca6dc52d4…); the authors' SharePoint link is the fallback
@@ -171,7 +187,7 @@ args = ('--lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5
         '--evaluation_strategy no --save_strategy no --learning_rate 2e-4 --weight_decay 0. --warmup_ratio 0.03 '
         '--lr_scheduler_type cosine --logging_steps 1 --model_max_length 3072 --gradient_checkpointing True '
         '--dataloader_num_workers 1 --lazy_preprocess True --report_to none')
-env = f'cd {CG} && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 HF_HOME={TMP}/hf PYTHONPATH={CG}:{GC} TOKENIZERS_PARALLELISM=false'
+env = f'cd {CG} && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 HF_HOME={TMP}/hf PYTHONPATH={STUB}:{CG}:{GC} TOKENIZERS_PARALLELISM=false'
 summary(stage='inference')
 r = sh(f'{env} python scripts/kaggle_imggen.py {args} 2>&1 | tee {WORK}/inference.log | tail -60', check=False)
 

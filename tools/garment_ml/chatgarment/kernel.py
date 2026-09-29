@@ -12,7 +12,7 @@ The kernel is private, with GPU (T4 ×2) and internet on; the photos go up as a 
 import json, os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SLUG_K, SLUG_D = '3dgarments-chatgarment', '3dgarments-test-photos'
+SLUG_K, SLUG_D, SLUG_W = '3dgarments-chatgarment', '3dgarments-test-photos', '3dgarments-cg-weights'
 
 
 def kg(*args, check=True):
@@ -41,19 +41,34 @@ def push(photos=None):
         if r.returncode: kg('datasets', 'create', '-p', d, '-r', 'zip')
     k = tempfile.mkdtemp()
     shutil.copy(f'{HERE}/run.py', k)
+    # the checkpoint kept by the weights job, once it has completed
+    wstat = subprocess.run(['kaggle', 'kernels', 'status', f'{u}/{SLUG_W}'], text=True, capture_output=True).stdout
+    sources = [f'{u}/{SLUG_W}'] if 'COMPLETE' in wstat else []
+    print('checkpoint:', 'attached from the weights job' if sources else 'downloaded in the run')
     json.dump({
         'id': f'{u}/{SLUG_K}', 'title': '3dGarments ChatGarment', 'code_file': 'run.py', 'language': 'python',
         'kernel_type': 'script', 'is_private': True, 'enable_gpu': True, 'enable_internet': True,
         'machine_shape': 'NvidiaTeslaT4', 'dataset_sources': [f'{u}/{SLUG_D}'],   # the last uploaded photos
-        'competition_sources': [], 'kernel_sources': [],
+        'competition_sources': [], 'kernel_sources': sources,
     }, open(f'{k}/kernel-metadata.json', 'w'), indent=1)
+    kg('kernels', 'push', '-p', k)
+
+
+def push_weights():
+    u = user()
+    k = tempfile.mkdtemp()
+    shutil.copy(f'{HERE}/weights.py', k)
+    json.dump({'id': f'{u}/{SLUG_W}', 'title': '3dGarments CG weights', 'code_file': 'weights.py', 'language': 'python',
+               'kernel_type': 'script', 'is_private': True, 'enable_gpu': False, 'enable_internet': True,
+               'dataset_sources': [], 'competition_sources': [], 'kernel_sources': []}, open(f'{k}/kernel-metadata.json', 'w'), indent=1)
     kg('kernels', 'push', '-p', k)
 
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
     if cmd == 'push': push(sys.argv[2] if len(sys.argv) > 2 else None)
-    elif cmd == 'status': kg('kernels', 'status', f'{user()}/{SLUG_K}')
+    elif cmd == 'weights': push_weights()
+    elif cmd == 'status': kg('kernels', 'status', f'{user()}/{SLUG_K}'); kg('kernels', 'status', f'{user()}/{SLUG_W}', check=False)
     elif cmd == 'fetch':
         out = os.path.join(HERE, 'out'); os.makedirs(out, exist_ok=True)
         kg('kernels', 'output', f'{user()}/{SLUG_K}', '-p', out)
