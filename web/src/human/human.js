@@ -23,6 +23,16 @@ import { assetUrl } from './assets.js';
 import { buildShape, SHAPE_TARGETS } from './shape.js';
 
 const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
+/**
+ * How each model's arms hang (calibrated on front silhouettes against reference photos):
+ *   lat     how much of the upper arm's radius must clear the chest / lats (less = rests further in)
+ *   follow  forearm tilt relative to the upper arm, degrees (+ out, − back toward the thigh)
+ *   maxOut  upper-arm tilt cap, degrees (a heavy body's arm rests into the soft tissue instead)
+ * The male's big lats hold the upper arm out from the body with the forearm hanging down from the
+ * elbow; the female's arm lies close with the forearm continuing its line.
+ */
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90 }, male: { lat: 0.9, follow: -10, maxOut: 13 } };
+const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
 const FWD = new THREE.Vector3(0, 0, 1), DOWN = new THREE.Vector3(0, -1, 0);
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -465,6 +475,7 @@ export class Human {
     const toLocal = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
     const rad = THREE.MathUtils.degToRad;
     const dir = (out, fwd) => new THREE.Vector3(sg * Math.sin(rad(out)), -Math.cos(rad(out)) * Math.cos(rad(fwd)), Math.cos(rad(out)) * Math.sin(rad(fwd)));
+    const fit = armFit(B.sex);
     const elbow = () => { la.updateWorldMatrix(true, false); return la.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal); };
     const shoulder = ua.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
     // forearm: continues the upper arm's line (+1°, a hint of carrying angle), never angles back in
@@ -473,22 +484,22 @@ export class Human {
     const forearm = () => {
       const a = elbow();
       const upOut = THREE.MathUtils.radToDeg(Math.atan2(sg * (a.x - shoulder.x), shoulder.y - a.y));
-      let out = Math.max(0, upOut + 1);
+      let out = Math.max(0, upOut + fit.follow);
       while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.012, [0.4, 0.7, 1, 1.25, 1.45], 0.3)) out += 0.5;
       return { out, upOut };
     };
     let upper = 0;
     if (isHang(U)) {
       // (the arm may rest a little into the lats: soft tissue gives, so the radius is taken small)
-      while (upper < 50 && !this.#clear(shoulder, dir(upper, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * 0.48, (A.rUpper + B.armGrowth(s, 'upper')) * 0.42, sg, 0.002, [0.6, 0.8, 1])) upper += 0.5;
-      upper += U.out || 0;
+      while (upper < 50 && !this.#clear(shoulder, dir(upper, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat * 0.875, sg, 0.002, [0.6, 0.8, 1])) upper += 0.5;
+      upper = Math.min(upper, fit.maxOut) + (U.out || 0);
       this.#aim(ua, dir(upper, U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
     if (isHang(F)) {
       let f = forearm();
       // the whole arm hangs straight: if the hips push the forearm out more than 8° past the upper
       // arm, the upper arm tilts out instead of the elbow tucking into the waist
-      for (let it = 0; isHang(U) && it < 30 && f.out - f.upOut > 8; it++) {
+      for (let it = 0; isHang(U) && it < 30 && f.out - f.upOut > 8 + Math.max(0, fit.follow); it++) {
         upper += 1;
         this.#aim(ua, dir(upper, U.fwd || 0), sg * (U.twist || 0), U.extra);
         f = forearm();

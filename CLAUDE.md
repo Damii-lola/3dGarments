@@ -36,7 +36,9 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         (the hang solver runs per slider tick: typed-array torso skinning + 1 cm y-slices; keep it that cheap.
                         Arms hang straight down: the forearm continues the upper arm's line (+1°) and never angles back in;
                         hips/thighs push it out only as needed (the hand is part of that test, following its fingers' curl, down
-                        to mid-thigh), and if that is > 8° past the upper arm, the upper arm tilts out instead. Check arms with an
+                        to mid-thigh), and if that is > 8° past the upper arm, the upper arm tilts out instead. Per-model ARM_FIT in
+                        human.js: the male's upper arm stands out from his lats (elbow away from the body, forearm hanging
+                        back down, capped 13° for heavy bodies); the female's lies close. Check arms with an
                         orthographic silhouette of the skinned arm, not bone angles)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
