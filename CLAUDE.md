@@ -33,7 +33,10 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         muscle, core) + volume, fat solve, tape-measure girths (convex hull of slices)
   src/human/assets.js   model URLs
   src/human/human.js    Human: loads both GLBs, re-bases limb bones on pose zero, width morph + rebind, pose, hang solver, feet on floor
-                        (the hang solver runs per slider tick: typed-array torso skinning + 1 cm y-slices; keep it that cheap)
+                        (the hang solver runs per slider tick: typed-array torso skinning + 1 cm y-slices; keep it that cheap.
+                        It also keeps the arm STRAIGHT as seen from the front: it skins a ~900-vertex sample of each arm and tilts
+                        the forearm until the outer contour runs straight shoulder → wrist (#armBow), capped at 21°; the hand is
+                        part of the clearance test, following the fingers' curl, down to mid-thigh)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()

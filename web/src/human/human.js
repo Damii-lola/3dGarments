@@ -204,6 +204,23 @@ class Body {
       }
       for (let k = 0; k < 4; k++) { t.bi[n * 4 + k] = si.getComponent(v, k); t.bw[n * 4 + k] = sw.getComponent(v, k); }
     });
+    // each arm's own skin (upper arm + forearm), for the straight-arm check of the hang solver
+    const pack = (vs) => {
+      const P = { n: vs.length, verts: Uint32Array.from(vs), base: new Float32Array(vs.length * 3), dPos: new Float32Array(vs.length * 3), rest: new Float32Array(vs.length * 3), bi: new Uint16Array(vs.length * 4), bw: new Float32Array(vs.length * 4) };
+      vs.forEach((v, n) => {
+        for (let k = 0; k < 3; k++) { P.base[n * 3 + k] = pos.getComponent(v, k); P.dPos[n * 3 + k] = morph ? morph.getComponent(v, k) : 0; }
+        for (let k = 0; k < 4; k++) { P.bi[n * 4 + k] = si.getComponent(v, k); P.bw[n * 4 + k] = sw.getComponent(v, k); }
+      });
+      return P;
+    };
+    const part = this.mesh.geometry.attributes._part;
+    this.armSet = {};
+    for (const s of ['l', 'r']) {
+      const own = new Set([bi[`upperarm_${s}`], bi[`lowerarm_${s}`]]), vs = [];
+      for (let v = 0; v < n; v++) if (own.has(this.dom[v]) && (!part || part.getX(v) === 0)) vs.push(v);
+      const st = Math.max(1, Math.floor(vs.length / 900));
+      this.armSet[s] = pack(vs.filter((_, i) => i % st === 0));
+    }
     this.#refreshTorso();
   }
 
@@ -255,14 +272,13 @@ class Body {
 
   /** the torso sample the arms must clear, in the current shape (rest space) */
   #refreshTorso() {
-    const t = this.torso;
-    if (!t) return;
-    if (this.shape) {
-      const p = this.shape.positions({ ...this.morphs, width: this.width });
-      for (let n = 0; n < t.n; n++) { const v = t.verts[n] * 3; t.rest[n * 3] = p[v]; t.rest[n * 3 + 1] = p[v + 1]; t.rest[n * 3 + 2] = p[v + 2]; }
-    } else {
-      const w = this.width || 0;
-      for (let i = 0; i < t.rest.length; i++) t.rest[i] = t.base[i] + t.dPos[i] * w;
+    if (!this.torso) return;
+    const sets = [this.torso, ...Object.values(this.armSet || {})];
+    const p = this.shape ? this.shape.positions({ ...this.morphs, width: this.width }) : null;
+    const w = this.width || 0;
+    for (const t of sets) {
+      if (p) for (let n = 0; n < t.n; n++) { const v = t.verts[n] * 3; t.rest[n * 3] = p[v]; t.rest[n * 3 + 1] = p[v + 1]; t.rest[n * 3 + 2] = p[v + 2]; }
+      else for (let i = 0; i < t.rest.length; i++) t.rest[i] = t.base[i] + t.dPos[i] * w;
     }
   }
 
@@ -392,7 +408,22 @@ export class Human {
    * #clear only visits the thin slice it tests. Typed-array skinning: this runs on every slider tick.
    */
   #skinTorso() {
-    const B = this.active, m = B.mesh, T = B.torso, N = T.n;
+    const T = this.active.torso, N = T.n;
+    const { X, Y, Z } = this.#skinPacked(T);
+    // counting sort into 1 cm slices (a comparator sort is the slow part otherwise)
+    let y0 = Infinity, y1 = -Infinity;
+    for (let n = 0; n < N; n++) { y0 = Math.min(y0, Y[n]); y1 = Math.max(y1, Y[n]); }
+    const S = Math.floor((y1 - y0) / 0.01) + 1, start = new Uint32Array(S + 1), slot = (y) => Math.floor((y - y0) / 0.01);
+    for (let n = 0; n < N; n++) start[slot(Y[n]) + 1]++;
+    for (let k = 0; k < S; k++) start[k + 1] += start[k];
+    const fill = start.slice(0, S);
+    for (let n = 0; n < N; n++) { const o = fill[slot(Y[n])]++; T.x[o] = X[n]; T.y[o] = Y[n]; T.z[o] = Z[n]; }
+    Object.assign(T, { y0, S, start });
+  }
+
+  /** skin a packed vertex set (rest positions + 4 weights) into the human's local space */
+  #skinPacked(T) {
+    const B = this.active, m = B.mesh, N = T.n;
     m.skeleton.update();
     const bm = m.skeleton.boneMatrices, R = T.rest;
     const P = m.bindMatrix.elements;
@@ -414,15 +445,32 @@ export class Human {
       Y[n] = M[1] * sx + M[5] * sy + M[9] * sz + M[13];
       Z[n] = M[2] * sx + M[6] * sy + M[10] * sz + M[14];
     }
-    // counting sort into 1 cm slices (a comparator sort is the slow part otherwise)
-    let y0 = Infinity, y1 = -Infinity;
-    for (let n = 0; n < N; n++) { y0 = Math.min(y0, Y[n]); y1 = Math.max(y1, Y[n]); }
-    const S = Math.floor((y1 - y0) / 0.01) + 1, start = new Uint32Array(S + 1), slot = (y) => Math.floor((y - y0) / 0.01);
-    for (let n = 0; n < N; n++) start[slot(Y[n]) + 1]++;
-    for (let k = 0; k < S; k++) start[k + 1] += start[k];
-    const fill = start.slice(0, S);
-    for (let n = 0; n < N; n++) { const o = fill[slot(Y[n])]++; T.x[o] = X[n]; T.y[o] = Y[n]; T.z[o] = Z[n]; }
-    Object.assign(T, { y0, S, start });
+    return { X, Y, Z };
+  }
+
+  /**
+   * How far the arm's OUTER contour (seen from the front) bulges past the straight line from the
+   * shoulder's outer edge to the wrist's outer edge, in metres. A muscular forearm hanging straight
+   * down pushes the elbow outside that line — the arm then reads as bent outward.
+   */
+  #armBow(s, sh, wr) {
+    const B = this.active, sg = s === 'l' ? 1 : -1, { X, Y } = this.#skinPacked(B.armSet[s]);
+    const yT = sh.y - 0.06, yB = wr.y + 0.01, n = Math.max(2, Math.round((yT - yB) / 0.01));
+    const outer = new Float32Array(n + 1).fill(-1);
+    for (let i = 0; i < X.length; i++) {
+      const k = Math.round((yT - Y[i]) / (yT - yB) * n);
+      if (k >= 0 && k <= n) outer[k] = Math.max(outer[k], sg * X[i]);
+    }
+    let top = 0, bot = n;
+    while (top < n && outer[top] < 0) top++;
+    while (bot > 0 && outer[bot] < 0) bot--;
+    let bow = 0;
+    for (let k = top + 3; k <= bot - 3; k++) {
+      if (outer[k] < 0) continue;
+      const chord = outer[top] + (outer[bot] - outer[top]) * (k - top) / (bot - top);
+      bow = Math.max(bow, outer[k] - chord);
+    }
+    return bow;
   }
 
   /** Is the segment from `a` along unit `d` (length L, radius r) clear of the torso on side `sg` by `gap`? */
@@ -475,6 +523,16 @@ export class Human {
       let out = Math.max(0, upOut - 3);
       while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.012, [0.4, 0.7, 1, 1.25, 1.45], 0.3)) out += 0.5;   // (past 1: the hand, so it rests beside the thigh, not in it)
       this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
+      // straight arm: tilt the forearm out until the arm's outer contour runs straight from the
+      // shoulder to the wrist (a thick forearm hanging plumb makes the elbow bulge out)
+      const hd = B.bones[B.boneIndex[`hand_${s}`]];
+      const wrist = () => hd.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
+      // (capped: a heavy forearm can't make a perfect line, and past ~15° off the upper arm it looks posed)
+      const cap = Math.min(upOut + 15, 21);
+      for (let it = 0; it < 30 && out + 1 <= cap && this.#armBow(s, sh, wrist()) > 0.003; it++) {
+        out += 1;
+        this.#aim(la, dir(out + (F.out || 0), F.fwd || 0), sg * (F.twist || 0), F.extra);
+      }
     }
   }
 

@@ -88,7 +88,7 @@ const armsDown = {
   clavicle: [0, 0, -4],
   upperarm: { hang: true, fwd: 2 },
   lowerarm: { hang: true, fwd: 10, twist: 16 },   // palm to the thigh, rolled ~15° back (a relaxed forearm)
-  hand: [-8, 0, -4],                                 // back of the hand in line with the forearm; the fingers curl toward the thigh
+  hand: [-28, 0, -4],                                // hand in line with the forearm (seen from the front it bends in only ~5°)
 };
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
 const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
