@@ -42,3 +42,7 @@ pre#stats { margin: 0; color: var(--muted); font-size: 11px; white-space: pre-wr
 #insp-canvas { width: 320px; height: 320px; border-radius: 8px; background: repeating-conic-gradient(#1a1d25 0 25%, #14161c 0 50%) 0 0 / 16px 16px; }
 .insp-legend { padding: 6px 0 0; }
 #insp-json { font-size: 10px; color: var(--muted); max-height: 160px; overflow: auto; margin: 6px 0 0; }
+.chips button.on { border-color: var(--accent); background: rgba(255, 91, 58, .18); color: #fff; }
+.chips .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); margin-right: 6px; box-shadow: 0 0 0 1px rgba(255,255,255,.15); }
+#presets button { flex: 1; height: 36px; font-weight: 600; }
+.small { font-size: 10px; color: var(--muted); white-space: pre-wrap; word-break: break-all; margin: 0; }

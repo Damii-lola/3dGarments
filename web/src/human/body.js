@@ -3,6 +3,7 @@
  * Everything else is fixed to a fit, athletic build, like a fashion fit model.
  */
 import { DEFAULT_SHAPE } from './modifiers.js';
+import { Human } from './human.js';
 
 /** Fit, athletic bases (MakeHuman macro + local targets). */
 export const FIT = {
@@ -75,3 +76,58 @@ export function shapeFor({ sex = 'female', frame = 0, height = 0.5, skin = 'gray
 export const IN = 2.54;
 export const cmToIn = (cm) => cm / IN;
 export const fmtIn = (inches) => { const i = Math.round(inches); return `${i} in · ${Math.floor(i / 12)}′${i % 12}″`; };
+
+/**
+ * Drives a Human from the four studio controls. Width (shoulder point to point, cm) and
+ * height (in) each own one parameter; they barely interact, so two alternating exact
+ * solves converge. Shared by the studio and the lab so both show the same models.
+ */
+export class ModelController {
+  /** @param model { sex, width (cm), height (in), skin } — kept by reference and mutated */
+  constructor(human, model) {
+    this.human = human;
+    this.model = model;
+    this.frame = 0;
+    this.heightParam = 0.5;
+  }
+
+  #measure(frame, height) {
+    const { sex, skin } = this.model;
+    return this.human.measure(shapeFor({ sex, skin, frame, height }));
+  }
+
+  solve() {
+    const { sex, skin, width, height } = this.model;
+    for (let i = 0; i < 2; i++) {
+      this.frame = Human.solve((f) => this.#measure(f, this.heightParam).width * 100, width, FRAME_RANGE[0], FRAME_RANGE[1], 0);
+      this.heightParam = Human.solve((h) => this.#measure(this.frame, h).height * 100 / IN, height, 0, 1, 0.5);
+    }
+    return shapeFor({ sex, skin, frame: this.frame, height: this.heightParam });
+  }
+
+  applyShape() { this.human.setShape(this.solve()); }
+
+  /** Skin, grey clay mode, hair style/colour and underwear all follow sex + skin. */
+  applyLook() {
+    const k = skinById(this.model.skin);
+    this.human.setSkin({ tone: k.hex, clay: !!k.clay, stubble: 0, hairColor: k.hair });
+    this.human.setHair({ style: this.model.sex === 'male' ? 'crop' : 'sleek', color: k.hair });
+    this.human.setUnderwear({ style: 'auto', color: k.clay ? '#5f6064' : '#2c2c30' });
+  }
+
+  apply() { this.applyShape(); this.applyLook(); }
+
+  setSex(sex) {
+    this.model.sex = sex;
+    Object.assign(this.model, RANGES[sex].defaults);
+  }
+
+  /** Slider ranges clipped to what this body can actually reach. */
+  reach(key) {
+    const [lo, hi] = RANGES[this.model.sex][key];
+    const m = key === 'width'
+      ? FRAME_RANGE.map((f) => this.#measure(f, this.heightParam).width * 100)
+      : [0, 1].map((h) => this.#measure(this.frame, h).height * 100 / IN);
+    return [Math.max(lo, Math.ceil(m[0])), Math.min(hi, Math.floor(m[1]))];
+  }
+}

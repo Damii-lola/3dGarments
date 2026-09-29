@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { createStage } from '@web/scene/stage.js';
 import { loadHumanAssets } from '@web/human/assets.js';
 import { Human } from '@web/human/human.js';
-import { DEFAULT_SHAPE } from '@web/human/modifiers.js';
+import { ModelController, SKINS, RANGES, fmtIn, IN } from '@web/human/body.js';
 import { POSES, composePose } from '@web/human/poses.js';
 
 const $ = (s) => document.querySelector(s);
@@ -17,12 +17,16 @@ const params = new URLSearchParams(location.search);
 const t0 = performance.now();
 const assets = await loadHumanAssets();
 const tLoad = performance.now() - t0;
-const shape = { ...DEFAULT_SHAPE, gender: params.get('gender') === 'male' ? 1 : 0 };
-const human = new Human(assets, { shape });
+const sex = params.get('gender') === 'male' ? 'male' : 'female';
+const M = { sex, ...RANGES[sex].defaults, skin: params.get('skin') || 'gray' };
+const human = new Human(assets);
+const model = new ModelController(human, M);
+model.apply();
 stage.root.add(human.object);
 stage.setSubjectHeight(human.heightM);
 stage.setView(params.get('view') || 'front', { instant: true });
-let pose = {};
+let pose = composePose('stand');
+human.setPose(pose);
 let lastShapeMs = 0;
 
 /* ------------------------------------------------ sliders */
@@ -36,35 +40,51 @@ function slider(host, { label, min, max, step, value, fmt = (v) => v }, onInput)
   return { set(v) { input.value = v; out.textContent = fmt(v); } };
 }
 
-const pct = (v) => `${Math.round(v * 100)}%`;
-const SHAPE = [
-  ['gender', 'Gender (F→M)', 0, 1, 0.01, pct], ['ageYears', 'Age', 25, 90, 1, (v) => `${v} y`],
-  ['muscle', 'Muscle', 0, 1, 0.01, pct], ['weight', 'Weight', 0, 1, 0.01, pct], ['height', 'Height', 0, 1, 0.01, pct],
-  ['proportions', 'Proportions', 0, 1, 0.01, pct], ['breastSize', 'Breast size', 0, 1, 0.01, pct],
-  ['african', 'African', 0, 1, 0.01, pct], ['asian', 'Asian', 0, 1, 0.01, pct], ['caucasian', 'Caucasian', 0, 1, 0.01, pct],
-];
-const shapeSliders = {};
-let shapeTimer = null;
-for (const [key, label, min, max, step, fmt] of SHAPE) {
-  shapeSliders[key] = slider($('#shape-sliders'), { label, min, max, step, value: shape[key], fmt }, (v) => {
-    shape[key] = v;
-    cancelAnimationFrame(shapeTimer);
-    shapeTimer = requestAnimationFrame(() => {
+// the studio's four model controls — same ModelController as the app
+function buildBody() {
+  const host = $('#shape-sliders');
+  host.innerHTML = '';
+  let raf = 0;
+  const reshape = () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
       const t = performance.now();
-      human.setShape(shape);
+      model.applyShape();
+      human.setPose(pose);
       lastShapeMs = performance.now() - t;
       stage.setSubjectHeight(human.heightM);
     });
+  };
+  const [wLo, wHi] = model.reach('width'), [hLo, hHi] = model.reach('height');
+  slider(host, { label: 'Width (shoulder point to point)', min: wLo, max: wHi, step: 0.5, value: M.width, fmt: (v) => `${v.toFixed(1)} cm` }, (v) => { M.width = v; reshape(); });
+  slider(host, { label: 'Height', min: hLo, max: hHi, step: 0.5, value: M.height, fmt: (v) => `${fmtIn(v)} · ${Math.round(v * IN)} cm` }, (v) => { M.height = v; reshape(); });
+  const skins = document.createElement('div');
+  skins.className = 'chips';
+  skins.innerHTML = SKINS.map((k) => `<button data-skin="${k.id}" class="${k.id === M.skin ? 'on' : ''}" title="${k.label}"><i class="dot" style="--c:${k.hex}"></i>${k.label}</button>`).join('');
+  skins.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-skin]');
+    if (!b) return;
+    M.skin = b.dataset.skin;
+    model.apply();
+    human.setPose(pose);
+    buildBody();
   });
+  host.append(skins);
 }
-$('#presets').innerHTML = '<button data-g="0">Female</button><button data-g="1">Male</button>';
+$('#presets').innerHTML = '<button data-g="female">Female</button><button data-g="male">Male</button>';
+const markSex = () => $('#presets').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.g === M.sex));
 $('#presets').addEventListener('click', (e) => {
   const g = e.target.dataset.g;
-  if (g == null) return;
-  shape.gender = +g;
-  shapeSliders.gender.set(+g);
-  human.setShape(shape);
+  if (!g || g === M.sex) return;
+  model.setSex(g);
+  model.apply();
+  human.setPose(pose);
+  stage.setSubjectHeight(human.heightM);
+  markSex();
+  buildBody();
 });
+markSex();
+buildBody();
 
 /* ------------------------------------------------ poses + bone editor */
 $('#poses').innerHTML = Object.entries(POSES).map(([k, p]) => `<button data-p="${k}">${p.label}</button>`).join('');
@@ -147,4 +167,4 @@ let frames = 0, fpsT = performance.now();
   requestAnimationFrame(tick);
 })();
 
-window.__lab = { stage, human, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };
+window.__lab = { stage, human, model, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };

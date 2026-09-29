@@ -5,7 +5,7 @@ import './styles.css';
 import { createStage, HDRIS, LIGHTING } from './scene/stage.js';
 import { loadHumanAssets } from './human/assets.js';
 import { Human } from './human/human.js';
-import { SKINS, RANGES, FRAME_RANGE, shapeFor, skinById, fmtIn, IN } from './human/body.js';
+import { SKINS, RANGES, ModelController, fmtIn, IN } from './human/body.js';
 import { POSES, HANDS, DEFAULT_POSE, composePose } from './human/poses.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -116,37 +116,17 @@ const ftIn = (cm) => { const i = Math.round(cm / 2.54); return `${Math.floor(i /
 const stage = createStage($('#stage-canvas'));
 let human = null;
 
-/**
- * Real measurements → body. Width (shoulder point to point, cm) and height (in) each drive one
- * parameter; they barely interact, so two alternating exact solves converge.
- */
-let frame = 0, heightParam = 0.5;
-function solveBody() {
-  const base = { sex: M.sex, skin: M.skin };
-  for (let i = 0; i < 2; i++) {
-    frame = Human.solve((f) => human.measure(shapeFor({ ...base, frame: f, height: heightParam })).width * 100, M.width, FRAME_RANGE[0], FRAME_RANGE[1], 0);
-    heightParam = Human.solve((h) => human.measure(shapeFor({ ...base, frame, height: h })).height * 100 / IN, M.height, 0, 1, 0.5);
-  }
-  return shapeFor({ ...base, frame, height: heightParam });
-}
+let model = null; // ModelController (human/body.js)
 
 function applyShape() {
   if (!human) return;
-  human.setShape(solveBody());
+  model.applyShape();
   stage.setSubjectHeight(human.heightM);
   save();
 }
 let shapeRaf = 0;
 const queueShape = () => { cancelAnimationFrame(shapeRaf); shapeRaf = requestAnimationFrame(applyShape); };
-
-/** Skin, hair colour, grey clay mode and hair style all follow sex + skin. */
-function applyLook() {
-  if (!human) return;
-  const k = skinById(M.skin);
-  human.setSkin({ tone: k.hex, clay: !!k.clay, stubble: 0, hairColor: k.hair });
-  human.setHair({ style: M.sex === 'male' ? 'crop' : 'sleek', color: k.hair });
-  human.setUnderwear({ style: 'auto', color: k.clay ? '#5f6064' : '#2c2c30' });
-}
+const applyLook = () => { if (human) { model.applyLook(); save(); } };
 
 function applyPose() {
   human?.setPose(composePose(state.pose.preset, adjustToPose(state.pose.adjust), state.pose.hands || null));
@@ -202,23 +182,15 @@ function buildModelTab() {
 
   const sex = chips([['female', 'Female'], ['male', 'Male']], M.sex, (v) => {
     if (v === M.sex) return;
-    M.sex = v;
-    Object.assign(M, RANGES[v].defaults);
+    model.setSex(v);
     applyShape();
     applyLook();
     buildModelTab();
   }, { cls: 'seg big' });
 
   // ranges are clipped to what the body can actually reach for this sex
-  const reach = (key, lo, hi) => {
-    const base = { sex: M.sex, skin: M.skin };
-    const m = key === 'width'
-      ? [FRAME_RANGE[0], FRAME_RANGE[1]].map((f) => human.measure(shapeFor({ ...base, frame: f, height: heightParam })).width * 100)
-      : [0, 1].map((h) => human.measure(shapeFor({ ...base, frame, height: h })).height * 100 / IN);
-    return [Math.max(lo, Math.ceil(m[0])), Math.min(hi, Math.floor(m[1]))];
-  };
-  const [wLo, wHi] = human ? reach('width', ...R.width) : R.width;
-  const [hLo, hHi] = human ? reach('height', ...R.height) : R.height;
+  const [wLo, wHi] = human ? model.reach('width') : R.width;
+  const [hLo, hHi] = human ? model.reach('height') : R.height;
 
   const width = slider({
     label: 'Width', hint: 'shoulder point to point', min: wLo, max: wHi, step: 0.5, value: M.width,
@@ -464,8 +436,8 @@ async function boot() {
 
   const assets = await loadHumanAssets();
   human = new Human(assets);
-  human.setShape(solveBody());
-  applyLook();
+  model = new ModelController(human, M);
+  model.apply();
   stage.root.add(human.object);
   stage.setSubjectHeight(human.heightM);
   applyPose();
