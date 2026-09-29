@@ -8,6 +8,7 @@ import { supabaseConfigured } from './lib/supabase.js';
 import { health } from './routes/health.js';
 import { garments } from './routes/garments.js';
 import { me } from './routes/me.js';
+import { ngl } from './routes/ngl.js';
 import { groups } from './routes/groups.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
@@ -26,7 +27,8 @@ app.use(cors({
   allowedHeaders: ['Authorization', 'Content-Type'],
   maxAge: 86400,
 }));
-app.use(express.json({ limit: '256kb' }));
+const smallJson = express.json({ limit: '256kb' });
+app.use((req, res, next) => (req.path.startsWith('/api/ngl/') ? next() : smallJson(req, res, next))); // photos: the route's own limit
 
 app.get('/', (_req, res) => res.json({ service: '3dgarments-api', docs: '/health' }));
 app.use('/health', health);
@@ -42,6 +44,7 @@ app.get('/api/public-config', (_req, res) => {
 app.use('/api/garments', garments);
 app.use('/api/me', me);
 app.use('/api/groups', groups);
+app.use('/api/ngl', ngl);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
 

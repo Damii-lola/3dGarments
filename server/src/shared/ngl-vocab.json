@@ -1,0 +1,144 @@
+{
+ "types": [
+  "top",
+  "shirt",
+  "sweater",
+  "hoodie",
+  "jacket",
+  "tank",
+  "dress",
+  "jumpsuit",
+  "skirt",
+  "pants",
+  "shorts"
+ ],
+ "upper": {
+  "fit": [
+   "tight",
+   "fitted",
+   "regular",
+   "loose",
+   "oversized"
+  ],
+  "length": [
+   "cropped",
+   "waist",
+   "high_hip",
+   "hip",
+   "thigh"
+  ],
+  "hem": [
+   "straight",
+   "slightly_flared",
+   "flared"
+  ],
+  "neckline": [
+   "crew",
+   "scoop",
+   "v_neck",
+   "square",
+   "boat",
+   "sweetheart",
+   "turtleneck",
+   "collar",
+   "hood",
+   "strapless"
+  ],
+  "neckline_depth": [
+   "shallow",
+   "medium",
+   "deep",
+   "plunging"
+  ],
+  "neckline_width": [
+   "narrow",
+   "medium",
+   "wide"
+  ],
+  "sleeve_length": [
+   "sleeveless",
+   "cap",
+   "short",
+   "elbow",
+   "three_quarter",
+   "long"
+  ],
+  "sleeve_shape": [
+   "fitted",
+   "straight",
+   "wide",
+   "bell",
+   "puff"
+  ],
+  "cuff": [
+   "none",
+   "band",
+   "ruffle"
+  ]
+ },
+ "lower": {
+  "skirt_shape": [
+   "straight",
+   "pencil",
+   "a_line",
+   "circle",
+   "pleated",
+   "tiered",
+   "high_low"
+  ],
+  "length": [
+   "micro",
+   "mini",
+   "above_knee",
+   "knee",
+   "below_knee",
+   "midi",
+   "ankle",
+   "floor"
+  ],
+  "leg": [
+   "skinny",
+   "straight",
+   "wide",
+   "palazzo",
+   "flared"
+  ],
+  "rise": [
+   "low",
+   "mid",
+   "high"
+  ],
+  "waistband": [
+   "none",
+   "band",
+   "elastic"
+  ],
+  "slit": [
+   "none",
+   "front",
+   "side",
+   "back"
+  ]
+ },
+ "defaults": {
+  "upper": {
+   "fit": "regular",
+   "length": "hip",
+   "hem": "straight",
+   "neckline": "crew",
+   "neckline_depth": "medium",
+   "neckline_width": "medium",
+   "sleeve_length": "short",
+   "sleeve_shape": "straight",
+   "cuff": "none"
+  },
+  "lower": {
+   "skirt_shape": "a_line",
+   "length": "knee",
+   "leg": "straight",
+   "rise": "mid",
+   "waistband": "band",
+   "slit": "none"
+  }
+ }
+}
