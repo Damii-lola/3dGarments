@@ -27,6 +27,11 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/main.js           STAGE 1 UI: one panel (sex, skin, live measurements card, height & weight, body type, abdomen & waist,
                         bust & chest, shoulders & posture, glutes & thighs) + the preview filling the rest. State in localStorage.
                         Responsive: desktop panel | preview; ≤860px preview over a scrolling panel; phones in landscape preview | panel
+  src/uploads/          STAGE 1 garment photos: groups.js (upload box above the sex picker → review popup: remove / add more,
+                        max 10 per group, Confirm bottom-right → a group card; click a card to edit, rename or delete; any number
+                        of groups; drafts, so Cancel/Esc changes nothing), store.js (Supabase: table garment_groups + private
+                        "garments" bucket at <uid>/groups/<group>/<image>, written with the user's own session — anonymous
+                        sign-in if nobody is logged in; falls back to IndexedDB when cloud isn't configured or refuses)
   src/human/body.js     SKIN_STOPS/toneAt, RANGES, BUILDS, ABDOMEN, LIMITS, ModelController: height (uniform scale) + shoulders (width morph)
                         exact; weight = volume × density, solved with the fat target; girths/bra size; everything in sync (see below)
   src/human/shape.js    body-shape morph targets BUILT AT LOAD from the mesh (belly, waist, bust, chest, glutes, hips, thighs, fat,

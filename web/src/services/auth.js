@@ -10,6 +10,23 @@ async function sb() {
   return client;
 }
 
+/** the supabase-js client (null in local mode) */
+export const supabaseClient = sb;
+
+/**
+ * A session to write the user's own rows / files with: the current one, else an anonymous one
+ * (needs "Allow anonymous sign-ins" in the Supabase project's Auth settings).
+ */
+export async function ensureSession() {
+  const c = await sb();
+  if (!c) throw new Error('cloud not configured');
+  const { data } = await c.auth.getSession();
+  if (data.session) return data.session;
+  const { data: anon, error } = await c.auth.signInAnonymously();
+  if (error) throw error;
+  return anon.session;
+}
+
 export async function getSession() {
   const c = await sb();
   if (!c) return null;

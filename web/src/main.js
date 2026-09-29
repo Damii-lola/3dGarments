@@ -9,6 +9,7 @@ import {
   RANGES, ModelController, fmtIn, IN, LB, DEFAULT_TONE, toneGradient, BUILDS, ABDOMEN, SHAPE_DEFAULTS,
 } from './human/body.js';
 import { DEFAULT_POSE, composePose } from './human/poses.js';
+import { createUploads } from './uploads/groups.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -164,8 +165,11 @@ const breadth = (v) => {
   return v < d - 2.5 ? 'narrow' : v > d + 2.5 ? 'broad' : 'neutral';
 };
 
+let uploads = null; // the garment photo section: built once, kept across panel rebuilds
+
 function buildPanel() {
   const host = $('#panel');
+  uploads ||= createUploads({ toast });
   host.innerHTML = '';
   ui = {};
 
@@ -244,6 +248,7 @@ function buildPanel() {
   reset.addEventListener('click', () => { model.resetShape(); applyShape(); buildPanel(); });
 
   host.append(
+    uploads,
     group('Model', null, sex),
     group('Skin', null, skin),
     group('Measurements', 'live', ui.stats),
