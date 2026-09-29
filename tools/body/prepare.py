@@ -330,8 +330,74 @@ def boxer_briefs(V, F, J, W, part, top, hem):
             np.concatenate([W, W[used]]), np.concatenate([part, np.full(len(used), PART['fabric'], np.float32)]))
 
 
+# --------------------------------------------------------------------------- garment detail lines
+def garment_lines(V, F, part, band_edge, band_width):
+    """
+    Per fabric vertex, for the shader's stitching and elastic band:
+      _EDGE  distance (m) to the garment's nearest open edge (hem stitches run parallel to it)
+      _BAND  distance to the band edge / band width (< 1 inside the elastic band): the waist edge
+             of briefs/boxers ('top'), the underband of a bra ('bottom')
+    Non-fabric vertices get large values (no lines).
+    """
+    edge = np.full(len(V), 9.0, np.float32)
+    band = np.full(len(V), 9.0, np.float32)
+    fab = part == PART['fabric']
+    if not fab.any():
+        return edge, band
+    Ff = F[fab[F].all(1)]
+    e = np.sort(np.concatenate([Ff[:, [0, 1]], Ff[:, [1, 2]], Ff[:, [2, 0]]]), 1)
+    u, cnt = np.unique(e, axis=0, return_counts=True)
+    be = u[cnt == 1]
+    # boundary as dense points (edges sampled every 2 mm)
+    pts, lab = [], []
+    comp = _edge_components(be, len(V))
+    for (a, b) in be:
+        n = max(2, int(np.linalg.norm(V[a] - V[b]) / 0.002) + 1)
+        t = np.linspace(0, 1, n)[:, None]
+        pts.append(V[a] + (V[b] - V[a]) * t)
+        lab.append(np.full(n, comp[a]))
+    pts, lab = np.concatenate(pts), np.concatenate(lab)
+    fi = np.nonzero(fab)[0]
+    d, _ = cKDTree(pts).query(V[fi])
+    edge[fi] = d
+    # band loops: per garment piece (connected fabric), the highest / lowest boundary loop
+    loops = np.unique(lab)
+    ymean = {l: pts[lab == l, 1].mean() for l in loops}
+    piece = _vertex_components(Ff, len(V))
+    for pc in np.unique(piece[fi]):
+        vs = fi[piece[fi] == pc]
+        mine = [l for l in loops if piece[be[comp[be[:, 0]] == l][0, 0]] == pc]
+        if not mine:
+            continue
+        pick = max(mine, key=ymean.get) if band_edge == 'top' else min(mine, key=ymean.get)
+        db, _ = cKDTree(pts[lab == pick]).query(V[vs])
+        band[vs] = db / band_width
+    return edge, band
+
+
+def _edge_components(edges, n):
+    from scipy.sparse.csgraph import connected_components
+    G = sparse.coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
+    _, lab = connected_components(G, directed=False)
+    return lab
+
+
+def adjacency(nv, F):
+    i = np.concatenate([F[:, 0], F[:, 1], F[:, 2], F[:, 1], F[:, 2], F[:, 0]])
+    j = np.concatenate([F[:, 1], F[:, 2], F[:, 0], F[:, 0], F[:, 1], F[:, 2]])
+    A = sparse.coo_matrix((np.ones(len(i)), (i, j)), shape=(nv, nv)).tocsr()
+    A.data[:] = 1
+    return A
+
+
+def _vertex_components(F, n):
+    from scipy.sparse.csgraph import connected_components
+    _, lab = connected_components(adjacency(n, F), directed=False)
+    return lab
+
+
 # --------------------------------------------------------------------------- rigged models
-def rigged(name, src, MAP, keep, faceless=False, boxers=False):
+def rigged(name, src, MAP, keep, faceless=False, boxers=False, band_edge='top', band_width=0.012):
     """
     keep: {mesh name: (part, [material names to drop])} — meshes not listed are left out
     (transparent cards: lashes, brows, tear lines … read as floating strips in a clay render).
@@ -371,7 +437,12 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False):
         Fm = inv[np.searchsorted(used, tri)]
         Fm = Fm[(Fm[:, 0] != Fm[:, 1]) & (Fm[:, 1] != Fm[:, 2]) & (Fm[:, 0] != Fm[:, 2])]
         src_v = used[first]
-        Vs.append(V); Fs.append(Fm + off); Js.append(lut[SI[src_v]]); Ws.append(SW[src_v]); Ps.append(np.full(len(V), part))
+        Jm, Wm = lut[SI[src_v]], SW[src_v]
+        if part == PART['fabric']:  # low-poly garment: one loop subdivision (weights come from the skin later)
+            import trimesh
+            V, Fm = trimesh.remesh.subdivide_loop(V, Fm, iterations=1)
+            Jm, Wm = np.zeros((len(V), 4), int), np.zeros((len(V), 4))
+        Vs.append(V); Fs.append(Fm + off); Js.append(Jm); Ws.append(Wm); Ps.append(np.full(len(V), part))
         off += len(V)
     V, F = np.concatenate(Vs), np.concatenate(Fs)
     J, W, part = np.concatenate(Js), np.concatenate(Ws), np.concatenate(Ps).astype(np.float32)
@@ -426,13 +497,15 @@ def rigged(name, src, MAP, keep, faceless=False, boxers=False):
         m = (part == PART['eye']) & (np.sign(V[:, 0]) == sg)
         if m.any():
             eyes[sd] = [round(float(x), 5) for x in V[m].mean(0)]
-    export(name, V, F, names, parents, heads, tails, J, W, extra={'_PART': part}, part=part, eyes=eyes)
+    edge, band = garment_lines(V, F, part, band_edge, band_width)
+    export(name, V, F, names, parents, heads, tails, J, W, extra={'_PART': part, '_EDGE': edge, '_BAND': band},
+           part=part, eyes=eyes)
 
 
 if __name__ == '__main__':
     which = sys.argv[1:] or ['male', 'female']
     if 'male' in which:
-        rigged('male', 'MaleModel', MIXAMO, {'Ch36': (PART['skin'], [])}, boxers=True)
+        rigged('male', 'MaleModel', MIXAMO, {'Ch36': (PART['skin'], [])}, boxers=True, band_edge='top', band_width=0.035)
     if 'female' in which:
         rigged('female', 'FemaleModel', CC, {
             'CC_Base_Body': (PART['skin'], ['Std_Eyelash']),
@@ -440,4 +513,4 @@ if __name__ == '__main__':
             'CC_Game_Teeth': (PART['teeth'], []),
             'Bra': (PART['fabric'], []),
             'Underwear_Bottoms': (PART['fabric'], []),
-        }, faceless=True)  # plain mannequin head, like the male
+        }, faceless=True, band_edge='top', band_width=0.012)  # plain mannequin head, like the male

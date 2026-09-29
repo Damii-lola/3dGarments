@@ -41,7 +41,9 @@ class Body {
     this.material = createBodyMaterial({ eyes: mesh.userData?.eyes });
     mesh.material = [this.material]; // array: the lab swaps in debug materials by index
     const g = mesh.geometry;
-    if (!g.attributes._part) g.setAttribute('_part', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+    for (const [k, v] of [['_part', 0], ['_edge', 9], ['_band', 9]]) {
+      if (!g.attributes[k]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
+    }
     if (!mesh.geometry.groups.length) mesh.geometry.addGroup(0, Infinity, 0);
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.frustumCulled = false;
