@@ -64,7 +64,7 @@ class Body {
     this.clothMaterial = createBodyMaterial({ eyes: mesh.userData?.eyes, side: THREE.DoubleSide });
     mesh.material = [this.material, this.clothMaterial]; // array: the lab swaps in debug materials by index
     const g = mesh.geometry;
-    for (const [k, v] of [['_part', 0], ['_edge', 9], ['_band', 9]]) {
+    for (const [k, v] of [['_part', 0], ['_edge', 9], ['_band', 9], ['_hide', 0]]) {
       if (!g.attributes[k]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
     }
     {
@@ -90,6 +90,7 @@ class Body {
     this.parents = this.bones.map((b) => this.bones.indexOf(b.parent));
     this.widthDx = extras.widthBoneDx || this.bones.map(() => 0);
     this.probes = extras.shoulderProbes || null;
+    this.weightListeners = new Set();   // called when skin weights change at runtime (worn garments copy them)
 
     // bind pose, in mesh space (the glb root carries no transform)
     this.root.updateMatrixWorld(true);
@@ -182,7 +183,18 @@ class Body {
         for (let c = 0; c < 4; c++) { si.setComponent(i, c, w[c]?.[0] ?? 0); sw.setComponent(i, c, w[c] ? w[c][1] / sum : 0); }
       }
     }
-    if (changed) si.needsUpdate = sw.needsUpdate = true;
+    if (changed) {
+      si.needsUpdate = sw.needsUpdate = true;
+      for (const f of this.weightListeners) f();
+    }
+  }
+
+  /** hide skin (and underwear) vertices: whatever a worn garment fully covers (a Set of vertex indices) */
+  setHidden(set) {
+    const a = this.mesh.geometry.attributes._hide;
+    a.array.fill(0);
+    for (const i of set) a.array[i] = 1;
+    a.needsUpdate = true;
   }
 
   /** Put the skeleton on the (width-morphed) body in its bind pose and bind it there. */
@@ -367,6 +379,7 @@ export class Human {
     this.object.name = 'human';
     for (const b of Object.values(bodies)) { b.root.visible = false; this.object.add(b.root); }
     this.scale = 1;
+    this.listeners = new Set();   // called after every shape / pose change (worn garments follow)
     this.pose = {};
     this.morphs = {};
     this.posture = 0;
@@ -468,6 +481,7 @@ export class Human {
       root.position.y -= this.lowestPoint();
       this.object.updateMatrixWorld(true);
     }
+    for (const f of this.listeners) f(this);
   }
 
   /** skinned position of vertex i, in the human's (unscaled) local space */

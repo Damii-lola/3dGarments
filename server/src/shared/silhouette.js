@@ -245,13 +245,36 @@ function floodSegment(rgba, w, h) {
     return dl * dl + da * da + db * db;
   };
 
+  // edge walls: the garment's outline (and its shadow) is a line of strong local contrast, even when
+  // the garment's colour is close to the backdrop's (a white shirt on a cream sheet). Gradient on a
+  // lightly blurred image, calibrated on the backdrop's own texture at the border.
+  const bl = new Float32Array(n * 3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let a = 0, b = 0, c = 0, k = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const o = (yy * w + xx) * 3; a += lab[o]; b += lab[o + 1]; c += lab[o + 2]; k++;
+    }
+    const o = (y * w + x) * 3; bl[o] = a / k; bl[o + 1] = b / k; bl[o + 2] = c / k;
+  }
+  const grad = new Float32Array(n);
+  for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+    const i = y * w + x, o = i * 3, r = o + 3, d = o + w * 3;
+    const g1 = (bl[o] - bl[r]) ** 2 + (bl[o + 1] - bl[r + 1]) ** 2 + (bl[o + 2] - bl[r + 2]) ** 2;
+    const g2 = (bl[o] - bl[d]) ** 2 + (bl[o + 1] - bl[d + 1]) ** 2 + (bl[o + 2] - bl[d + 2]) ** 2;
+    grad[i] = Math.sqrt(Math.max(g1, g2));
+  }
+  const bgGrad = samples.map((i) => grad[i]).sort((a, b) => a - b);
+  const wall = Math.max(1.6, (bgGrad[Math.floor(bgGrad.length * (+(globalThis.process?.env?.WP) || 0.9))] || 1) * (+(globalThis.process?.env?.WK) || 2.5));
+
   const bg = new Uint8Array(n);
   const q = new Int32Array(n);
   let qh = 0, qt = 0;
   for (const i of border) if (!bg[i] && dBg(i) < T1sq * 1.8) { bg[i] = 1; q[qt++] = i; }
 
   const visit = (i, j) => {
-    if (bg[j]) return;
+    if (bg[j] || grad[j] > wall) return;
     const d = dBg(j);
     if (d < T1sq || (d < looseSq && dPix(i, j) < T2sq)) { bg[j] = 1; q[qt++] = j; }
   };
@@ -481,11 +504,15 @@ export function analyzeSilhouette(mask, w, h) {
 
   /* ---- crotch (two legs below a shared waist) ---- */
   let crotchK = null;
-  const waistCovered = rows.filter((r) => inG(r) && gy(r.y) < 0.15).every((r) => coversCenter(r.runs));
-  if (waistCovered) {
+  // a crotch: the garment splits in two below a band that runs across the middle (a waistband, or the
+  // body of a jumpsuit under its neckline)
+  {
+    let covered = 0;
     for (let k = 0; k < R; k++) {
       const r = rows[k];
-      if (!inG(r) || gy(r.y) < 0.2 || gy(r.y) > 0.9) continue;
+      if (!inG(r)) continue;
+      if (coversCenter(r.runs)) { covered++; continue; }
+      if (covered < 4 || gy(r.y) < 0.2 || gy(r.y) > 0.9) continue;
       const split = (row) => row.runs.length >= 2 && !coversCenter(row.runs);
       if (!split(r)) continue;
       const rest = rows.slice(k).filter((x) => inG(x) && gy(x.y) <= 0.98);
@@ -503,8 +530,9 @@ export function analyzeSilhouette(mask, w, h) {
 
   /* ---- armpit (sharp width jump going up) ---- */
   let armpitK = null;
-  if (crotchK === null) {
-    const gIdx = rows.map((r, i) => (inG(r) ? i : -1)).filter((i) => i >= 0);
+  {
+    // (above the crotch too: a jumpsuit has sleeves and legs)
+    const gIdx = rows.map((r, i) => (inG(r) && (crotchK === null || i < crotchK - 2) ? i : -1)).filter((i) => i >= 0);
     const kFirst = gIdx[0], kLast = gIdx[gIdx.length - 1];
     let kStart = kLast;
     while (kStart > kFirst && gy(rows[kStart].y) > 0.9) kStart--;
@@ -625,7 +653,7 @@ export function analyzeSilhouette(mask, w, h) {
   const torsoW = median(tR.map((r, i) => r - tL[i]));
   let guess = 'top';
   if (crotchK !== null) {
-    guess = (botN - rows[crotchK].y) / ext > 0.5 ? 'pants' : 'shorts';
+    guess = armpitK !== null ? 'jumpsuit' : (botN - rows[crotchK].y) / ext > 0.5 ? 'pants' : 'shorts';
   } else {
     const hw = ext / (torsoW || 1);
     if (armpitK !== null) guess = hw > 1.9 ? 'dress' : 'top';
