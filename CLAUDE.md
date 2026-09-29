@@ -15,9 +15,10 @@ server/                 Express API (Render). ESM, Node 22.
     silhouette.js       segmentation, cut-out, silhouette measurements, categories
   test/                 node --test (runs the real pipeline on fixtures/samples.js SVG flat-lays)
   scripts/verify.mjs    live integration check (npm run verify)
-assets/                 SOURCE body models from the owner: MaleModel.fbx (Mixamo rig), FemaleModel.fbx (unrigged)
-tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab page test/extract.html), prepare.py
-                        (weld, metres, skeleton with our bone names, female auto-rig, width morph, shoulder probes → GLB), glb.py
+assets/                 SOURCE body models from the owner: MaleModel.fbx (Mixamo rig), FemaleModel.fbx (Character Creator rig + face, eyes, teeth, underwear)
+tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab page test/extract.html; test/meshes.html lists an FBX's meshes),
+                        prepare.py (merge kept meshes, tag parts, weld, metres, rename the rig to our bones, width morph,
+                        shoulder probes, eye centres → GLB), glb.py
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
   src/main.js           studio UI: Model (sex, width cm, height in, skin) / Pose / Scene tabs, Shot panel, state in localStorage
@@ -46,7 +47,8 @@ render.yaml             Render blueprint
 
 ## Human conventions (don't break these)
 - Models are in metres, y up, facing +z, feet on y = 0, left = +x (prepare.py normalises them).
-- Bone names are ours (pelvis, spine_01…03, neck_01, head, clavicle/upperarm/lowerarm/hand/thigh/calf/foot/ball_l|r, fingers thumb|index|middle|ring|pinky_01…03_l|r). The male maps Mixamo names; the female has no finger bones.
+- Bone names are ours (pelvis, spine_01…03, neck_01, head, clavicle/upperarm/lowerarm/hand/thigh/calf/foot/ball_l|r, fingers thumb|index|middle|ring|pinky_01…03_l|r). prepare.py maps Mixamo (male) and Character Creator (female) names; helper bones (twist, share, breast, face, toes) fold into their parents.
+- Vertex parts (_PART): 0 skin, 1 eye, 4 fabric, 5 teeth, 6 tongue. materials.js colours them (clay or skin tone; the iris is drawn around each eyeball centre from the GLB extras). Transparent cards (lashes, brows, tear lines) are dropped.
 - Bone frames: y runs head → tail, and x = y × (+z), so **+x rotation swings a limb forward**. Hand and finger bones use the palm: +x curls into the palm. Feet/toes take their roll from "up" (x = y × +y) in BOTH prepare.py and human.js — a switching reference axis twists the foot. +z moves a left limb outward, and +y on the upper arm is internal rotation.
 - Pose zero (rig.js): every limb bone is re-based onto these directions whatever the model's bind pose (T-pose male, arms-down female), so all poses mean the same on every model. Don't edit rig.js without recalibrating poses.js.
 - Poses are authored anatomically (`buildPose({ c, both, l, r })`). The right side is mirrored as (x, −y, −z). Calibrate new poses in the lab with `grid`-style screenshots.

@@ -1,5 +1,5 @@
 <!doctype html><html><body><script type="module">
-// Dump an FBX's mesh + skeleton (world space, bind pose) as JSON for tools/body/prepare.py
+// Dump an FBX's skinned meshes + skeleton (bind pose) as JSON for tools/body/prepare.py
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 const f = new URLSearchParams(location.search).get('f');
@@ -7,24 +7,27 @@ const o = await new FBXLoader().loadAsync(`/@fs/home/user/3dGarments/assets/${f}
 o.updateMatrixWorld(true);
 const meshes = [];
 o.traverse((c) => { if (c.isMesh) meshes.push(c); });
-const m = meshes[0], g = m.geometry;
-const pos = g.attributes.position.clone().applyMatrix4(m.matrixWorld);
-const nrm = g.attributes.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(m.matrixWorld));
-const out = { n: meshes.length, P: Array.from(pos.array), N: Array.from(nrm.array), UV: g.attributes.uv ? Array.from(g.attributes.uv.array) : null,
-  I: g.index ? Array.from(g.index.array) : null };
-if (m.isSkinnedMesh) {
-  // bind-pose bone world transforms = inverse of boneInverses in the mesh's bind space
-  const bones = m.skeleton.bones;
-  out.SI = Array.from(g.attributes.skinIndex.array); out.SW = Array.from(g.attributes.skinWeight.array);
-  out.bones = bones.map((b, i) => {
-    const bw = new THREE.Matrix4().copy(m.skeleton.boneInverses[i]).invert().premultiply(m.bindMatrix);
-    const p = new THREE.Vector3().setFromMatrixPosition(bw);
-    return { name: b.name, parent: bones.indexOf(b.parent), p: p.toArray() };
-  });
-  out.bindIsWorld = m.bindMatrix.equals(m.matrixWorld);
-  const ends = [];
-  o.traverse((c) => { if (c.isBone && !bones.includes(c)) ends.push({ name: c.name, parent: bones.indexOf(c.parent), p: c.getWorldPosition(new THREE.Vector3()).toArray() }); });
-  out.ends = ends;
-}
-window.__out = out;
+const bones = {}; // name → { p: bind world position, parent }
+const dump = (m) => {
+  const g = m.geometry;
+  // bind-pose positions in the skeleton's world: bindMatrix takes geometry space to it
+  const M = m.isSkinnedMesh ? m.bindMatrix : m.matrixWorld;
+  const pos = g.attributes.position.clone().applyMatrix4(M);
+  const d = { name: m.name, P: Array.from(pos.array), I: g.index ? Array.from(g.index.array) : null,
+    groups: g.groups.map((x) => [x.start, x.count, x.materialIndex]), mats: [].concat(m.material).map((x) => x.name) };
+  if (m.isSkinnedMesh) {
+    const sb = m.skeleton.bones;
+    d.boneNames = sb.map((b) => b.name);
+    d.SI = Array.from(g.attributes.skinIndex.array); d.SW = Array.from(g.attributes.skinWeight.array);
+    sb.forEach((b, i) => {
+      if (bones[b.name]) return;
+      const bw = new THREE.Matrix4().copy(m.skeleton.boneInverses[i]).invert();
+      let q = b.parent;
+      while (q && q.name === b.name) q = q.parent; // FBX can wrap a bone in a same-named node
+      bones[b.name] = { p: new THREE.Vector3().setFromMatrixPosition(bw).toArray(), parent: q?.isBone ? q.name : null };
+    });
+  }
+  return d;
+};
+window.__out = { meshes: meshes.map(dump), bones };
 </script></body></html>

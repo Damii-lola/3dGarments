@@ -33,12 +33,15 @@ const isHang = (v) => !!(v && !Array.isArray(v) && v.hang);
 
 /** One loaded body model: mesh, skeleton, pose-zero frames and measuring data. */
 class Body {
-  constructor(sex, gltf, material) {
+  constructor(sex, gltf) {
     this.sex = sex;
     this.root = gltf.scene;
     this.root.traverse((o) => { if (o.isSkinnedMesh) this.mesh = o; });
     const mesh = this.mesh;
-    mesh.material = [material]; // array: the lab swaps in debug materials by index
+    this.material = createBodyMaterial({ eyes: mesh.userData?.eyes });
+    mesh.material = [this.material]; // array: the lab swaps in debug materials by index
+    const g = mesh.geometry;
+    if (!g.attributes._part) g.setAttribute('_part', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
     if (!mesh.geometry.groups.length) mesh.geometry.addGroup(0, Infinity, 0);
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -181,14 +184,12 @@ export class Human {
   /** Load both bodies (small) so switching sex is instant. */
   static async load() {
     const loader = new GLTFLoader();
-    const material = createBodyMaterial();
     const [male, female] = await Promise.all(['male', 'female'].map((s) => loader.loadAsync(assetUrl(`${s}.glb`))));
-    return new Human({ male: new Body('male', male, material), female: new Body('female', female, material) }, material);
+    return new Human({ male: new Body('male', male), female: new Body('female', female) });
   }
 
-  constructor(bodies, material) {
+  constructor(bodies) {
     this.bodies = bodies;
-    this.skin = material;
     this.object = new THREE.Group();
     this.object.name = 'human';
     for (const b of Object.values(bodies)) { b.root.visible = false; this.object.add(b.root); }
@@ -340,10 +341,9 @@ export class Human {
   }
 
   /** @param opts { tone?: css colour, clay?: bool (uniform grey sculpt look) } */
-  setSkin(opts = {}) { this.skin.userData.setSkin(opts); }
+  setSkin(opts = {}) { for (const b of Object.values(this.bodies)) b.material.userData.setSkin(opts); }
 
   dispose() {
-    for (const b of Object.values(this.bodies)) { b.mesh.geometry.dispose(); b.mesh.skeleton.dispose(); }
-    this.skin.dispose();
+    for (const b of Object.values(this.bodies)) { b.mesh.geometry.dispose(); b.mesh.skeleton.dispose(); b.material.dispose(); }
   }
 }

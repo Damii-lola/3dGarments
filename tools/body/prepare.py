@@ -7,10 +7,11 @@ Turn the studio's body models (assets/*.fbx) into web-ready rigged GLBs.
 
 - welds the mesh (one vertex per position → smooth shading, no texture seams), metres, feet on
   y = 0, centred, facing +z
-- skeleton with the pose library's bone names (pelvis, spine_01…, upperarm_l, thumb_01_l …).
-  The male keeps his Mixamo skin weights; the female ships unrigged, so she gets a skeleton
-  placed from her own geometry and weights computed here (bone-segment distance, part-limited,
-  diffused over the surface)
+- skeleton renamed to the pose library's bone names (pelvis, spine_01…, upperarm_l, thumb_01_l …)
+  from the model's own rig (Mixamo for the male, Character Creator for the female), keeping its
+  skin weights; helper bones (twist, share, breast, face, toes) fold into their parents
+- several meshes (body, eyes, teeth, underwear …) merge into one skinned mesh; each vertex is
+  tagged with its part (_PART) so the runtime material can colour skin / eyes / fabric / mouth
 - bone rest frames follow the runtime's convention (y head → tail, x = y × +z; hands use the palm)
 """
 import json
@@ -19,7 +20,6 @@ import sys
 
 import numpy as np
 from scipy import sparse
-from scipy.spatial import cKDTree
 
 import glb
 
@@ -37,6 +37,21 @@ for s, S in (('l', 'Left'), ('r', 'Right')):
         for k in (1, 2, 3):
             MIXAMO[f'{f}_0{k}_{s}'] = f'{S}Hand{F}{k}'
 HAND_CHAIN = ('hand_', 'thumb_', 'index_', 'middle_', 'ring_', 'pinky_')
+
+# ours ← Character Creator (CC3/CC4, "CC_Base_" prefix stripped)
+CC = {'pelvis': 'Hip', 'spine_01': 'Waist', 'spine_02': 'Spine01', 'spine_03': 'Spine02', 'neck_01': 'NeckTwist01', 'head': 'Head'}
+for s, S in (('l', 'L_'), ('r', 'R_')):
+    CC.update({f'clavicle_{s}': f'{S}Clavicle', f'upperarm_{s}': f'{S}Upperarm', f'lowerarm_{s}': f'{S}Forearm',
+               f'hand_{s}': f'{S}Hand', f'thigh_{s}': f'{S}Thigh', f'calf_{s}': f'{S}Calf', f'foot_{s}': f'{S}Foot',
+               f'ball_{s}': f'{S}ToeBase'})
+    for f, F in (('thumb', 'Thumb'), ('index', 'Index'), ('middle', 'Mid'), ('ring', 'Ring'), ('pinky', 'Pinky')):
+        for k in (1, 2, 3):
+            CC[f'{f}_0{k}_{s}'] = f'{S}{F}{k}'
+strip = lambda n: n.replace('mixamorig1', '').replace('mixamorig', '').replace('CC_Base_', '')
+
+# parts (runtime material): 0 skin, 1 eye, 4 fabric, 5 teeth, 6 tongue
+PART = {'skin': 0, 'eye': 1, 'fabric': 4, 'teeth': 5, 'tongue': 6}
+
 
 
 def weld(P, N, tol=1e-4):
@@ -168,18 +183,20 @@ def width_morph(V, names, heads, J4, W4):
     return D, bone_dx
 
 
-def shoulder_points(V, names, heads):
-    """the bony shoulder tips (acromion): outermost vertex on top of each shoulder"""
+def shoulder_points(V, names, heads, part=None):
+    """the bony shoulder tips (acromion): outermost skin vertex on top of each shoulder"""
     out = {}
     for s, sg in (('l', 1), ('r', -1)):
         h = heads[names.index(f'upperarm_{s}')]
         m = (V[:, 1] > h[1] + 0.015) & (V[:, 1] < h[1] + 0.07) & (sg * V[:, 0] > 0) & (sg * V[:, 0] < sg * h[0] + 0.035) & (np.abs(V[:, 2] - h[2]) < 0.06)
+        if part is not None:
+            m &= part == 0
         idx = np.nonzero(m)[0]
         out[s] = int(idx[np.argmax(sg * V[idx, 0])])
     return out
 
 
-def export(name, V, F, names, parents, heads, tails, J, Wt, extra=None):
+def export(name, V, F, names, parents, heads, tails, J, Wt, extra=None, part=None, eyes=None):
     os.makedirs(PUB, exist_ok=True)
     pal = palm_normals(names, heads)
     rot = frames(names, parents, heads, tails, pal)
@@ -189,8 +206,8 @@ def export(name, V, F, names, parents, heads, tails, J, Wt, extra=None):
     W4 = np.take_along_axis(Wt, order, 1)
     W4 /= W4.sum(1, keepdims=True)
     D, bone_dx = width_morph(V, names, heads, J4, W4)
-    probes = shoulder_points(V, names, heads)
-    extras = {'widthBoneDx': [round(float(v), 5) for v in bone_dx], 'shoulderProbes': probes,
+    probes = shoulder_points(V, names, heads, part)
+    extras = {'widthBoneDx': [round(float(v), 5) for v in bone_dx], 'shoulderProbes': probes, 'eyes': eyes or {},
               'tails': [[round(float(c), 5) for c in t] for t in tails]}
     glb.write(os.path.join(PUB, f'{name}.glb'), V, N, F, attrs=extra,
               skin={'names': names, 'parents': parents, 'heads': heads, 'rot': rot, 'joints': J4, 'weights': W4},
@@ -207,261 +224,83 @@ def normalise(V, height=None):
     return V + off, s, off
 
 
-# --------------------------------------------------------------------------- male (Mixamo rig)
-def rigged(name, src, height=None):
-    """A model that ships with a Mixamo-style rig: keep its skeleton and skin weights."""
+# --------------------------------------------------------------------------- rigged models
+def rigged(name, src, MAP, keep):
+    """
+    keep: {mesh name: (part, [material names to drop])} — meshes not listed are left out
+    (transparent cards: lashes, brows, tear lines … read as floating strips in a clay render).
+    """
     d = json.load(open(os.path.join(OUT, f'{src}.json')))
-    P = np.array(d['P'], float).reshape(-1, 3)
-    unit = 1 / 100 if height is None else height / (P[:, 1].max() - P[:, 1].min())  # cm → m, or to a height
-    P = P * unit
-    SI = np.array(d['SI']).reshape(-1, 4)
-    SW = np.array(d['SW'], float).reshape(-1, 4)
-    V, F, first, inv = weld(P, None)
-    V, s, off = normalise(V)
-    s *= unit
-    SI, SW = SI[first], SW[first]
-    mb = d['bones']
-    mnames = [b['name'].replace('mixamorig1', '').replace('mixamorig', '') for b in mb]
-    names = [n for n in MIXAMO if MIXAMO[n] in mnames]
-    src_i = [mnames.index(MIXAMO[n]) for n in names]
-    heads = np.array([mb[i]['p'] for i in src_i], float) * s + off
-    # parent: nearest mapped ancestor
-    parents = []
-    for i in src_i:
-        p = mb[i]['parent']
-        while p >= 0 and mnames[p] not in [MIXAMO[n] for n in names]:
-            p = mb[p]['parent']
-        parents.append(names.index([n for n in names if MIXAMO[n] == mnames[p]][0]) if p >= 0 else -1)
-    # skin: Mixamo bone → our bone (unmapped end bones fold into their parent)
-    remap = {}
-    for i, mn in enumerate(mnames):
-        j = i
-        while j >= 0 and mnames[j] not in [MIXAMO[n] for n in names]:
-            j = mb[j]['parent']
-        remap[i] = names.index([n for n in names if MIXAMO[n] == mnames[j]][0])
-    J = np.vectorize(remap.get)(SI)
-    ends = {e['name'].replace('mixamorig1', '').replace('mixamorig', ''): np.array(e['p']) * s + off for e in d.get('ends', [])}
-    extra_t = {'head': ends.get('HeadTop_End', heads[names.index('head')] + [0, 0.2, 0])}
+    B = {strip(k): {'p': np.array(v['p'], float), 'parent': strip(v['parent']) if v['parent'] else None} for k, v in d['bones'].items()}
+    names = [n for n in MAP if MAP[n] in B]
+    theirs = {MAP[n]: i for i, n in enumerate(names)}
+
+    def mapped(b):  # nearest mapped bone at or above b
+        while b is not None and b not in theirs:
+            b = B[b]['parent'] if b in B else None
+        return theirs.get(b, 0)
+
+    parents = [mapped(B[MAP[n]]['parent']) if B[MAP[n]]['parent'] else -1 for n in names]
+    parents[0] = -1
+    Vs, Fs, Js, Ws, Ps = [], [], [], [], []
+    off = 0
+    for m in d['meshes']:
+        if m['name'] not in keep:
+            continue
+        part, drop = keep[m['name']]
+        P = np.array(m['P'], float).reshape(-1, 3) / 100          # cm → m
+        tri = np.array(m['I'], int).reshape(-1, 3) if m['I'] else np.arange(len(P)).reshape(-1, 3)
+        if drop and m['groups']:
+            keepf = np.ones(len(tri), bool)
+            for start, count, mi in m['groups']:
+                if m['mats'][mi] in drop:
+                    keepf[start // 3:(start + count) // 3] = False
+            tri = tri[keepf]
+        SI = np.array(m['SI'], int).reshape(-1, 4)
+        SW = np.array(m['SW'], float).reshape(-1, 4)
+        lut = np.array([mapped(strip(b)) for b in m['boneNames']])
+        # weld on the kept triangles only
+        used = np.unique(tri)
+        V, Fm, first, inv = weld(P[used], None)
+        Fm = inv[np.searchsorted(used, tri)]
+        Fm = Fm[(Fm[:, 0] != Fm[:, 1]) & (Fm[:, 1] != Fm[:, 2]) & (Fm[:, 0] != Fm[:, 2])]
+        src_v = used[first]
+        Vs.append(V); Fs.append(Fm + off); Js.append(lut[SI[src_v]]); Ws.append(SW[src_v]); Ps.append(np.full(len(V), part))
+        off += len(V)
+    V, F = np.concatenate(Vs), np.concatenate(Fs)
+    J, W, part = np.concatenate(Js), np.concatenate(Ws), np.concatenate(Ps).astype(np.float32)
+    body = part == 0
+    shift = np.array([-(V[body, 0].max() + V[body, 0].min()) / 2, -V[:, 1].min(), -(V[body, 2].max() + V[body, 2].min()) / 2])
+    V = V + shift
+    heads = np.array([B[MAP[n]]['p'] for n in names]) / 100 + shift
+    # tails: end bones where the rig has them, else the top of the head / extrapolated
+    extra_t = {'head': np.array([heads[names.index('head')][0], V[body, 1].max(), heads[names.index('head')][2]])}
     for sd, S in (('l', 'Left'), ('r', 'Right')):
-        extra_t[f'ball_{sd}'] = ends.get(f'{S}Toe_End', None)
         for f, Fn in (('thumb', 'Thumb'), ('index', 'Index'), ('middle', 'Middle'), ('ring', 'Ring'), ('pinky', 'Pinky')):
-            extra_t[f'{f}_03_{sd}'] = np.array([mb[k]['p'] for k in range(len(mb)) if mnames[k] == f'{S}Hand{Fn}4'][0]) * s + off
-    extra_t = {k: v for k, v in extra_t.items() if v is not None}
+            e = f'{S}Hand{Fn}4'
+            if e in B:
+                extra_t[f'{f}_03_{sd}'] = B[e]['p'] / 100 + shift
+        if f'{S}Toe_End' in B:
+            extra_t[f'ball_{sd}'] = B[f'{S}Toe_End']['p'] / 100 + shift
     tails = tails_of(names, parents, heads, extra_t)
-    export(name, V, F, names, parents, heads, tails, J, SW)
-
-
-# --------------------------------------------------------------------------- female (auto-rig)
-def adjacency(nv, F):
-    i = np.concatenate([F[:, 0], F[:, 1], F[:, 2], F[:, 1], F[:, 2], F[:, 0]])
-    j = np.concatenate([F[:, 1], F[:, 2], F[:, 0], F[:, 0], F[:, 1], F[:, 2]])
-    A = sparse.coo_matrix((np.ones(len(i)), (i, j)), shape=(nv, nv)).tocsr()
-    A.data[:] = 1
-    return A
-
-
-def segment(V, H, gap=0.012, band=0.006):
-    """label each vertex: 0 torso/head, 1 arm_l, 2 arm_r, 3 leg_l, 4 leg_r (slice clustering by x gaps)"""
-    lab = np.zeros(len(V), int)
-    ys = np.arange(V[:, 1].min(), V[:, 1].max() + band, band)
-    for y in ys:
-        idx = np.nonzero(np.abs(V[:, 1] - y) <= band / 2)[0]
-        if len(idx) < 3:
-            continue
-        o = idx[np.argsort(V[idx, 0])]
-        xs = V[o, 0]
-        cut = np.nonzero(np.diff(xs) > gap)[0] + 1
-        groups = np.split(o, cut)
-        cen = [V[g, 0].mean() for g in groups]
-        n = len(groups)
-        for gi, g in enumerate(groups):
-            c = cen[gi]
-            if y < 0.47 * H:                                 # below the hips: legs, and hands beside them
-                if n >= 3 and gi in (0, n - 1) and abs(c) > 0.14:
-                    lab[g] = 1 if c > 0 else 2
-                else:
-                    lab[g] = 3 if c > 0 else 4
-            elif n >= 3 and gi in (0, n - 1):
-                lab[g] = 1 if c > 0 else 2
-    return lab
-
-
-def geodesic(V, F, seeds):
-    from scipy.sparse.csgraph import dijkstra
-    e = np.concatenate([F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]])
-    w = np.linalg.norm(V[e[:, 0]] - V[e[:, 1]], axis=1) + 1e-9
-    G = sparse.coo_matrix((w, (e[:, 0], e[:, 1])), shape=(len(V), len(V))).tocsr()
-    G = G.maximum(G.T)
-    return dijkstra(G, indices=seeds, min_only=True)
-
-
-def track_parts(V, H, band=0.016, step=0.004, gap=0.012):
-    """
-    Label vertices 0 torso/head, 1 arm_l, 2 arm_r, 3 leg_l, 4 leg_r by following each limb upward:
-    slices are split into clusters at gaps in x; a limb starts at its lowest slice (hand / foot) and
-    carries on upward while a cluster overlaps the limb's cluster in the slice below and stays apart
-    from the rest of the slice.
-    """
-    lab = np.zeros(len(V), int)
-    ys = np.arange(V[:, 1].min(), V[:, 1].max() + step, step)
-    slices = []
-    for y in ys:
-        idx = np.nonzero(np.abs(V[:, 1] - y) <= band / 2)[0]
-        if len(idx) == 0:
-            slices.append([])
-            continue
-        o = idx[np.argsort(V[idx, 0])]
-        cut = np.nonzero(np.diff(V[o, 0]) > gap)[0] + 1
-        slices.append(np.split(o, cut))
-    ext = lambda g: (V[g, 0].min(), V[g, 0].max())
-    for k, sg, start in ((3, 1, 0.0), (4, -1, 0.0), (1, 1, None), (2, -1, None)):
-        prev = None
-        for si, groups in enumerate(slices):
-            y = ys[si]
-            if not groups:
-                continue
-            if prev is None:
-                if k in (3, 4):   # legs start at the floor: the cluster on this side
-                    cand = [g for g in groups if np.sign(V[g, 0].mean()) == sg]
-                else:             # arms start at the fingertips: an outer cluster clear of the body, below the hips
-                    if y > 0.6 * H or len(groups) < 3:
-                        continue
-                    g0 = groups[-1] if sg > 0 else groups[0]
-                    if abs(V[g0, 0].mean()) < 0.12:
-                        continue
-                    cand = [g0]
-                if not cand:
-                    continue
-                prev = ext(cand[0])
-                lab[cand[0]] = k
-                continue
-            hits = [g for g in groups if ext(g)[1] >= prev[0] - 0.01 and ext(g)[0] <= prev[1] + 0.01]
-            if not hits:
-                break
-            hit = np.concatenate(hits)
-            e = ext(hit)
-            # stop when the limb merges into a much wider cluster (torso / pelvis)
-            if (e[1] - e[0]) > 1.8 * (prev[1] - prev[0]) + 0.02:
-                break
-            lab[hit[lab[hit] == 0]] = k
-            prev = e
-    return lab
-
-
-def female():
-    d = json.load(open(os.path.join(OUT, 'FemaleModel.json')))
-    P = np.array(d['P'], float).reshape(-1, 3)
-    V, F, first, inv = weld(P, None, tol=1e-3)
-    H = 1.70
-    V, s, off = normalise(V, H)
-    A = adjacency(len(V), F)
-    lab = track_parts(V, H)
-    slab = lab
-    crotch = V[(np.abs(V[:, 0]) < 0.008) & (V[:, 1] > 0.3 * H) & (V[:, 1] < 0.6 * H), 1].min()
-    arm_top = {k: V[lab == k, 1].max() for k in (1, 2)}
-    print(f'female: crotch {crotch:.3f}, arm tops {arm_top[1]:.3f} {arm_top[2]:.3f}, parts', np.bincount(lab))
-
-    def centre(mask, y, band=0.012):
-        m = mask & (np.abs(V[:, 1] - y) < band)
-        if not m.any():
-            m = mask & (np.abs(V[:, 1] - y) < band * 3)
-        q = V[m]
-        return np.array([(q[:, 0].max() + q[:, 0].min()) / 2, y, (q[:, 2].max() + q[:, 2].min()) / 2])
-
-    torso = lab == 0
-    J = {}
-    J['pelvis'] = centre(torso, crotch + 0.06 * H)
-    J['spine_01'] = centre(torso, 0.60 * H)
-    J['spine_02'] = centre(torso, 0.67 * H)
-    J['spine_03'] = centre(torso, 0.74 * H)
-    shoulder_y = min(arm_top.values()) - 0.012
-    J['neck_01'] = centre(torso, 0.835 * H)
-    J['head'] = centre(torso, 0.875 * H)
-    head_top = np.array([J['head'][0], V[:, 1].max(), J['head'][2]])
-    for sd, k, sg in (('l', 1, 1), ('r', 2, -1)):
-        arm = lab == k
-        top = V[(slab == k), 1].max()          # armpit: where the arm leaves the torso (slices)
-        tip = V[arm][np.argmin(V[arm, 1])]
-        J[f'_handtip_{sd}'] = tip
-        up = centre(arm, top - 0.03)
-        ys = top + 0.075                       # shoulder joint sits ~7 cm above the armpit
-        J[f'upperarm_{sd}'] = np.array([up[0] - sg * 0.006, ys, up[2]])
-        J[f'clavicle_{sd}'] = np.array([sg * 0.02, ys + 0.005, J['spine_03'][2] + 0.01])
-        Lt = ys - tip[1]                       # shoulder → fingertip, split upper 42% / fore 33% / hand 25%
-        J[f'lowerarm_{sd}'] = centre(arm, ys - 0.42 * Lt)
-        J[f'hand_{sd}'] = centre(arm, ys - 0.755 * Lt)
-        leg = lab == (3 if sd == 'l' else 4)
-        hip = centre(leg, crotch - 0.03)
-        J[f'thigh_{sd}'] = np.array([hip[0] - sg * 0.005, crotch + 0.05 * H, hip[2]])
-        J[f'calf_{sd}'] = centre(leg, 0.285 * H)
-        J[f'foot_{sd}'] = centre(leg, 0.047 * H)
-        foot = V[leg & (V[:, 1] < 0.05 * H)]
-        toe_z = foot[:, 2].max()
-        J[f'ball_{sd}'] = np.array([J[f'foot_{sd}'][0], 0.018 * H, J[f'foot_{sd}'][2] + 0.72 * (toe_z - J[f'foot_{sd}'][2])])
-        J[f'_toe_{sd}'] = np.array([J[f'ball_{sd}'][0], 0.012 * H, toe_z])
-
-    names = ['pelvis', 'spine_01', 'spine_02', 'spine_03', 'neck_01', 'head']
-    parents = [-1, 0, 1, 2, 3, 4]
-    for sd in 'lr':
-        base = len(names)
-        names += [f'clavicle_{sd}', f'upperarm_{sd}', f'lowerarm_{sd}', f'hand_{sd}']
-        parents += [3, base, base + 1, base + 2]
-        base = len(names)
-        names += [f'thigh_{sd}', f'calf_{sd}', f'foot_{sd}', f'ball_{sd}']
-        parents += [0, base, base + 1, base + 2]
-    heads = np.array([J[n] for n in names])
-    extra_t = {'head': head_top}
-    for sd in 'lr':
-        extra_t[f'hand_{sd}'] = J[f'_handtip_{sd}']
-        extra_t[f'ball_{sd}'] = J[f'_toe_{sd}']
-    tails = tails_of(names, parents, heads, extra_t)
-    for sd in 'lr':  # hands: no finger bones → point the hand at the fingertips
-        tails[names.index(f'hand_{sd}')] = J[f'_handtip_{sd}']
-
-    # ---- weights: nearest bone segment within the vertex's part, then diffused over the surface
-    B = len(names)
-    allowed = {0: ['pelvis', 'spine_01', 'spine_02', 'spine_03', 'neck_01', 'head', 'clavicle_l', 'clavicle_r',
-                   'upperarm_l', 'upperarm_r', 'thigh_l', 'thigh_r'],
-               1: ['clavicle_l', 'upperarm_l', 'lowerarm_l', 'hand_l'], 2: ['clavicle_r', 'upperarm_r', 'lowerarm_r', 'hand_r'],
-               3: ['pelvis', 'thigh_l', 'calf_l', 'foot_l', 'ball_l'], 4: ['pelvis', 'thigh_r', 'calf_r', 'foot_r', 'ball_r']}
-    D = np.full((len(V), B), np.inf)
-    for b, n in enumerate(names):
-        a, t = heads[b], tails[b]
-        ab = t - a
-        tt = np.clip(((V - a) @ ab) / max(ab @ ab, 1e-9), 0, 1)
-        dist = np.linalg.norm(V - (a + tt[:, None] * ab), axis=1)
-        for k, ok in allowed.items():
-            if n in ok:
-                m = lab == k
-                if k == 0 and n.startswith('upperarm'):
-                    m = m & (V[:, 1] > heads[b][1] - 0.05)   # only the shoulder cap, never the ribs/waist
-                if k == 0 and n.startswith('thigh'):
-                    m = m & (V[:, 1] < heads[b][1] + 0.02) & (np.sign(V[:, 0]) == np.sign(heads[b][0]))
-                D[m, b] = dist[m]
-    # the clavicle and pelvis are short: keep them from grabbing the chest / belly
-    for n, k in (('clavicle_l', 1.6), ('clavicle_r', 1.6), ('pelvis', 1.2)):
-        D[:, names.index(n)] *= k
-    Wt = np.zeros((len(V), B))
-    Wt[np.arange(len(V)), np.argmin(D, 1)] = 1.0
-    deg = np.asarray(A.sum(1)).ravel()
-    L = sparse.diags(1 / np.maximum(deg, 1)) @ A
-    for _ in range(32):
-        Wt = 0.5 * Wt + 0.5 * (L @ Wt)
-    # heads and hands stay rigid where they are far from a joint: re-sharpen tiny weights
-    Wt[Wt < 0.02] = 0
-    Wt /= Wt.sum(1, keepdims=True)
-    J4 = np.tile(np.arange(B), (len(V), 1))
-    export('female', V, F, names, parents, heads, tails, J4, Wt)
-    np.save(os.path.join(OUT, 'female_lab.npy'), lab)
+    eyes = {}
+    for sd, sg in (('l', 1), ('r', -1)):
+        m = (part == PART['eye']) & (np.sign(V[:, 0]) == sg)
+        if m.any():
+            eyes[sd] = [round(float(x), 5) for x in V[m].mean(0)]
+    export(name, V, F, names, parents, heads, tails, J, W, extra={'_PART': part}, part=part, eyes=eyes)
 
 
 if __name__ == '__main__':
     which = sys.argv[1:] or ['male', 'female']
     if 'male' in which:
-        rigged('male', 'MaleModel')
+        rigged('male', 'MaleModel', MIXAMO, {'Ch36': (PART['skin'], [])})
     if 'female' in which:
-        d = json.load(open(os.path.join(OUT, 'FemaleModel.json')))
-        if d.get('bones'):
-            rigged('female', 'FemaleModel', height=1.70)  # a rigged female: keep her own rig
-        else:
-            female()                                     # unrigged: auto-rig
+        rigged('female', 'FemaleModel', CC, {
+            'CC_Base_Body': (PART['skin'], ['Std_Eyelash']),
+            'CC_Game_Eye': (PART['eye'], []),
+            'CC_Game_Teeth': (PART['teeth'], []),
+            'CC_Base_Tongue': (PART['tongue'], []),
+            'Bra': (PART['fabric'], []),
+            'Underwear_Bottoms': (PART['fabric'], []),
+        })

@@ -19,7 +19,7 @@ export const SKINS = [
 
 /** Slider ranges (real measurements) and fit-model defaults. */
 export const RANGES = {
-  female: { width: [33, 45], height: [58, 78], defaults: { width: 38, height: 67 } },
+  female: { width: [30, 42], height: [58, 78], defaults: { width: 34, height: 68 } },
   male: { width: [36, 50], height: [62, 82], defaults: { width: 42, height: 70 } },
 };
 export const WIDTH_RANGE = [-1, 1.2]; // width morph: ±20 % shoulders per unit

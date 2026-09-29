@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 const require = createRequire('/opt/node22/lib/node_modules/');
 const { chromium } = require('playwright');
 const browser = await chromium.launch();
-for (const f of ['MaleModel', 'FemaleModel']) {
+for (const f of (process.argv[2] || 'MaleModel,FemaleModel').split(',')) {
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.log('[err]', e.message));
   await page.goto(`http://127.0.0.1:5174/extract.html?f=${f}`);

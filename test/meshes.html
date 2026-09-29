@@ -1,0 +1,16 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+const f = new URLSearchParams(location.search).get('f');
+const o = await new FBXLoader().loadAsync(`/@fs/home/user/3dGarments/assets/${f}.fbx`);
+o.updateMatrixWorld(true);
+const out = [];
+o.traverse((c) => {
+  if (!c.isMesh) return;
+  const box = new THREE.Box3().setFromObject(c);
+  out.push({ name: c.name, skinned: !!c.isSkinnedMesh, verts: c.geometry.attributes.position.count, groups: c.geometry.groups.length,
+    mats: [].concat(c.material).map((m) => `${m.name}${m.map ? '+map' : ''}${m.transparent ? '+transp' : ''}`),
+    min: box.min.toArray().map((v) => +v.toFixed(1)), max: box.max.toArray().map((v) => +v.toFixed(1)), visible: c.visible });
+});
+window.__out = { rootScale: o.scale.toArray(), anims: o.animations.map((a) => a.name), meshes: out };
+</script></body></html>
