@@ -37,8 +37,8 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         Arms hang straight down: the forearm continues the upper arm's line (+1°) and never angles back in;
                         hips/thighs push it out only as needed (the hand is part of that test, following its fingers' curl, down
                         to mid-thigh), and if that is > 8° past the upper arm, the upper arm tilts out instead. Per-model ARM_FIT in
-                        human.js: the male's upper arm stands ≥ 20° out from the shoulder (elbow away from the body) and the forearm
-                        drops back 12° so the hand is beside the thigh; the
+                        human.js: the male's upper arm stands ≥ 12° out from the shoulder and the forearm continues its line (more
+                        abduction, or a forearm angled back in, kinks the elbow and pinches the shoulder skin); the
                         female's lies close. ARMPIT (male): his A-pose-sculpted lats were bound 100 % to the spine and stayed
                         flared when the arm came down, gluing the upper arm to the torso — torso skin beside/below the shoulder
                         joint gets up to 55 % upper-arm weight at load so it tucks in (clearance numbers lie, check the render). Check arms with an

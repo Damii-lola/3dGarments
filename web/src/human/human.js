@@ -29,10 +29,10 @@ const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
  *   follow  forearm tilt relative to the upper arm, degrees (+ out, − back toward the thigh)
  *   maxOut  upper-arm tilt cap, degrees (a heavy body's arm rests into the soft tissue instead)
  *   minOut  upper-arm tilt floor, degrees: a visible gap under the armpit whatever the lats do
- * The male's big lats hold the upper arm out from the body with the forearm hanging down from the
- * elbow; the female's arm lies close with the forearm continuing its line.
+ * The male's upper arm stands 12° out from the shoulder; both forearms continue the upper arm's
+ * line. More abduction, or a forearm angled back in, kinks the elbow and pinches the shoulder skin.
  */
-const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.48, follow: -12, maxOut: 90, minOut: 20 } };
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.48, follow: 1, maxOut: 90, minOut: 12 } };
 const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
 /**
  * Armpit skinning fix. A model sculpted with raised arms (A-pose) has its lats and armpit skin
@@ -527,7 +527,7 @@ export class Human {
     const forearm = () => {
       const a = elbow();
       const upOut = THREE.MathUtils.radToDeg(Math.atan2(sg * (a.x - shoulder.x), shoulder.y - a.y));
-      let out = Math.max(0, upOut + fit.follow);
+      let out = Math.max(fit.minFore ?? 0, upOut + fit.follow);
       while (out < 50 && !this.#clear(a, dir(out, F.fwd || 0), A.fore, (A.rFore + B.armGrowth(s, 'fore')) * 0.9, (A.rFore + B.armGrowth(s, 'fore')) * 0.7, sg, 0.012, [0.4, 0.7, 1, 1.25, 1.45], 0.3)) out += 0.5;
       return { out, upOut };
     };
