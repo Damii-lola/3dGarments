@@ -30,6 +30,9 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()
   src/scene/stage.js    renderer, studio rig (cyclorama + lights follow camera), HDRIs, views, WYSIWYG capture
+                        renders ON DEMAND: after changing anything in the scene call stage.invalidate() (main.js / lab do after
+                        shape, look, pose). LOW_POWER tier (touch / small screen / ≤4 cores): pixel ratio ≤1.5, 1K shadows, half-res AO,
+                        AO skipped while a finger orbits. N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget
   src/services/         api/auth/local/wardrobe: garment-pipeline client, waiting for the clothing phase (not wired in main.js)
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket

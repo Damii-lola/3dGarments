@@ -68,6 +68,8 @@ export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {} }
       .replace('#include <common>', `#include <common>\nuniform vec3 uSSS; uniform float uClay; uniform vec3 uEyeL; uniform vec3 uEyeR;\nvarying vec3 vRest; varying float vPart; varying float vEdge; varying float vBand;\n${NOISE}\n${KNIT}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
 float isFabric = step(3.5, vPart) * step(vPart, 4.5);
+Knit kf = Knit(0.5, 0.0, 0.0, 0.0, 0.0, 0.0); // evaluated once, reused by the bump below
+if (isFabric > 0.5) kf = knit(vRest, vEdge, vBand);
 {
   vec3 grey = diffuseColor.rgb;
   if (vPart > 0.5 && vPart < 1.5) {                       // eye: sclera, iris, pupil around the eyeball centre
@@ -80,7 +82,7 @@ float isFabric = step(3.5, vPart) * step(vPart, 4.5);
     vec3 pupilC = mix(vec3(0.02), grey * 0.35, uClay);
     diffuseColor.rgb = mix(mix(sclera, irisC, iris), pupilC, pupil) * (1.0 - 0.35 * limbal);
   } else if (isFabric > 0.5) {                               // underwear: black jersey, whatever the skin
-    Knit k = knit(vRest, vEdge, vBand);
+    Knit k = kf;
     vec3 cloth = vec3(0.021, 0.021, 0.024);
     cloth *= 0.82 + 0.36 * k.grain;                          // knit grain
     cloth *= mix(1.0, 1.35 + 0.25 * k.rib, k.band);          // elastic band: a touch lighter, ribbed
@@ -105,8 +107,7 @@ if (vPart > 0.5 && vPart < 1.5) roughnessFactor = 0.12;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 if (isFabric > 0.5) {
   // knit relief: bump from the knit height, faded before it can alias
-  Knit kb = knit(vRest, vEdge, vBand);
-  vec2 dH = vec2(dFdx(kb.h), dFdy(kb.h)) * 0.0035;
+  vec2 dH = vec2(dFdx(kf.h), dFdy(kf.h)) * 0.0035;
   vec3 sx = normalize(dFdx(-vViewPosition)), sy = normalize(dFdy(-vViewPosition));
   vec3 r1 = cross(sy, normal), r2 = cross(normal, sx);
   float det = dot(sx, r1);

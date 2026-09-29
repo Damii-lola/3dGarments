@@ -40,9 +40,18 @@ export const LIGHTING = {
 
 const deg = THREE.MathUtils.degToRad;
 
+/**
+ * Phones and small tablets get a lighter live view (lower pixel density, half-res AO, smaller
+ * shadow map, less MSAA). Exported shots always render at full quality.
+ */
+export const LOW_POWER = typeof window !== 'undefined' && (
+  window.matchMedia?.('(pointer: coarse)').matches
+  || Math.min(window.screen?.width || 9999, window.screen?.height || 9999) < 820
+  || (navigator.hardwareConcurrency || 8) <= 4);
+
 export function createStage(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_POWER ? 1.5 : 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;
@@ -69,12 +78,12 @@ export function createStage(container) {
   /* ---------------- lights ---------------- */
   const key = new THREE.DirectionalLight(0xfff4ea, 2.2);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.mapSize.set(LOW_POWER ? 1024 : 2048, LOW_POWER ? 1024 : 2048);
   Object.assign(key.shadow.camera, { left: -1.6, right: 1.6, top: 2.4, bottom: -0.6, near: 0.5, far: 20 });
   key.shadow.bias = -0.0002;
   key.shadow.normalBias = 0.015;
   key.shadow.radius = 5;
-  key.shadow.blurSamples = 16;
+  key.shadow.blurSamples = LOW_POWER ? 8 : 16;
   const fill = new THREE.DirectionalLight(0xe8f0ff, 0.9);
   const rim = new THREE.DirectionalLight(0xffffff, 1.1);
   // the studio rig (backdrop + lights) turns with the camera, like a photographer's set
@@ -95,17 +104,20 @@ export function createStage(container) {
   scene.add(root);
 
   /* ---------------- post: ambient occlusion → tone mapping / sRGB ---------------- */
-  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }));
   const ao = new N8AOPass(scene, camera, 1, 1);
+  // N8AO draws the scene itself into this target; multisample it or every edge stair-steps
+  ao.beautyRenderTarget.samples = 4;
   Object.assign(ao.configuration, {
     aoRadius: 0.26, distanceFalloff: 1.3, intensity: 3.2, color: new THREE.Color('#1a0d08'),
-    gammaCorrection: false, screenSpaceRadius: false, halfRes: false, depthAwareUpsampling: true,
-    aoSamples: 16, denoiseSamples: 8, denoiseRadius: 8, transparencyAware: false,
+    gammaCorrection: false, screenSpaceRadius: false, halfRes: LOW_POWER, depthAwareUpsampling: true,
+    aoSamples: LOW_POWER ? 8 : 16, denoiseSamples: LOW_POWER ? 4 : 8, denoiseRadius: 8, transparencyAware: false,
   });
   composer.addPass(ao);
   composer.addPass(new OutputPass());
   let aoEnabled = true;
-  const draw = () => (aoEnabled ? composer.render() : renderer.render(scene, camera));
+  let dragging = false; // on phones the AO pass sits out while a finger is orbiting the camera
+  const draw = (full = false) => (aoEnabled && (full || !(LOW_POWER && dragging)) ? composer.render() : renderer.render(scene, camera));
 
   const state = {
     env: { kind: 'studio', color: '#e9e6e1', hdri: 'studio', blur: 0.35, rotation: 0, intensity: 1, image: null },
@@ -158,11 +170,13 @@ export function createStage(container) {
     catcher.visible = e.kind !== 'studio';
     applyLighting();
     fitImageBackground();
+    invalidate(6);
   }
 
   function setLighting(patch) {
     Object.assign(state.light, patch);
     applyLighting();
+    invalidate();
   }
 
   function applyLighting() {
@@ -246,13 +260,26 @@ export function createStage(container) {
   /* ---------------- loop ---------------- */
   let autoRotate = false;
   const clock = new THREE.Clock();
-  renderer.setAnimationLoop(() => {
+  // render on demand: only while something moves (drag, damping, view tween, turntable) or for a
+  // few frames after invalidate(); plus a slow safety redraw for anything that changed silently
+  const SAFETY_MS = LOW_POWER ? 2000 : 1000;
+  let frames = 3, lastDraw = 0, controlsMoved = false;
+  const invalidate = (n = 3) => { frames = Math.max(frames, n); };
+  controls.addEventListener('change', () => { controlsMoved = true; });
+  controls.addEventListener('start', () => { dragging = true; invalidate(); });
+  controls.addEventListener('end', () => { dragging = false; invalidate(4); });
+  renderer.setAnimationLoop((t) => {
     const dt = Math.min(0.05, clock.getDelta());
     stepTween();
     if (autoRotate) root.rotation.y += dt * 0.45;
+    controlsMoved = false;
     controls.update();
+    const moving = controlsMoved || tween || autoRotate || dragging;
+    if (!moving && frames <= 0 && t - lastDraw < SAFETY_MS) return;
+    frames = Math.max(0, frames - 1);
     rig.rotation.y = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
     draw();
+    lastDraw = t;
   });
 
   const resizeSubs = new Set();
@@ -267,6 +294,7 @@ export function createStage(container) {
     camera.updateProjectionMatrix();
     fitImageBackground();
     resizeSubs.forEach((fn) => fn());
+    invalidate();
   };
   new ResizeObserver(resize).observe(container);
   resize();
@@ -307,7 +335,7 @@ export function createStage(container) {
     camera.setViewOffset(r.cw, r.ch, r.x, r.y, r.w, r.h);
     camera.updateProjectionMatrix();
     fitImageBackground(width / height);
-    draw();
+    draw(true);
     const blob = await new Promise((res) => renderer.domElement.toBlob(res, transparent ? 'image/png' : type, quality));
     // restore
     camera.clearViewOffset();
@@ -328,10 +356,12 @@ export function createStage(container) {
     get environment() { return { ...state.env }; },
     get lighting() { return { ...state.light }; },
     setSubjectHeight(h) { subjectHeight = h; },
-    setExposure(v) { renderer.toneMappingExposure = v; },
-    setAO(v) { aoEnabled = !!v; },
+    setExposure(v) { renderer.toneMappingExposure = v; invalidate(); },
+    setAO(v) { aoEnabled = !!v; invalidate(); },
+    /** ask for a redraw after changing anything in the scene (pose, shape, skin …) */
+    invalidate,
     ao,
-    setAutoRotate(v) { autoRotate = v; if (!v) root.rotation.y = 0; },
+    setAutoRotate(v) { autoRotate = v; if (!v) root.rotation.y = 0; invalidate(); },
     get autoRotate() { return autoRotate; },
     maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
   };

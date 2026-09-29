@@ -21,6 +21,8 @@ const M = { sex, ...RANGES[sex].defaults, tone: params.get('tone') != null ? +pa
 const model = new ModelController(human, M);
 model.apply();
 stage.root.add(human.object);
+// the stage renders on demand: every pose / shape change asks for a redraw
+for (const k of ['setPose', 'setShape', 'setSkin', 'setSex']) { const f = human[k].bind(human); human[k] = (...a) => { const r = f(...a); stage.invalidate(); return r; }; }
 stage.setSubjectHeight(human.heightM);
 stage.setView(params.get('view') || 'front', { instant: true });
 let pose = composePose('stand');

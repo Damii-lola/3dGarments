@@ -120,15 +120,17 @@ let model = null; // ModelController (human/body.js)
 function applyShape() {
   if (!human) return;
   model.applyShape();
+  stage.invalidate();
   stage.setSubjectHeight(human.heightM);
   save();
 }
 let shapeRaf = 0;
 const queueShape = () => { cancelAnimationFrame(shapeRaf); shapeRaf = requestAnimationFrame(applyShape); };
-const applyLook = () => { if (human) { model.applyLook(); save(); } };
+const applyLook = () => { if (human) { model.applyLook(); stage.invalidate(); save(); } };
 
 function applyPose() {
   human?.setPose(composePose(state.pose.preset, adjustToPose(state.pose.adjust), state.pose.hands || null));
+  stage.invalidate();
   save();
 }
 
