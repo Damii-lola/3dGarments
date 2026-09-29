@@ -1,0 +1,6 @@
+numpy<2
+scipy
+svgpathtools
+svgwrite
+pyyaml
+psutil

@@ -14,10 +14,10 @@ Vision models describe garments well in words but guess numbers badly — so the
 import copy, json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GC = os.environ.get('GARMENTCODE', os.path.join(HERE, 'GarmentCodeRC'))
+GC = os.environ.get('GARMENTCODE', os.path.join(HERE, 'garmentcode'))
 
 # ------------------------------------------------------------------ the vocabulary (shared with the server)
-_V = json.load(open(os.path.join(HERE, '../../../server/src/shared/ngl-vocab.json')))
+_V = json.load(open(os.path.join(HERE, '../src/shared/ngl-vocab.json')))
 TYPES, UPPER, LOWER = _V['types'], _V['upper'], _V['lower']
 DEFAULTS_U, DEFAULTS_L = _V['defaults']['upper'], _V['defaults']['lower']
 # the question asked of the vision model is server/src/shared/ngl.js NGL_PROMPT

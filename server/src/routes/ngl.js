@@ -4,6 +4,8 @@ import rateLimit from 'express-rate-limit';
 import sharp from 'sharp';
 import { HttpError, ah } from '../lib/errors.js';
 import { cloudflareConfigured, describeNGL } from '../lib/cloudflare.js';
+import { buildPattern } from '../services/patterns.js';
+import { parseNGL } from '../shared/ngl.js';
 
 // no sign-in needed: strict limits per address and in total keep the vision model's cost bounded
 const perDay = rateLimit({ windowMs: 24 * 60 * 60_000, limit: 200, keyGenerator: () => 'all', standardHeaders: 'draft-7', legacyHeaders: false,
@@ -29,4 +31,23 @@ ngl.post('/describe', express.json({ limit: '8mb' }), limiter, perDay, ah(async 
     .flatten({ background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer()
     .catch(() => { throw new HttpError(400, 'Unreadable image'); });
   res.json(await describeNGL(jpeg));
+}));
+
+const patternLimiter = rateLimit({ windowMs: 60 * 60_000, limit: 120, keyGenerator: (req) => req.ip, standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many patterns — try again later.' } });
+const SEXES = ['female', 'male'];
+const MEASURES = ['height', 'bust', 'underbust', 'waist', 'hips', 'leg_circ', 'wrist', 'shoulder_w', 'arm_length', 'waist_line'];
+
+/** POST { garment: NGL garment, sex, body: { height, bust, waist, hips … in cm } } → the sewing pattern for that body */
+ngl.post('/pattern', express.json({ limit: '64kb' }), patternLimiter, ah(async (req, res) => {
+  const [garment] = parseNGL({ garments: [req.body?.garment] });
+  if (!garment) throw new HttpError(400, 'garment (an NGL garment) is required');
+  const sex = SEXES.includes(req.body?.sex) ? req.body.sex : 'female';
+  const body = {};
+  for (const k of MEASURES) { const v = Number(req.body?.body?.[k]); if (Number.isFinite(v) && v > 1 && v < 300) body[k] = v; }
+  try {
+    res.json(await buildPattern({ garment, sex, body }));
+  } catch (e) {
+    throw new HttpError(/ENOENT|No module/.test(e.message) ? 503 : 422, e.message);
+  }
 }));

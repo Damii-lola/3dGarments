@@ -11,7 +11,7 @@
 import sharp from 'sharp';
 import { config } from '../config.js';
 import { db, bucket } from '../lib/supabase.js';
-import { cloudflareConfigured, describeForWardrobe, groupWithAI } from '../lib/cloudflare.js';
+import { cloudflareConfigured, describeForWardrobe, groupWithAI, describeNGL } from '../lib/cloudflare.js';
 import { processGarmentPixels } from '../shared/silhouette.js';
 import { colorSignature, colorDistance, buildItems } from '../shared/wardrobe.js';
 
@@ -35,6 +35,17 @@ export async function cutPhoto(buffer) {
   return { png, preview, geometry, signature: colorSignature(cutout.rgba, cutout.width, cutout.height), width: cutout.width, height: cutout.height };
 }
 
+const ZONE_TYPES = {
+  upper: ['top', 'shirt', 'sweater', 'hoodie', 'jacket', 'tank'],
+  lower: ['skirt', 'pants', 'shorts'],
+  full: ['dress', 'jumpsuit'],
+};
+/** a photo can show a whole outfit: the described garment that matches this item's zone */
+function pickForZone(garments, zone) {
+  if (!garments?.length) return null;
+  return garments.find((g) => ZONE_TYPES[zone]?.includes(g.type)) || (garments.length === 1 ? garments[0] : null);
+}
+
 /** the whole job for one group; never throws */
 export async function processGroup({ groupId, userId }) {
   if (running.has(groupId)) return;
@@ -53,6 +64,7 @@ export async function processGroup({ groupId, userId }) {
 
     const photos = [];
     const stored = {};
+    const previews = {};
     const ai = cloudflareConfigured();
     for (const img of images) {
       const { data: file, error: e } = await bucket().download(img.path);
@@ -68,6 +80,7 @@ export async function processGroup({ groupId, userId }) {
         try { desc = await describeForWardrobe(c.preview); } catch (err) { log('describe failed:', err.message); }
       }
       photos.push({ id: img.id, geometry: c.geometry, signature: c.signature, ai: desc });
+      previews[img.id] = c.preview;
       stored[img.id] = { cut: `${base}.png`, preview: `${base}.jpg`, width: c.width, height: c.height, geometry: c.geometry, signature: c.signature, ai: desc, name: img.name || null };
     }
 
@@ -80,6 +93,19 @@ export async function processGroup({ groupId, userId }) {
       } catch (err) { log('grouping AI failed:', err.message); }
     }
     const items = buildItems(photos, aiGroups, aiNames);
+
+    // the cut of each garment in Natural Garment Language (shared/ngl.js): the sewing pattern is built from it
+    if (ai) {
+      for (const item of items) {
+        const front = previews[item.views?.front];
+        if (!front) continue;
+        try {
+          const { garments, model } = await describeNGL(front);
+          item.ngl = pickForZone(garments, item.zone);
+          item.nglModel = model;
+        } catch (err) { log('NGL failed:', err.message); }
+      }
+    }
 
     const { error: ue } = await db().from('garment_groups').update({
       status: 'ready', error: null, items, photos: stored, processed_at: new Date().toISOString(),

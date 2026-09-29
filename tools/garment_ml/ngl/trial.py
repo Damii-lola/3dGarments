@@ -5,7 +5,7 @@ plus a sheet per photo: the photo, what the model said, the pattern(s).
     python trial.py photos_dir out_dir [api=https://threedgarments.onrender.com]
 """
 import base64, glob, json, os, sys, time, urllib.request
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../server/py'))
 import ngl
 
 src, out = sys.argv[1], sys.argv[2]
