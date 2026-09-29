@@ -85,6 +85,21 @@ export class Human {
     geo.setAttribute('uv', new THREE.BufferAttribute(sub.renderUV, 2));
     geo.setAttribute('skinIndex', new THREE.BufferAttribute(sub.skinIndex, 4));
     geo.setAttribute('skinWeight', new THREE.BufferAttribute(sub.skinWeight, 4));
+    // cavity: signed curvature measured on the coarse mesh (one ring ≈ the width of a groove between
+    // muscles), carried to the render mesh by the subdivision stencil so it stays smooth
+    {
+      const nb = Array.from({ length: this.N }, () => new Set()), b = S['index.body'];
+      for (let t = 0; t < b.length; t += 6) {
+        const q = [src[b[t]], src[b[t + 1]], src[b[t + 2]], src[b[t + 5]]];
+        for (let i = 0; i < 4; i++) { nb[q[i]].add(q[(i + 1) & 3]); nb[q[(i + 1) & 3]].add(q[i]); }
+      }
+      this.cavNb = nb.map((x) => Uint32Array.from(x));
+      this.cavC = new Float32Array(this.N);
+      this.cavT = new Float32Array(this.N);
+      this.cavSub = new Float32Array(sub.N2);
+      this.cav = new THREE.BufferAttribute(new Float32Array(R2), 1);
+      geo.setAttribute('cavity', this.cav);
+    }
     const idx = [], ranges = {};
     for (const p of parts) { ranges[p] = [idx.length, sub.index[p].length]; for (const i of sub.index[p]) idx.push(i); }
     geo.setIndex(idx);
@@ -321,9 +336,49 @@ export class Human {
       const l = Math.hypot(NS[o], NS[o + 1], NS[o + 2]) || 1;
       nrm[d] = NS[o] / l; nrm[d + 1] = NS[o + 1] / l; nrm[d + 2] = NS[o + 2] / l;
     }
+    this.#updateCavity(rs);
     this.pos.needsUpdate = this.nrm.needsUpdate = true;
     this.body.geometry.computeBoundingSphere();
     this.#smoothUnderwear();
+  }
+
+  /** cavity > 0 in grooves, < 0 on ridges: (mean of the ring − vertex)·n / mean edge, blurred once */
+  #updateCavity(rs) {
+    const { W, normalsOrig: NO, cavNb: nb, cavC: C, cavT: T } = this;
+    for (let v = 0; v < nb.length; v++) {
+      const n = nb[v];
+      if (!n.length) { C[v] = 0; continue; }
+      let x = 0, y = 0, z = 0, e = 0;
+      const o = v * 3;
+      for (const u of n) {
+        const dx = W[u * 3] - W[o], dy = W[u * 3 + 1] - W[o + 1], dz = W[u * 3 + 2] - W[o + 2];
+        x += dx; y += dy; z += dz; e += Math.hypot(dx, dy, dz);
+      }
+      const l = Math.hypot(NO[o], NO[o + 1], NO[o + 2]) || 1;
+      C[v] = ((x * NO[o] + y * NO[o + 1] + z * NO[o + 2]) / l) / (e || 1);
+    }
+    const blur = (from, to) => {
+      for (let v = 0; v < nb.length; v++) {
+        let a = from[v] * 2;
+        for (const u of nb[v]) a += from[u];
+        to[v] = a / (nb[v].length + 2);
+      }
+    };
+    // high-pass: this ring's curvature minus the surrounding (4-ring) curvature, so a limb's round
+    // cross-section doesn't count; only muscle-scale grooves and ridges are left
+    blur(C, T);
+    const L = this.cavL || (this.cavL = new Float32Array(nb.length)), M = this.cavM || (this.cavM = new Float32Array(nb.length));
+    L.set(T);
+    for (let i = 0; i < 4; i++) { blur(L, M); L.set(M); }
+    for (let v = 0; v < nb.length; v++) T[v] -= L[v];
+    const { ptr, idx, w, N2 } = this.sub, S = this.cavSub, out = this.cav.array;
+    for (let i = 0; i < N2; i++) {
+      let a = 0;
+      for (let k = ptr[i]; k < ptr[i + 1]; k++) a += T[idx[k]] * w[k];
+      S[i] = a;
+    }
+    for (let r = 0; r < rs.length; r++) out[r] = S[rs[r]];
+    this.cav.needsUpdate = true;
   }
 
   /** area-weighted vertex normals of the subdivided body (unnormalised) */

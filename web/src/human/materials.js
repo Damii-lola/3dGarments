@@ -72,13 +72,13 @@ export function createSkinMaterial({ tone = SKIN_TONES[2].hex, hairColor = '#2a1
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vRest;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRest;\nattribute float cavity;\nvarying float vCav;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvCav = cavity;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uMaskA; uniform sampler2D uMaskB; uniform sampler2D uDetail; uniform vec3 uSSS; uniform float uPore;
 uniform vec3 uHair; uniform float uBrows; uniform float uStubble; uniform float uScalp; uniform float uClay;
-varying vec3 vRest;
+varying vec3 vRest; varying float vCav;
 ${NOISE}
 vec4 mA; vec4 mB; vec4 mD;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -118,6 +118,13 @@ roughnessFactor = mix(roughnessFactor, 0.28, mA.b);
 roughnessFactor *= 0.92 + 0.16 * n3(vRest * 60.0);
 roughnessFactor = mix(roughnessFactor, 0.5 + 0.06 * n3(vRest * 60.0), uClay);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{
+  // cavity (per-vertex curvature from human.js): grooves between muscles darken, ridges lift,
+  // like a sculpt render; strongest in grey clay mode
+  float amt = mix(0.35, 1.0, uClay);
+  float groove = smoothstep(0.008, 0.055, vCav), ridge = smoothstep(0.01, 0.05, -vCav);
+  diffuseColor.rgb *= 1.0 - amt * (0.16 * groove - 0.05 * ridge);
+}
 {
   // pores: bump from high-frequency noise, faded out before it can alias
   vec3 q = vRest * 1400.0;

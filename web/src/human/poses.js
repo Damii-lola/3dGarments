@@ -85,7 +85,7 @@ const withHands = (pose, left = 'relaxed', right = left) => {
 // down and tilts it out only as far as this body's chest, lats and hips require, so the whole
 // arm stays beside the body (never swung behind it or sunk into it); soft elbow, palm to thigh
 const armsDown = {
-  clavicle: [0, 0, -7],
+  clavicle: [0, 0, -4],
   upperarm: { hang: true, fwd: 2 },
   lowerarm: { hang: true, fwd: 12, twist: 45 },
   hand: [4, 0, 0],
@@ -96,7 +96,7 @@ const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0,
 export const POSES = {
   stand: {
     label: 'Relaxed',
-    pose: withHands({ both: { ...armsDown, thigh: [0, 0, -1] } }),
+    pose: withHands({ both: { ...armsDown, upperarm: { hang: true, fwd: 2, out: 3 }, lowerarm: { hang: true, fwd: 12, out: 5, twist: 45 }, thigh: [0, 0, -6] } }),
   },
   catalog: {
     label: 'Catalogue',

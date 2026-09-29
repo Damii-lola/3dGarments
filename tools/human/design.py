@@ -4,6 +4,9 @@ Design the studio's two bodies against REAL measurements of people in each categ
 
     python3 tools/human/design.py            # prints the fitted presets as JSON
 
+(The female preset comes from here. The male preset is matched to reference photos
+slice by slice by tools/human/match.py.)
+
 The body is measured like a tailor measures a person: tape-measure circumferences
 (convex hull of a horizontal slice) at chest, waist, hips, thigh, calf and upper
 arm, plus neck. A bounded least-squares fit then finds the muscle/shape values that

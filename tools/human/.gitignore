@@ -1,2 +1,10 @@
 .src
 __pycache__/
+# reference photos stay local (third-party screenshots); the tool only needs the masks
+ref/front.png
+ref/back.png
+ref/side.png
+ref/fit_*.json
+ref/fit_*.out
+ref/fit_*.log
+ref/fit_overlay.png

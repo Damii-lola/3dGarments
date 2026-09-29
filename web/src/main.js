@@ -21,7 +21,7 @@ const DEFAULTS = {
   shot: { aspect: '4:5', size: 2048, transparent: false, shadow: true, format: 'png' },
 };
 
-const STORE = '3dg.studio.v2';
+const STORE = '3dg.studio.v3';
 const state = structuredClone(DEFAULTS);
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');

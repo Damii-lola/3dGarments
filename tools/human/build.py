@@ -263,10 +263,18 @@ def main():
         'measure/measure-waist-circ-*', 'measure/measure-hips-circ-*', 'measure/measure-thigh-circ-*',
         'measure/measure-bust-circ-*', 'measure/measure-upperarm-circ-*', 'measure/measure-calf-circ-*',
         'measure/measure-neck-circ-*',
+        # silhouette matching (design.py --match): proportions, segment lengths, limb and head scales
+        'measure/measure-*-dist-*', 'measure/measure-*-length-*', 'measure/measure-*-height-*',
+        'measure/measure-knee-circ-*', 'measure/measure-ankle-circ-*', 'measure/measure-wrist-circ-*',
+        'measure/measure-underbust-circ-*', 'torso/torso-scale-depth-*', 'torso/torso-scale-vert-*',
+        'hip/hip-scale-depth-*', 'hip/hip-scale-vert-*', 'stomach/stomach-pregnant-*',
+        'armslegs/?-upperarm-scale-*', 'armslegs/?-lowerarm-scale-*', 'armslegs/?-upperleg-scale-*',
+        'armslegs/?-lowerleg-scale-*', 'armslegs/?-lowerleg-fat-*', 'armslegs/?-upperarm-fat-*', 'armslegs/?-lowerarm-fat-*',
+        'neck/neck-scale-*', 'head/head-scale-*',
     ]
     files = []
     for p in patterns:
-        files += sorted(glob.glob(os.path.join(T, p)))
+        files += [f for f in sorted(glob.glob(os.path.join(T, p))) if f not in files]
     targets, gaps, vals = [], [], []
     for f in files:
         rows = [l.split() for l in open(f) if l[:1].isdigit()]
@@ -284,7 +292,7 @@ def main():
         gaps.append(g.astype(np.uint16))
         vals.append(q[nz].astype(np.int16))
         name = os.path.relpath(f, T).replace('macrodetails/', '').replace('.target', '')
-        if name.split('/')[0] in ('measure', 'torso', 'hip', 'stomach', 'buttocks', 'armslegs'):
+        if name.split('/')[0] in ('measure', 'torso', 'hip', 'stomach', 'buttocks', 'armslegs', 'neck', 'head'):
             name = 'local/' + name.split('/')[1]
         targets.append([name, int(len(nz))])
     g = np.concatenate(gaps)

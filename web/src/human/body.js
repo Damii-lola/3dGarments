@@ -17,8 +17,9 @@ export const FIT = {
     local: { "buttocks-volume": 1.0, "hip-scale-horiz": 0.104, "stomach-tone": 0.9, "l-upperleg-muscle": 0.95, "r-upperleg-muscle": 0.95, "l-upperleg-fat": 0.45, "r-upperleg-fat": 0.45, "l-lowerleg-muscle": 0.333, "r-lowerleg-muscle": 0.333, "measure-thigh-circ": 0.15, "nipple-point": -1, "nipple-size": -0.6, "breast-point": -1 },
   },
   male: {
-    ...{ gender: 1, ageYears: 27, proportions: 1, breastSize: 0.5, breastFirmness: 0.5, muscle: 0.939, weight: 0.411 },
-    local: { "torso-vshape": 0.426, "torso-muscle-pectoral": 0.489, "torso-muscle-dorsi": 0.522, "stomach-tone": 1.0, "l-upperarm-muscle": 0.639, "r-upperarm-muscle": 0.639, "l-upperarm-shoulder-muscle": 0.52, "r-upperarm-shoulder-muscle": 0.52, "l-lowerarm-muscle": 0.5, "r-lowerarm-muscle": 0.5, "l-upperleg-muscle": 1.0, "r-upperleg-muscle": 1.0, "l-lowerleg-muscle": 0.55, "r-lowerleg-muscle": 0.55, "measure-thigh-circ": 0.6, "measure-hips-circ": -0.65, "measure-neck-circ": 1 },
+    // matched slice by slice to the reference figure (tools/human/match.py: front + side silhouettes)
+    ...{ gender: 1, ageYears: 27, proportions: 0.659, breastSize: 0.5, breastFirmness: 0.5, muscle: 1.0, weight: 0.084 },
+    local: {"torso-muscle-pectoral": 1.0, "torso-muscle-dorsi": 0.6, "stomach-tone": 1.0, "l-upperarm-muscle": 1.0, "r-upperarm-muscle": 1.0, "l-upperarm-shoulder-muscle": 1.0, "r-upperarm-shoulder-muscle": 1.0, "l-lowerarm-muscle": 1.0, "r-lowerarm-muscle": 1.0, "l-upperleg-muscle": 1.0, "r-upperleg-muscle": 1.0, "l-lowerleg-muscle": 1.0, "r-lowerleg-muscle": 1.0, "torso-scale-horiz": 0.485, "torso-scale-depth": 0.332, "torso-vshape": 0.18, "hip-scale-horiz": 0.364, "hip-scale-depth": 0.2, "buttocks-volume": 0.928, "measure-shoulder-dist": 0.146, "measure-bust-circ": 0.515, "measure-waist-circ": 0.426, "measure-hips-circ": -0.027, "measure-neck-circ": 0.531, "measure-neck-height": 0.979, "measure-upperarm-length": 0.416, "measure-lowerarm-length": -0.394, "measure-upperleg-height": 0.302, "measure-lowerleg-height": 0.261, "measure-upperarm-circ": -0.984, "measure-thigh-circ": 0.304, "measure-knee-circ": 0.8, "measure-calf-circ": -0.282, "measure-ankle-circ": 0.697, "measure-wrist-circ": 0.532, "l-upperarm-scale-horiz": -0.074, "r-upperarm-scale-horiz": -0.074, "l-lowerarm-scale-horiz": -0.014, "r-lowerarm-scale-horiz": -0.014, "l-upperleg-scale-horiz": 0.187, "r-upperleg-scale-horiz": 0.187, "l-lowerleg-scale-horiz": -0.258, "r-lowerleg-scale-horiz": -0.258, "head-scale-horiz": 0.995, "head-scale-vert": 0.938, "head-scale-depth": -0.495},
   },
 };
 
@@ -42,7 +43,7 @@ export const SKINS = [
 /** Slider ranges (real measurements) and fit-model defaults. */
 export const RANGES = {
   female: { width: [36, 50], height: [58, 78], defaults: { width: 44, height: 67 } },
-  male: { width: [46, 62], height: [62, 82], defaults: { width: 57, height: 73 } },
+  male: { width: [42, 60], height: [62, 82], defaults: { width: 54, height: 73 } },
 };
 export const FRAME_RANGE = [-1.8, 0.6]; // beyond +0.6 the torso turns boxy
 
