@@ -156,3 +156,8 @@ drop policy if exists "garment files: owner delete" on storage.objects;
 create policy "garment files: owner delete" on storage.objects
   for delete using (bucket_id = 'garments' and (storage.foldername(name))[1] = auth.uid()::text);
 
+-- ================================================================ 20260930000000_profile_settings.sql
+-- Stage 1: the model editor's settings, per device (the anonymous user the browser signs in as),
+-- both sexes at once: { sex, models: { female: {...}, male: {...} }, updated }.
+alter table public.body_profiles add column if not exists settings jsonb not null default '{}'::jsonb;
+

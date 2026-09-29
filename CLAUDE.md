@@ -25,7 +25,9 @@ tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab pa
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
   src/main.js           STAGE 1 UI: one panel (sex, skin, live measurements card, height & weight, body type, abdomen & waist,
-                        bust & chest, shoulders & posture, glutes & thighs) + the preview filling the rest. State in localStorage.
+                        bust & chest, shoulders & posture, glutes & thighs) + the preview filling the rest. Each sex keeps its own settings
+                        ({ sex, models: { female, male }, updated }): localStorage + per device in Supabase (services/profile.js →
+                        body_profiles.settings of the browser's anonymous user; the newer copy wins at boot).
                         Responsive: desktop panel | preview; ≤860px preview over a scrolling panel; phones in landscape preview | panel
   src/uploads/          STAGE 1 garment photos: groups.js (upload box above the sex picker → review popup: remove / add more,
                         max 10 per group, Confirm bottom-right → a group card; click a card to edit, rename or delete; any number

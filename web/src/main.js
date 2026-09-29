@@ -10,6 +10,7 @@ import {
 } from './human/body.js';
 import { DEFAULT_POSE, composePose } from './human/poses.js';
 import { createUploads } from './uploads/groups.js';
+import { loadProfile, saveProfile } from './services/profile.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -17,20 +18,35 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 /* ================================================================ state */
 
 const modelDefaults = (sex = 'female') => ({ sex, ...RANGES[sex].defaults, tone: DEFAULT_TONE, ...SHAPE_DEFAULTS });
-const STORE = '3dg.tryon.v2'; // v2: the new male model (other defaults)
-let M = modelDefaults();
+/**
+ * Each model keeps its own settings: switching sex swaps to the other set, and switching back
+ * brings every edit back. Saved in localStorage, and per device in Supabase (services/profile.js).
+ *   profile = { sex, models: { female: {...}, male: {...} }, updated }
+ */
+const STORE = '3dg.tryon.v3';
+const withDefaults = (sex, m) => ({ ...modelDefaults(sex), ...(m || {}), sex });
+function readProfile(raw) {
+  if (!raw?.models) return null;
+  return { sex: RANGES[raw.sex] ? raw.sex : 'female', updated: raw.updated || 0, models: { female: withDefaults('female', raw.models.female), male: withDefaults('male', raw.models.male) } };
+}
+let profile = { sex: 'female', updated: 0, models: { female: modelDefaults('female'), male: modelDefaults('male') } };
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-  if (saved?.sex && RANGES[saved.sex]) M = { ...modelDefaults(saved.sex), ...saved };
+  const v2 = JSON.parse(localStorage.getItem('3dg.tryon.v2') || 'null');   // one model only: keep it
+  if (readProfile(saved)) profile = readProfile(saved);
+  else if (v2?.sex && RANGES[v2.sex]) { profile.sex = v2.sex; profile.models[v2.sex] = withDefaults(v2.sex, v2); }
 } catch { /* private mode / bad JSON */ }
+let M = profile.models[profile.sex];
 let saveTimer = null;
 const save = () => {
+  profile.updated = Date.now();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(M)); } catch { /* ignore */ } }, 400);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(profile)); } catch { /* ignore */ } }, 400);
+  saveProfile(profile);
 };
 
 const params = new URLSearchParams(location.search);
-if (params.get('model') === 'male' || params.get('model') === 'female') M = modelDefaults(params.get('model'));
+if (params.get('model') === 'male' || params.get('model') === 'female') { profile.sex = params.get('model'); M = profile.models[profile.sex]; }
 if (params.get('tone') != null && !Number.isNaN(+params.get('tone'))) M.tone = Math.min(1, Math.max(0, +params.get('tone')));
 
 /* ================================================================ toasts */
@@ -175,7 +191,8 @@ function buildPanel() {
 
   const sex = chips([['female', 'Female'], ['male', 'Male']], M.sex, (v) => {
     if (v === M.sex) return;
-    M = { ...modelDefaults(v), tone: M.tone };
+    profile.sex = v;
+    M = profile.models[v];          // that model's own settings, exactly as they were left
     model.model = M;
     applyShape();
     applyLook();
@@ -282,7 +299,22 @@ async function boot() {
   // build the other body's shape targets while idle, so switching sex is instant
   const other = human.bodies[M.sex === 'female' ? 'male' : 'female'];
   (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(() => other.ensureShape(), { timeout: 4000 });
-  window.__3dg = { stage, human, model, get state() { return M; }, applyShape, buildPanel, ready: true };
+  window.__3dg = { stage, human, model, get state() { return M; }, get profile() { return profile; }, applyShape, buildPanel, ready: true };
+
+  // this device's copy in the cloud: take it if it is newer (e.g. local data was cleared),
+  // otherwise make sure the cloud has ours
+  const cloud = readProfile(await loadProfile());
+  if (cloud && cloud.updated > profile.updated) {
+    profile = cloud;
+    M = profile.models[profile.sex];
+    model.model = M;
+    model.applyShape();
+    model.applyLook();
+    stage.setSubjectHeight(human.heightM);
+    stage.invalidate(4);
+    buildPanel();
+    try { localStorage.setItem(STORE, JSON.stringify(profile)); } catch { /* ignore */ }
+  } else if (profile.updated) saveProfile(profile, 0);
 }
 
 boot().catch((err) => {
