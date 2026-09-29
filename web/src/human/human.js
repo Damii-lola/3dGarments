@@ -112,7 +112,7 @@ class Body {
     mesh.bind(mesh.skeleton, mesh.matrixWorld);
     // pose zero keeps each bone's offset from its parent, expressed in the parent's frame
     this.localPos = this.bones.map((b) => b.position.clone());
-    this.#pickSoles();
+    if (!this.soleVerts) this.#pickSoles(); // rest-pose soles: the same for every width
   }
 
   /** Shoulder point to point (m) of the unscaled body at a width setting (the morph is linear). */
@@ -169,8 +169,21 @@ class Body {
       if (torsoBones.has(b) || (thighs.has(b) && pos.getY(v) > hipY)) list.push(v);
     }
     const step = Math.max(1, Math.floor(list.length / 6000)); // plenty to test clearance against
-    this.torsoVerts = Uint32Array.from(list.filter((_, i) => i % step === 0));
-    this.torsoPos = new Float32Array(this.torsoVerts.length * 3);
+    const verts = list.filter((_, i) => i % step === 0), N = verts.length;
+    // packed for the fast skinning in Human#skinTorso: rest position, width morph delta, 4 bones + weights
+    const morph = this.mesh.geometry.morphAttributes.position?.[0];
+    const si = this.mesh.geometry.attributes.skinIndex, sw = this.mesh.geometry.attributes.skinWeight;
+    const t = this.torso = {
+      n: N, base: new Float32Array(N * 3), dPos: new Float32Array(N * 3), bi: new Uint16Array(N * 4), bw: new Float32Array(N * 4),
+      x: new Float32Array(N), y: new Float32Array(N), z: new Float32Array(N),
+    };
+    verts.forEach((v, n) => {
+      for (let k = 0; k < 3; k++) {
+        t.base[n * 3 + k] = pos.getComponent(v, k);
+        t.dPos[n * 3 + k] = morph ? morph.getComponent(v, k) : 0;
+      }
+      for (let k = 0; k < 4; k++) { t.bi[n * 4 + k] = si.getComponent(v, k); t.bw[n * 4 + k] = sw.getComponent(v, k); }
+    });
   }
 
   #pickSoles() {
@@ -263,22 +276,57 @@ export class Human {
     return out.applyMatrix4(m.matrixWorld).applyMatrix4(_m.copy(this.object.matrixWorld).invert());
   }
 
+  /**
+   * Skin the torso sample (width morph included) into the human's local space, sorted by height so
+   * #clear only visits the thin slice it tests. Typed-array skinning: this runs on every slider tick.
+   */
   #skinTorso() {
-    const B = this.active;
-    this.body.skeleton.update();
-    B.torsoVerts.forEach((v, n) => this.#skinned(v, _v3).toArray(B.torsoPos, n * 3));
+    const B = this.active, m = B.mesh, T = B.torso, N = T.n;
+    m.skeleton.update();
+    const bm = m.skeleton.boneMatrices, w = B.width || 0;
+    const P = m.bindMatrix.elements;
+    const M = _m.copy(this.object.matrixWorld).invert().multiply(m.matrixWorld).multiply(m.bindMatrixInverse).elements;
+    const X = new Float32Array(N), Y = new Float32Array(N), Z = new Float32Array(N);
+    for (let n = 0; n < N; n++) {
+      const bx = T.base[n * 3] + T.dPos[n * 3] * w, by = T.base[n * 3 + 1] + T.dPos[n * 3 + 1] * w, bz = T.base[n * 3 + 2] + T.dPos[n * 3 + 2] * w;
+      const vx = P[0] * bx + P[4] * by + P[8] * bz + P[12], vy = P[1] * bx + P[5] * by + P[9] * bz + P[13], vz = P[2] * bx + P[6] * by + P[10] * bz + P[14];
+      let sx = 0, sy = 0, sz = 0;
+      for (let k = 0; k < 4; k++) {
+        const wt = T.bw[n * 4 + k];
+        if (!wt) continue;
+        const o = T.bi[n * 4 + k] * 16;
+        sx += wt * (bm[o] * vx + bm[o + 4] * vy + bm[o + 8] * vz + bm[o + 12]);
+        sy += wt * (bm[o + 1] * vx + bm[o + 5] * vy + bm[o + 9] * vz + bm[o + 13]);
+        sz += wt * (bm[o + 2] * vx + bm[o + 6] * vy + bm[o + 10] * vz + bm[o + 14]);
+      }
+      X[n] = M[0] * sx + M[4] * sy + M[8] * sz + M[12];
+      Y[n] = M[1] * sx + M[5] * sy + M[9] * sz + M[13];
+      Z[n] = M[2] * sx + M[6] * sy + M[10] * sz + M[14];
+    }
+    // counting sort into 1 cm slices (a comparator sort is the slow part otherwise)
+    let y0 = Infinity, y1 = -Infinity;
+    for (let n = 0; n < N; n++) { y0 = Math.min(y0, Y[n]); y1 = Math.max(y1, Y[n]); }
+    const S = Math.floor((y1 - y0) / 0.01) + 1, start = new Uint32Array(S + 1), slot = (y) => Math.floor((y - y0) / 0.01);
+    for (let n = 0; n < N; n++) start[slot(Y[n]) + 1]++;
+    for (let k = 0; k < S; k++) start[k + 1] += start[k];
+    const fill = start.slice(0, S);
+    for (let n = 0; n < N; n++) { const o = fill[slot(Y[n])]++; T.x[o] = X[n]; T.y[o] = Y[n]; T.z[o] = Z[n]; }
+    Object.assign(T, { y0, S, start });
   }
 
   /** Is the segment from `a` along unit `d` (length L, radius r) clear of the torso on side `sg` by `gap`? */
   #clear(a, d, L, r0, r1, sg, gap, ts) {
-    const T = this.active.torsoPos;
+    const { x: TX, y: TY, z: TZ, y0, S, start } = this.active.torso;
     for (const t of ts) {
       const px = a.x + d.x * L * t, py = a.y + d.y * L * t, pz = a.z + d.z * L * t;
       const r = r0 + (r1 - r0) * t;
       const limit = sg * px - r - gap;
-      for (let i = 0; i < T.length; i += 3) {
-        if (Math.abs(T[i + 1] - py) > 0.02 || Math.abs(T[i + 2] - pz) > r) continue;
-        if (sg * T[i] > limit) return false;
+      const k0 = Math.floor((py - 0.02 - y0) / 0.01), k1 = Math.floor((py + 0.02 - y0) / 0.01);
+      if (k1 < 0 || k0 >= S) continue;
+      for (let i = start[Math.max(0, k0)], e = start[Math.min(S, k1 + 1)]; i < e; i++) {
+        if (Math.abs(TY[i] - py) > 0.02) continue;
+        if (Math.abs(TZ[i] - pz) > r) continue;
+        if (sg * TX[i] > limit) return false;
       }
     }
     return true;

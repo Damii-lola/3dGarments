@@ -120,17 +120,17 @@ let model = null; // ModelController (human/body.js)
 function applyShape() {
   if (!human) return;
   model.applyShape();
-  stage.invalidate();
+  stage.invalidate(3, true);
   stage.setSubjectHeight(human.heightM);
   save();
 }
 let shapeRaf = 0;
 const queueShape = () => { cancelAnimationFrame(shapeRaf); shapeRaf = requestAnimationFrame(applyShape); };
-const applyLook = () => { if (human) { model.applyLook(); stage.invalidate(); save(); } };
+const applyLook = () => { if (human) { model.applyLook(); stage.invalidate(3, true); save(); } };
 
 function applyPose() {
   human?.setPose(composePose(state.pose.preset, adjustToPose(state.pose.adjust), state.pose.hands || null));
-  stage.invalidate();
+  stage.invalidate(3, true);
   save();
 }
 
@@ -340,6 +340,9 @@ function updateCrop() {
   const r = stage.cropRect(ASPECTS[state.shot.aspect] || 0.8);
   const el = $('#crop');
   Object.assign(el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+  // dim outside the frame with a clip-path hole (a 100vmax box-shadow is a huge GPU layer on phones)
+  const [x0, y0, x1, y1] = [r.x, r.y, r.x + r.w, r.y + r.h].map((v) => `${v.toFixed(1)}px`);
+  $('#crop-dim').style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${x0} ${y0}, ${x1} ${y0}, ${x1} ${y1}, ${x0} ${y1}, ${x0} ${y0})`;
   el.classList.toggle('transparent', !!state.shot.transparent);
 }
 stage.onResize(updateCrop);

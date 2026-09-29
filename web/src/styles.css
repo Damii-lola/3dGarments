@@ -277,7 +277,8 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .soon-slots span { aspect-ratio: 3 / 4; border: 1px dashed var(--line-2); border-radius: 10px; display: grid; place-items: end center; padding-bottom: 8px; font-size: 11px; color: var(--muted); }
 
 /* crop frame: dims everything outside what the shot will contain */
-.crop { position: absolute; pointer-events: none; box-shadow: 0 0 0 100vmax rgba(8, 9, 12, .38); border-radius: 2px; outline: 1px solid rgba(255,255,255,.35); transition: left .2s, top .2s, width .2s, height .2s; }
+.crop-dim { position: absolute; inset: 0; pointer-events: none; background: rgba(8, 9, 12, .38); transition: clip-path .2s; }
+.crop { position: absolute; pointer-events: none; border-radius: 2px; outline: 1px solid rgba(255,255,255,.35); transition: left .2s, top .2s, width .2s, height .2s; }
 .crop i { position: absolute; width: 18px; height: 18px; border: 2px solid #fff; opacity: .9; }
 .crop i:nth-child(1) { left: -2px; top: -2px; border-right: 0; border-bottom: 0; }
 .crop i:nth-child(2) { right: -2px; top: -2px; border-left: 0; border-bottom: 0; }
@@ -335,4 +336,12 @@ body.flash .stage::after { content: ''; position: absolute; inset: 0; background
   input[type='range']::-moz-range-thumb { width: 26px; height: 26px; }
   .slider.tone input[type='range']::-webkit-slider-thumb { width: 28px; height: 28px; margin-top: -7px; }
   .stage-toolbar .tool { min-height: 34px; }
+}
+
+/* phones/tablets: no backdrop blur. Over a live WebGL canvas it is re-computed every frame (the view
+   bar), and every blurred layer costs GPU memory the 3D view needs */
+@media (pointer: coarse), (max-width: 860px) {
+  .topbar, .panel, .stage-toolbar, .loader, .dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .stage-toolbar { background: rgb(24, 26, 33); }
+  .loader { background: rgba(13, 14, 18, .88); }
 }

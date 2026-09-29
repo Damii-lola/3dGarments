@@ -26,13 +26,18 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/human/body.js     SKIN_STOPS/toneAt (one slider, light → dark, default Latino), RANGES, ModelController (cm / in → width morph + uniform scale, exact)
   src/human/assets.js   model URLs
   src/human/human.js    Human: loads both GLBs, re-bases limb bones on pose zero, width morph + rebind, pose, hang solver, feet on floor
+                        (the hang solver runs per slider tick: typed-array torso skinning + 1 cm y-slices; keep it that cheap)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()
   src/scene/stage.js    renderer, studio rig (cyclorama + lights follow camera), HDRIs, views, WYSIWYG capture
-                        renders ON DEMAND: after changing anything in the scene call stage.invalidate() (main.js / lab do after
-                        shape, look, pose). LOW_POWER tier (touch / small screen / ≤4 cores): pixel ratio ≤1.5, 1K shadows, half-res AO,
-                        AO skipped while a finger orbits. N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget
+                        renders ON DEMAND: after changing anything in the scene call stage.invalidate(n, live) (live = a slider is
+                        being dragged; main.js does it for shape, look, pose). LOW_POWER tier (touch / small screen / ≤4 cores):
+                        pixel ratio ≤1.5, 1K shadows, half-res AO; while anything moves it skips AO and renders at an adaptive
+                        pixel ratio, then draws one full frame when it settles. Resizes reallocate only once the size settles
+                        (iOS rotation); a lost WebGL context rebuilds the PMREM environments. No preserveDrawingBuffer (capture
+                        calls toBlob in the same task as the draw). N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget.
+                        Mobile CSS has no backdrop-filter, and the crop dim is a clip-path hole (not a 100vmax box-shadow)
   src/services/         api/auth/local/wardrobe: garment-pipeline client, waiting for the clothing phase (not wired in main.js)
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket

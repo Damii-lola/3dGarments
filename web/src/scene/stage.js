@@ -50,8 +50,10 @@ export const LOW_POWER = typeof window !== 'undefined' && (
   || (navigator.hardwareConcurrency || 8) <= 4);
 
 export function createStage(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_POWER ? 1.5 : 2));
+  // no preserveDrawingBuffer: it costs a full-frame copy per frame on phones (capture reads the canvas in the same task)
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  const REST_RATIO = Math.min(window.devicePixelRatio || 1, LOW_POWER ? 1.5 : 2);
+  renderer.setPixelRatio(REST_RATIO);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;
@@ -60,8 +62,8 @@ export function createStage(container) {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
+  let pmrem = new THREE.PMREMGenerator(renderer);
+  let roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
   scene.environment = roomEnv;
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
@@ -116,8 +118,9 @@ export function createStage(container) {
   composer.addPass(ao);
   composer.addPass(new OutputPass());
   let aoEnabled = true;
-  let dragging = false; // on phones the AO pass sits out while a finger is orbiting the camera
-  const draw = (full = false) => (aoEnabled && (full || !(LOW_POWER && dragging)) ? composer.render() : renderer.render(scene, camera));
+  let dragging = false;
+  let cheap = false; // phones: while anything is moving the AO pass sits out and the resolution adapts
+  const draw = (full = false) => (aoEnabled && (full || !cheap) ? composer.render() : renderer.render(scene, camera));
 
   const state = {
     env: { kind: 'studio', color: '#e9e6e1', hdri: 'studio', blur: 0.35, rotation: 0, intensity: 1, image: null },
@@ -209,7 +212,7 @@ export function createStage(container) {
   }
 
   /* ---------------- camera views ---------------- */
-  let tween = null;
+  let tween = null, currentView = null, userMoved = false;
   const sph = new THREE.Spherical();
   const VIEWS = {
     front: { az: 0, el: 4, frame: [-0.07, 1] },
@@ -232,6 +235,7 @@ export function createStage(container) {
     return { az: deg(v.az), el: deg(v.el), dist: Math.max(distV, distH), ty: (y0 + y1) / 2 };
   }
   function setView(name, { instant = false } = {}) {
+    currentView = name; userMoved = false;
     const t = viewTarget(name);
     sph.setFromVector3(camera.position.clone().sub(controls.target));
     let az = t.az;
@@ -255,49 +259,108 @@ export function createStage(container) {
     camera.lookAt(controls.target);
     if (k >= 1) tween = null;
   }
-  controls.addEventListener('start', () => { tween = null; });
+  controls.addEventListener('start', () => { tween = null; userMoved = true; });
 
   /* ---------------- loop ---------------- */
   let autoRotate = false;
   const clock = new THREE.Clock();
-  // render on demand: only while something moves (drag, damping, view tween, turntable) or for a
-  // few frames after invalidate(); plus a slow safety redraw for anything that changed silently
+  // Render on demand: only while something moves (drag, damping, view tween, turntable, a slider
+  // being dragged = invalidate(n, true)) or for a few frames after invalidate(); plus a slow safety
+  // redraw. While live on a phone, frames skip AO and render at an adaptive pixel ratio; when it
+  // settles, one full-quality frame (AO, full resolution) is drawn.
   const SAFETY_MS = LOW_POWER ? 2000 : 1000;
-  let frames = 3, lastDraw = 0, controlsMoved = false;
-  const invalidate = (n = 3) => { frames = Math.max(frames, n); };
+  const lastCam = new THREE.Vector3();
+  let frames = 3, lastDraw = 0, controlsMoved = false, liveUntil = 0, wasLive = false, lost = false;
+  let liveRatio = LOW_POWER ? Math.min(REST_RATIO, 1) : REST_RATIO, ema = 16, liveFrames = 0, lastT = 0, downgraded = false;
+  const invalidate = (n = 3, live = false) => {
+    frames = Math.max(frames, n);
+    if (live) liveUntil = performance.now() + 250;
+  };
+  const setRatio = (r) => { if (renderer.getPixelRatio() !== r) renderer.setPixelRatio(r); };
   controls.addEventListener('change', () => { controlsMoved = true; });
   controls.addEventListener('start', () => { dragging = true; invalidate(); });
   controls.addEventListener('end', () => { dragging = false; invalidate(4); });
   renderer.setAnimationLoop((t) => {
+    if (lost) return;
     const dt = Math.min(0.05, clock.getDelta());
     stepTween();
     if (autoRotate) root.rotation.y += dt * 0.45;
     controlsMoved = false;
     controls.update();
-    const moving = controlsMoved || tween || autoRotate || dragging;
-    if (!moving && frames <= 0 && t - lastDraw < SAFETY_MS) return;
+    // the damping tail keeps firing 'change' for seconds after it stops being visible (< 0.3 mm)
+    if (controlsMoved && camera.position.distanceToSquared(lastCam) < 1e-7 && !dragging) controlsMoved = false;
+    lastCam.copy(camera.position);
+    const live = !!(controlsMoved || tween || autoRotate || dragging || performance.now() < liveUntil);
+    if (wasLive && !live) frames = Math.max(frames, 2); // settle: one full-quality frame
+    wasLive = live;
+    if (!live && frames <= 0 && t - lastDraw < SAFETY_MS) { lastT = 0; return; }
     frames = Math.max(0, frames - 1);
+    if (live && LOW_POWER) {
+      // adaptive resolution: drop when frames run long, probe upward only until the first drop
+      if (lastT) {
+        ema += (Math.min(t - lastT, 100) - ema) * 0.15;
+        if (++liveFrames % 20 === 0) {
+          if (ema > 24 && liveRatio > 0.6) { liveRatio = Math.max(0.6, liveRatio - 0.15); downgraded = true; }
+          else if (!downgraded && ema < 18 && liveRatio < REST_RATIO) liveRatio = Math.min(REST_RATIO, liveRatio + 0.125);
+        }
+      }
+      lastT = t;
+    } else lastT = 0;
+    cheap = LOW_POWER && live;
+    setRatio(cheap ? liveRatio : REST_RATIO);
     rig.rotation.y = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
     draw();
     lastDraw = t;
   });
 
   const resizeSubs = new Set();
-  const resize = () => {
+  let resizeTimer = 0, sizedAspect = 0;
+  // reallocating the drawing buffer + post targets is what the GPU hates mid-rotation, so it waits
+  // until the size settles; meanwhile the camera already has the new aspect (the canvas stretches)
+  const allocate = () => {
+    clearTimeout(resizeTimer);
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
     renderer.setSize(w, h, false);
-    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setPixelRatio(REST_RATIO);
     composer.setSize(w, h);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
+    const aspect = w / h;
+    // a new orientation re-frames the current view unless the user has moved the camera since
+    if (sizedAspect && Math.abs(aspect - sizedAspect) / sizedAspect > 0.08 && currentView && !userMoved) setView(currentView, { instant: true });
+    sizedAspect = aspect;
+    invalidate(4);
+  };
+  const resize = (immediate = false) => {
+    const w = container.clientWidth || 1, h = container.clientHeight || 1;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     fitImageBackground();
     resizeSubs.forEach((fn) => fn());
-    invalidate();
+    invalidate(4);
+    if (immediate) allocate();
+    else { clearTimeout(resizeTimer); resizeTimer = setTimeout(allocate, 180); }
   };
-  new ResizeObserver(resize).observe(container);
-  resize();
+  new ResizeObserver(() => resize()).observe(container);
+  resize(true);
+  // iOS: sizes can land late after a rotation, and a backgrounded page's canvas may be discarded
+  const settle = () => { resize(); setTimeout(() => resize(), 400); };
+  window.addEventListener('orientationchange', settle);
+  window.visualViewport?.addEventListener('resize', () => resize());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) invalidate(4); });
+  window.addEventListener('pageshow', () => invalidate(4));
+
+  // the GPU can drop the context (memory pressure on a rotation, a backgrounded tab): rebuild what
+  // lived only on the GPU (the prefiltered environments) and carry on
+  renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; });
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    lost = false;
+    pmrem = new THREE.PMREMGenerator(renderer);
+    roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
+    hdrCache.clear();
+    resize(true);
+    setEnvironment({});
+  });
 
   /* ---------------- capture ---------------- */
   /** The largest rect of `aspect` (w/h) centred in the viewport, in CSS px — what a shot will contain. */
@@ -336,15 +399,16 @@ export function createStage(container) {
     camera.updateProjectionMatrix();
     fitImageBackground(width / height);
     draw(true);
+    // toBlob must be called in the same task as the draw (no preserveDrawingBuffer)
     const blob = await new Promise((res) => renderer.domElement.toBlob(res, transparent ? 'image/png' : type, quality));
     // restore
     camera.clearViewOffset();
     scene.background = prev.bg; cyc.visible = prev.cyc; catcher.visible = prev.catcher;
     renderer.setClearAlpha(prev.alpha);
     setShadow(prev.shadowSize);
-    renderer.setPixelRatio(prev.ratio);
+    renderer.setPixelRatio(REST_RATIO);
     renderer.setSize(prev.size.x, prev.size.y, false);
-    resize();
+    resize(true);
     return { blob, width, height };
   }
 
