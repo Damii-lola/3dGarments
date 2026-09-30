@@ -84,3 +84,22 @@ def combine(cg_design, zone, ngl_garment=None):
             src_leaf, dst_leaf = _get(nd, path), _get(d, path)
             if isinstance(src_leaf, dict) and isinstance(dst_leaf, dict): dst_leaf['v'] = src_leaf['v']
     return d
+
+
+# design values the photo fit may set (py/pattern.py `overrides`): lengths and widths only
+FIT_KEYS = ['shirt.length', 'shirt.width', 'shirt.flare', 'sleeve.length', 'sleeve.end_width', 'pants.length', 'pants.width',
+            'pants.flare', 'skirt.length', 'flare-skirt.length', 'pencil-skirt.length', 'levels-skirt.length']
+
+
+def apply_overrides(d, overrides):
+    """numbers from the photo fit written into the design, clamped to GarmentCode's own range for each"""
+    for path, v in (overrides or {}).items():
+        if path not in FIT_KEYS: continue
+        leaf = _get(d, path)
+        try: v = float(v)
+        except (TypeError, ValueError): continue
+        if not isinstance(leaf, dict) or v != v: continue
+        lo, hi = (leaf.get('range') or [None, None])[:2]
+        if isinstance(lo, (int, float)) and isinstance(hi, (int, float)): v = min(max(v, lo), hi)
+        leaf['v'] = v
+    return d

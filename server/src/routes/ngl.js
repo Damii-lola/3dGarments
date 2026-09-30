@@ -47,12 +47,15 @@ ngl.post('/pattern', express.json({ limit: '512kb' }), patternLimiter, ah(async 
   const [garment] = req.body?.garment ? parseNGL({ garments: [req.body.garment] }) : [];
   const design = req.body?.design && typeof req.body.design === 'object' && !Array.isArray(req.body.design) ? req.body.design : undefined;
   const zone = ['upper', 'lower', 'full'].includes(req.body?.zone) ? req.body.zone : undefined;
+  // lengths / widths measured on the photo (py/combine.py FIT_KEYS; numbers only)
+  const overrides = {};
+  for (const [k, v] of Object.entries(req.body?.overrides || {})) if (typeof k === 'string' && k.length < 40 && Number.isFinite(Number(v))) overrides[k] = Number(v);
   if (!garment && !design) throw new HttpError(400, 'garment (an NGL garment) or design (GarmentCode) is required');
   const sex = SEXES.includes(req.body?.sex) ? req.body.sex : 'female';
   const body = {};
   for (const k of MEASURES) { const v = Number(req.body?.body?.[k]); if (Number.isFinite(v) && v > 1 && v < 300) body[k] = v; }
   try {
-    res.json(await buildPattern({ garment, design, zone, sex, body }));
+    res.json(await buildPattern({ garment, design, zone, overrides, sex, body }));
   } catch (e) {
     throw new HttpError(/ENOENT|No module/.test(e.message) ? 503 : 422, e.message);
   }

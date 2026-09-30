@@ -68,6 +68,9 @@ def main():
         design = ngl.design(g[0])
     else:
         raise SystemExit('invalid garment')
+    if req.get('overrides'):                   # the photo fit: lengths / widths measured on the photo
+        import combine
+        design = combine.apply_overrides(design, req['overrides'])
     tmp = os.path.join('/tmp', f'body_{os.getpid()}.yaml')
     used = body_file(req.get('sex', 'female'), req.get('body') or {}, tmp)
     sys.path.insert(0, ngl.GC)
@@ -86,7 +89,10 @@ def main():
             pts = [[round(z.real, 3), round(z.imag, 3)] for z in (cv.point(t) for t in np.linspace(0, 1, n))]
             edges.append({'pts': pts, **({'label': e['label']} if e.get('label') else {})})
         panels[name] = {'translation': [round(v, 3) for v in p['translation']], 'rotation': [round(v, 3) for v in p['rotation']], 'edges': edges}
-    json.dump({'panels': panels, 'stitches': spec['stitches'], 'body': {k: round(v, 2) for k, v in used.items()}}, sys.stdout)
+    import combine
+    fit = {k: (combine._get(design, k) or {}).get('v') for k in combine.FIT_KEYS}
+    json.dump({'panels': panels, 'stitches': spec['stitches'], 'body': {k: round(v, 2) for k, v in used.items()},
+               'fit': {k: v for k, v in fit.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}}, sys.stdout)
 
 
 if __name__ == '__main__':
