@@ -33,15 +33,20 @@ def note(msg, title=None, prio=3):
         print('  (progress post failed:', e, ')', flush=True)
 
 
-def sh(cmd, what, log):
+def sh(cmd, what, log, optional=False):
     t = time.time()
-    with open(f'{WORK}/logs_{log}.txt', 'a') as f:
+    lf = f'{WORK}/logs_{log}.txt'
+    start = os.path.getsize(lf) if os.path.exists(lf) else 0
+    with open(lf, 'a') as f:
         r = subprocess.run(cmd, shell=True, stdout=f, stderr=subprocess.STDOUT, env={**os.environ})
     if r.returncode:
-        tail = open(f'{WORK}/logs_{log}.txt').read()[-1500:]
-        note(f'✗ {what} FAILED (exit {r.returncode}):\n{tail}', prio=5)
+        out = open(lf, errors='replace').read()[start:]
+        errs = [l for l in out.splitlines() if 'error' in l.lower() and 'warning' not in l.lower()][:15]
+        note(f'{"⚠" if optional else "✗"} {what} FAILED (exit {r.returncode}){" — optional, continuing" if optional else ""}:\n' + '\n'.join(errs or out.splitlines()[-20:]), prio=4 if optional else 5)
+        if optional: return False
         raise SystemExit(1)
     note(f'✓ {what} ({time.time() - t:.0f}s)')
+    return True
 
 
 def stage(n, name):
@@ -62,19 +67,22 @@ try:
 
     # ------------------------------------------------------------------ 2. build the CUDA extensions (for this GPU)
     stage(2, 'building the CUDA extensions (5)')
-    os.environ.update(TORCH_CUDA_ARCH_LIST='7.5;8.0;8.6', MAX_JOBS='4', ATTN_BACKEND='xformers', SPARSE_ATTN_BACKEND='xformers')
+    os.environ.update(TORCH_CUDA_ARCH_LIST='7.5', MAX_JOBS='4', ATTN_BACKEND='xformers', SPARSE_ATTN_BACKEND='xformers')
+    # the linker needs libcuda at build time: CUDA's stub library (the real driver is used at run time)
+    stubs = next((d for d in ['/usr/local/cuda/lib64/stubs', '/usr/local/cuda/targets/x86_64-linux/lib/stubs'] if os.path.isdir(d)), '')
+    os.environ['LIBRARY_PATH'] = ':'.join(x for x in [stubs, '/usr/local/cuda/lib64', os.environ.get('LIBRARY_PATH', '')] if x)
     sh('rm -rf /tmp/TRELLIS.2 /tmp/ext && git clone -q -b main --recursive https://github.com/microsoft/TRELLIS.2.git /tmp/TRELLIS.2 && mkdir -p /tmp/ext', 'TRELLIS.2 source', 'build')
+    # (nvdiffrec only renders preview videos with environment light: optional — the GLBs don't need it)
     exts = [
-        ('nvdiffrast', 'git clone -q -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/ext/nvdiffrast', '/tmp/ext/nvdiffrast'),
-        ('nvdiffrec renderutils', 'git clone -q -b renderutils https://github.com/JeffreyXiang/nvdiffrec.git /tmp/ext/nvdiffrec', '/tmp/ext/nvdiffrec'),
-        ('CuMesh', 'git clone -q --recursive https://github.com/JeffreyXiang/CuMesh.git /tmp/ext/CuMesh', '/tmp/ext/CuMesh'),
-        ('FlexGEMM', 'git clone -q --recursive https://github.com/JeffreyXiang/FlexGEMM.git /tmp/ext/FlexGEMM', '/tmp/ext/FlexGEMM'),
-        ('o-voxel', 'true', '/tmp/TRELLIS.2/o-voxel'),
+        ('nvdiffrast', 'git clone -q -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/ext/nvdiffrast', '/tmp/ext/nvdiffrast', False),
+        ('CuMesh', 'git clone -q --recursive https://github.com/JeffreyXiang/CuMesh.git /tmp/ext/CuMesh', '/tmp/ext/CuMesh', False),
+        ('FlexGEMM', 'git clone -q --recursive https://github.com/JeffreyXiang/FlexGEMM.git /tmp/ext/FlexGEMM', '/tmp/ext/FlexGEMM', False),
+        ('o-voxel', 'true', '/tmp/TRELLIS.2/o-voxel', False),
+        ('nvdiffrec renderutils', 'git clone -q -b renderutils https://github.com/JeffreyXiang/nvdiffrec.git /tmp/ext/nvdiffrec', '/tmp/ext/nvdiffrec', True),
     ]
-    for i, (name, clone, path) in enumerate(exts, 1):
+    for i, (name, clone, path, opt) in enumerate(exts, 1):
         sh(clone, f'{name}: source', 'build')
-        sh(f'pip install -q --no-build-isolation --no-deps {path}',
-           f'{name}: compiled + installed ({i}/{len(exts)})', 'build')
+        sh(f'pip install -v --no-build-isolation --no-deps {path}', f'{name}: compiled + installed ({i}/{len(exts)})', 'build', optional=opt)
 
     # ------------------------------------------------------------------ 3. the weights: ALL of them, verified
     stage(3, 'downloading the full TRELLIS.2-4B weights')
