@@ -796,10 +796,49 @@ function weldedNormals(pos, index) {
  * Posed garment (outer surface) → a skinned, bind-pose mesh with an inner surface, morph targets
  * (each point follows the body's morphs through the skin under it, fading with distance), materials.
  */
+/**
+ * every triangle wound to face away from the body (its front face is the garment's outside). Sewn panels come in
+ * both windings (a back panel is a mirrored front), so each consistently wound patch (triangles that share an edge
+ * traversed in opposite directions) votes on its own: the side its normals face, against the skin under it.
+ */
+function orientOutward(idx, X, verts, Q) {
+  const nt = idx.length / 3, out = Uint32Array.from(idx);
+  const edge = new Map();                                        // "a,b" (directed) → triangle
+  for (let t = 0; t < nt; t++) for (let e = 0; e < 3; e++) edge.set(`${idx[t * 3 + e]},${idx[t * 3 + (e + 1) % 3]}`, t);
+  const group = new Int32Array(nt).fill(-1), votes = [];
+  for (let t0 = 0; t0 < nt; t0++) {
+    if (group[t0] >= 0) continue;
+    const g = votes.length; votes.push(0);
+    const stack = [t0]; group[t0] = g;
+    while (stack.length) {
+      const t = stack.pop();
+      const [a, b, c] = [idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]];
+      // this triangle's vote: its normal against (point − skin under it)
+      const ux = X[b * 3] - X[a * 3], uy = X[b * 3 + 1] - X[a * 3 + 1], uz = X[b * 3 + 2] - X[a * 3 + 2];
+      const vx = X[c * 3] - X[a * 3], vy = X[c * 3 + 1] - X[a * 3 + 1], vz = X[c * 3 + 2] - X[a * 3 + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      let ox = 0, oy = 0, oz = 0;
+      for (const k of [a, b, c]) {
+        const i = verts[k].src; if (i == null || i < 0) continue;
+        ox += X[k * 3] - Q[i * 3]; oy += X[k * 3 + 1] - Q[i * 3 + 1]; oz += X[k * 3 + 2] - Q[i * 3 + 2];
+      }
+      const d = nx * ox + ny * oy + nz * oz;
+      votes[g] += Math.sign(d) * Math.hypot(nx, ny, nz);
+      for (const [p, q] of [[a, b], [b, c], [c, a]]) {
+        const n = edge.get(`${q},${p}`);                           // consistently wound neighbour
+        if (n != null && group[n] < 0) { group[n] = g; stack.push(n); }
+      }
+    }
+  }
+  for (let t = 0; t < nt; t++) if (votes[group[t]] < 0) { out[t * 3 + 1] = idx[t * 3 + 2]; out[t * 3 + 2] = idx[t * 3 + 1]; }
+  return out;
+}
+
 function finish(ctx, item, atlas, r) {
   const { body, ME, deltas, infl, Q } = ctx;
-  const { verts, idx, posed, weights, hide, covered, s } = r;
+  const { verts, posed, weights, hide, covered, s } = r;
   const nv = verts.length, total = nv * 2;
+  const idx = orientOutward(r.idx, posed, verts, ctx.Q);
   const th = r.thickness ?? 0.0015;
 
   const pN = weldedNormals(posed.slice(0, nv * 3), Uint32Array.from(idx));

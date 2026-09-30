@@ -249,6 +249,11 @@ export function createFabricMaterial({ map, normalMap, material, metresPerUV = [
     sheen,
     sheenRoughness: sheenRough,
     sheenColor: new THREE.Color('#ffffff'),
+    // the texture IS a photo: its colours already carry that shoot's light, and the studio's key light on a
+    // vertical surface darkens them again (a white skirt read grey). A little of the photo's own colour as a
+    // self-lit floor keeps whites white and the colours the shop's; the studio still shades the folds
+    emissiveMap: inner ? null : map,
+    emissive: new THREE.Color().setScalar(inner ? 0 : 0.22),                 // linear
     side: THREE.FrontSide,
     // drawn a hair in front of whatever is right behind it (the skin under a snug waistband or shoulder
     // seam, a few mm away): the fabric wins, never a ragged edge of skin poking through

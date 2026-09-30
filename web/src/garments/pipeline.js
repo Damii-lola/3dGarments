@@ -27,7 +27,7 @@
 import { parsePhoto, cutGarment, measuredLowerLength } from './parse.js';
 import { cleanGarment, wearerSex } from './clean.js';
 import { detectPose } from './pose.js';
-import { photoMeasures, modelMeasures, nextOverrides, fitError } from './photofit.js';
+import { photoMeasures, modelMeasures, nextOverrides, fitError, resolveTarget } from './photofit.js';
 import { posedBody, Photo } from './fit.js';
 import { sewPattern } from './sew.js';
 import { loadGarmentGLB, fitMeshGarment } from './mesh3d.js';
@@ -104,7 +104,9 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     const sew = (p) => sewPattern(B, human, item, p, photo, { under: worn.map((w) => w.posed), detail });
     let built = sew(pat);
     // the fit: measured on the photo, measured on our model, re-cut until they agree
-    const target = kp ? photoMeasures(parsed, cut.mask, kp, zone, { kind: /pants|jeans|trousers/.test(g.type) ? 'pants' : g.type }) : {};
+    const measured = kp ? photoMeasures(parsed, cut.mask, kp, zone, { kind: /pants|jeans|trousers/.test(g.type) ? 'pants' : g.type }) : {};
+    const lowerWorn = out.find((o) => o.zone === 'lower');
+    const target = resolveTarget(human, measured, lowerWorn ? lowerWorn.built.posed.pts : null);
     let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = pat.fit || {}, ov = {};
     const fitLog = [{ now, err }];
     for (let r = 0; r < fitRounds && Object.keys(target).length && err > 0.05; r++) {

@@ -13,6 +13,7 @@
  * fitToPhoto() then rebuilds the pattern with its lengths / widths scaled by target ÷ now, sews it, measures again,
  * a few times — until the garment on the model matches the photo.
  */
+import { posedBody } from './fit.js';
 
 const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 const mid = (a, b) => (a && b ? lerp(a, b, 0.5) : a || b || null);
@@ -34,6 +35,29 @@ export function photoMeasures(parsed, mask, kp, zone, opts = {}) {
       if (at(x, y)) hem = Math.max(hem, y);
     }
     if (hem > 0 && hem < h * 0.96) out.hem = (hem - S.y) / (Hp.y - S.y);      // at the photo's edge: unseen
+    // also in shoulder widths below the shoulders (the shoulders are always in a top's photo; the hips often aren't,
+    // and a pose model guesses them high when the photo stops at the waist)
+    const sw = kp.shoulder_l && kp.shoulder_r ? Math.hypot(kp.shoulder_l.x - kp.shoulder_r.x, kp.shoulder_l.y - kp.shoulder_r.y) : 0;
+    if (hem > 0 && hem < h * 0.96 && sw) { out.hemSW = (hem - S.y) / sw; out.hipSW = (Hp.y - S.y) / sw; }
+    // trousers / a skirt right under the hem: the top comes down over their waistband
+    if (hem > 0 && parsed.label) {
+      const cx = Math.round(S.x + (Hp.x - S.x) * ((hem - S.y) / (Hp.y - S.y)));
+      for (let y = hem + 1; y < Math.min(h, hem + 0.03 * h) && !out.overLower; y++) for (let dx = -12; dx <= 12; dx += 4) {
+        const q = parsed.label[y * w + Math.min(w - 1, Math.max(0, cx + dx))];
+        if (q === 5 || q === 6 || q === 8) { out.overLower = true; break; }
+      }
+    }
+    // the body's width three quarters down to the hem, in shoulder widths (a fitted knit vs a boxy tee): the
+    // garment's run across the centre line on that row
+    if (hem > 0 && sw) {
+      const y = Math.round(S.y + 0.75 * (hem - S.y)), cx = Math.round(S.x + (Hp.x - S.x) * ((y - S.y) / (Hp.y - S.y)));
+      if (at(cx, y)) {
+        let a = cx, b = cx;
+        while (at(a - 1, y) || at(a - 3, y)) a--;
+        while (at(b + 1, y) || at(b + 3, y)) b++;
+        if (a > 2 && b < w - 3) out.bodyW = (b - a) / sw;                   // cut by the photo's edge: unseen
+      }
+    }
     // sleeves: how far down each arm the garment covers it, continuously from the shoulder
     const sl = [];
     for (const s of ['l', 'r']) {
@@ -94,6 +118,9 @@ export function photoMeasures(parsed, mask, kp, zone, opts = {}) {
 /* ================================================================ our model */
 
 /** the same measures on a built garment (posed points, the human's local space) */
+// COCO's shoulder keypoints sit on the shoulder's outer edge, a little wider than our rig's shoulder joints
+const SW_K = 1.12;
+
 export function modelMeasures(human, pts, zone) {
   const B = human.active, obj = human.object;
   obj.updateMatrixWorld(true);
@@ -102,10 +129,27 @@ export function modelMeasures(human, pts, zone) {
   const S = mid(J('upperarm_l'), J('upperarm_r')), Hp = mid(J('thigh_l'), J('thigh_r'));
   const n = pts.length / 3, out = {};
   if (zone !== 'lower') {
+    // a top's hem against the hips where a pose model puts them (the widest hip level, over the greater
+    // trochanters), not our rig's hip joints: those sit ~10 cm higher (a hem measured on them lands at the navel)
+    const Hr = { ...Hp, y: hipLevel(human) };
     const hipHalf = Math.abs(J('thigh_l').x - J('thigh_r').x) / 2 + 0.03;
-    let hem = Infinity;
-    for (let i = 0; i < n; i++) if (Math.abs(pts[i * 3] - S.x) < hipHalf && pts[i * 3 + 1] < S.y) hem = Math.min(hem, pts[i * 3 + 1]);
-    if (Number.isFinite(hem)) out.hem = (S.y - hem) / (S.y - Hp.y);
+    // the hem line: the lowest point in each 2 cm column across the torso, its median (one stray point doesn't move it)
+    const cols = new Map();
+    for (let i = 0; i < n; i++) {
+      // the front only: the photo sees the front hem
+      const dx = pts[i * 3] - S.x; if (Math.abs(dx) > hipHalf || pts[i * 3 + 1] > S.y || pts[i * 3 + 2] < S.z) continue;
+      const c = Math.round(dx / 0.02); cols.set(c, Math.min(cols.get(c) ?? Infinity, pts[i * 3 + 1]));
+    }
+    const hs = [...cols.values()].sort((a, b) => a - b);
+    // the body's width three quarters down to the hem (as photoMeasures), in shoulder widths
+    const sw = Math.abs(J('upperarm_l').x - J('upperarm_r').x) * SW_K;
+    if (hs.length) {
+      const y = S.y - 0.75 * (S.y - hs[hs.length >> 1]), bins = new Set();
+      for (let i = 0; i < n; i++) if (Math.abs(pts[i * 3 + 1] - y) < 0.01) bins.add(Math.round((pts[i * 3] - S.x) / 0.01));
+      let a = 0, b = 0;
+      if (bins.has(0)) { while (bins.has(a - 1) || bins.has(a - 2)) a--; while (bins.has(b + 1) || bins.has(b + 2)) b++; out.bodyW = ((b - a) * 0.01) / sw; }
+    }
+    if (hs.length) out.hem = (S.y - hs[hs.length >> 1]) / (S.y - Hr.y);
     const sl = [];
     for (const s of ['l', 'r']) {
       const A = J(`upperarm_${s}`), E = J(`lowerarm_${s}`), Wr = J(`hand_${s}`);
@@ -175,3 +219,29 @@ export const fitError = (target, now) => {
   for (const m of Object.keys(target)) if (now[m] != null && target[m] != null) { e += Math.abs(now[m] - target[m]) / Math.max(0.2, Math.abs(target[m])); n++; }
   return n ? e / n : 0;
 };
+
+
+/** the height of the widest hips (the level COCO's hip keypoints mark) in the human's local space */
+export function hipLevel(human) { return posedBody(human.active, human).L.hipY; }
+
+/** the photo's measures in our model's terms:
+ *  - hem in shoulder widths → target.hem, when the photo's hips can't be trusted (closer to the shoulders than a body
+ *    allows: the photo stops near the waist and the pose model guessed them)
+ *  - a top worn over trousers / a skirt in the photo comes down over their waistband on the model too: over the
+ *    lower garment it's worn with (`lower`: its posed points), or where trousers sit (just over the widest hips) */
+export function resolveTarget(human, target, lower = null) {
+  const { hemSW, hipSW, overLower, bodyW, ...t } = target;             // bodyW: measured, not fitted (a selfie's shoulders are foreshortened)
+  const B = human.active, obj = human.object;
+  obj.updateMatrixWorld(true);
+  const inv = obj.matrixWorld.clone().invert();
+  const J = (n) => B.bones[B.boneIndex[n]].getWorldPosition(new (B.bones[0].position.constructor)()).applyMatrix4(inv);
+  const Sy = (J('upperarm_l').y + J('upperarm_r').y) / 2, Hy = hipLevel(human);
+  const sw = Math.abs(J('upperarm_l').x - J('upperarm_r').x) * SW_K;
+  if (hemSW != null && !(hipSW != null && hipSW > ((Sy - Hy) / sw) * 0.85)) t.hem = (hemSW * sw) / (Sy - Hy);
+  if (overLower && t.hem != null) {
+    let top = Hy + 0.02;
+    if (lower) { top = -Infinity; for (let i = 1; i < lower.length; i += 3) if (Math.abs(lower[i - 1]) < 0.08) top = Math.max(top, lower[i]); }
+    if (Number.isFinite(top)) t.hem = Math.max(t.hem, (Sy - (top - 0.035)) / (Sy - Hy));
+  }
+  return t;
+}
