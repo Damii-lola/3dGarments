@@ -1,4 +1,4 @@
-import { NGL_PROMPT, parseNGL, parseOnGarment, parseMadeFor } from '../shared/ngl.js';
+import { NGL_PROMPT, parseNGL, parseOnGarment, parseMadeFor, parseWornBy } from '../shared/ngl.js';
 import { TYPES as WARDROBE_TYPES, ZONES as WARDROBE_ZONES, VIEWS as WARDROBE_VIEWS } from '../shared/wardrobe.js';
 import { config } from '../config.js';
 import { HttpError } from './errors.js';
@@ -248,5 +248,5 @@ export async function describeNGL(jpeg) {
   const result = await runLicensed(model, visionInput(model, NGL_PROMPT, jpeg, 700), { timeoutMs: 60_000 });
   const raw = result?.response ?? result?.description ?? result;
   const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
-  return { model, raw: text.slice(0, 4000), garments: parseNGL(text), onGarment: parseOnGarment(text), madeFor: parseMadeFor(text) };
+  return { model, raw: text.slice(0, 4000), garments: parseNGL(text), onGarment: parseOnGarment(text), madeFor: parseMadeFor(text), wornBy: parseWornBy(text) };
 }

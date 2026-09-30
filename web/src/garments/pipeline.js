@@ -2,6 +2,9 @@
  * One photo → the garments in it, made and worn on the model. Every system we have, each for what it does best:
  *
  *   parse.js       clothes parsing (SegFormer): which pixels are which garment; hem length measured on the wearer
+ *   pose.js        the wearer's body in the photo (ViTPose keypoints)
+ *   photofit.js    the garment's lengths / widths measured against that body, and the sewn garment re-cut until it sits
+ *                  on our model exactly where it sits on the person (hem, sleeve ends, waistband, leg width)
  *   clean.js       what isn't the garment taken off it (the vision model names it — a necklace, a bag strap, a hand;
  *                  CLIPSeg + a jewellery detector find it; LaMa paints the fabric back) and its wrinkles smoothed out
  *   NGL (API)      Cloudflare vision → garment words: what each garment is, a second opinion on sleeves / neckline
@@ -23,6 +26,8 @@
  */
 import { parsePhoto, cutGarment, measuredLowerLength } from './parse.js';
 import { cleanGarment } from './clean.js';
+import { detectPose } from './pose.js';
+import { photoMeasures, modelMeasures, nextOverrides, fitError } from './photofit.js';
 import { posedBody, Photo } from './fit.js';
 import { sewPattern } from './sew.js';
 import { loadGarmentGLB, fitMeshGarment } from './mesh3d.js';
@@ -42,16 +47,24 @@ export function bodyMeasures(human) {
   };
 }
 
-export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, models = {}, under = [], onStep = () => {} }) {
-  const B = human.active;
+export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, models = {}, under = [], onStep = () => {}, fitRounds = 3 }) {
   onStep('Finding the clothes in the photo…');
   const parsed = await parsePhoto(image);
   const c = document.createElement('canvas'), k = Math.min(1, 1024 / Math.max(image.width, image.height));
   c.width = Math.round(image.width * k); c.height = Math.round(image.height * k);
   c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
   onStep('Reading what each garment is…');
-  const { garments = [], onGarment = [] } = await describe(c.toDataURL('image/jpeg', 0.9));
+  const { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await describe(c.toDataURL('image/jpeg', 0.9));
+  // what the vision model named on the garments, plus what's always worth a look (its list varies from run to run)
+  const onGarment = [...new Set([...named, 'necklace', 'chain', 'hand', 'long_hair', 'bag_strap'])];
+  // whose clothes: menswear on the male model, womenswear on the female one (unisex: the one shown)
+  // (unisex: whoever wears them in the photo; nobody: the model already shown)
+  const sex = madeFor === 'men' ? 'male' : madeFor === 'women' ? 'female' : wornBy === 'man' ? 'male' : wornBy === 'woman' ? 'female' : human.sex;
+  if (sex !== human.sex) { onStep(`These are ${madeFor}'s clothes: dressing the ${sex} model…`); human.setSex(sex); }
+  const B = human.active;
   const body = bodyMeasures(human);
+  onStep('Finding the body in the photo…');
+  const kp = await detectPose(parsed).catch(() => null);
   const out = [], worn = [...under], seen = new Set();
   const order = garments.map((g) => ({ g, zone: zoneOf(g.type) })).sort((a, b) => (a.zone === 'lower' ? -1 : 1) - (b.zone === 'lower' ? -1 : 1));
   for (const { g, zone } of order) {
@@ -74,9 +87,24 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       detail = fm.detail; fm.dispose();
     }
     onStep(`Sewing the ${g.type} on the model…`);
-    const built = sewPattern(B, human, item, pat, { front: new Photo(clean.cut, clean.geometry) }, { under: worn.map((w) => w.posed), detail });
+    const photo = { front: new Photo(clean.cut, clean.geometry) };
+    const sew = (p) => sewPattern(B, human, item, p, photo, { under: worn.map((w) => w.posed), detail });
+    let built = sew(pat);
+    // the fit: measured on the photo, measured on our model, re-cut until they agree
+    const target = kp ? photoMeasures(parsed, cut.mask, kp, zone) : {};
+    let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = pat.fit || {}, ov = {};
+    const fitLog = [{ now, err }];
+    for (let r = 0; r < fitRounds && Object.keys(target).length && err > 0.05; r++) {
+      const o = nextOverrides(zone, target, now, fit, ov);
+      if (JSON.stringify(o) === JSON.stringify(ov)) break;
+      onStep(`Matching the ${g.type} to the photo (${r + 1}/${fitRounds})…`);
+      const p2 = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body, overrides: o });
+      const b2 = sew(p2), n2 = modelMeasures(human, b2.posed.pts, zone), e2 = fitError(target, n2);
+      fitLog.push({ overrides: o, now: n2, err: e2 });
+      if (e2 < err) { built.dispose(); built = b2; now = n2; err = e2; fit = p2.fit || fit; ov = o; } else { b2.dispose(); break; }
+    }
     worn.push(built);
-    out.push({ zone, garment, built });
+    out.push({ zone, garment, built, target, fit: fitLog, sex });
   }
   return out;
 }

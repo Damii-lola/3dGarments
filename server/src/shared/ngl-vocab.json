@@ -162,5 +162,10 @@
   "men",
   "women",
   "unisex"
+ ],
+ "worn_by": [
+  "man",
+  "woman",
+  "nobody"
  ]
 }
