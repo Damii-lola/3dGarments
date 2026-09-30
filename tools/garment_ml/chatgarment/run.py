@@ -92,7 +92,9 @@ def run():
     open(f'{STUB}/deepspeed/runtime/zero/__init__.py', 'w').write('')
     open(f'{STUB}/deepspeed/runtime/zero/partition_parameters.py', 'w').write('class ZeroParamStatus:\n    NOT_AVAILABLE = 0\n    AVAILABLE = 1\n    INFLIGHT = 2\n')
     for f in [f'{CG}/llava/garment_utils_v2.py', f'{CG}/run_garmentcode_sim.py']:
-        if os.path.exists(f): open(f, 'w').write(open(f).read().replace('/is/cluster/fast/sbian/github/GarmentCodeV2/', GC + '/'))
+        if os.path.exists(f):
+            txt = open(f).read()                      # read first: open(f, 'w') would empty it
+            open(f, 'w').write(txt.replace('/is/cluster/fast/sbian/github/GarmentCodeV2/', GC + '/'))
     if not os.path.exists(f'{CG}/assets'): os.symlink(f'{GC}/assets', f'{CG}/assets')
     for d in (GC, CG):
         if not os.path.exists(f'{d}/system.json') and os.path.exists(f'{GC}/system.template.json'): shutil.copy(f'{GC}/system.template.json', f'{d}/system.json')

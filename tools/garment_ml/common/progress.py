@@ -34,8 +34,9 @@ def sh(cmd, what, log='build', optional=False):
     if r.returncode:
         out = open(lf, errors='replace').read()[start:]
         errs = [l for l in out.splitlines() if 'error' in l.lower() and 'warning' not in l.lower()][:15]
+        tail = [l for l in out.splitlines() if l.strip()][-25:]
         note(f'{"⚠" if optional else "✗"} {what} FAILED (exit {r.returncode}){" — optional, continuing" if optional else ""}:\n'
-             + '\n'.join(errs or out.splitlines()[-20:]), prio=4 if optional else 5)
+             + '\n'.join(errs[:6] + ['--- last lines ---'] + tail), prio=4 if optional else 5)
         if optional: return False
         raise SystemExit(1)
     note(f'✓ {what} ({time.time() - t:.0f}s)')
