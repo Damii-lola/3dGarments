@@ -39,7 +39,8 @@ const SEXES = ['female', 'male'];
 const MEASURES = ['height', 'bust', 'underbust', 'waist', 'hips', 'leg_circ', 'wrist', 'shoulder_w', 'arm_length', 'waist_line'];
 
 /**
- * POST { garment?: NGL garment, design?: GarmentCode design (ChatGarment's), zone?: upper|lower|full, sex,
+ * POST { garment?: NGL garment, design?: GarmentCode design (ChatGarment's), spec?: a finished pattern (AIpparel's),
+ *        zone?: upper|lower|full, sex,
  *        body: { height, bust, waist, hips … in cm } } → the sewing pattern for that body.
  * With a design, its cut is used and the NGL garment's lengths win (py/combine.py).
  */
@@ -47,15 +48,18 @@ ngl.post('/pattern', express.json({ limit: '512kb' }), patternLimiter, ah(async 
   const [garment] = req.body?.garment ? parseNGL({ garments: [req.body.garment] }) : [];
   const design = req.body?.design && typeof req.body.design === 'object' && !Array.isArray(req.body.design) ? req.body.design : undefined;
   const zone = ['upper', 'lower', 'full'].includes(req.body?.zone) ? req.body.zone : undefined;
+  // a finished pattern (AIpparel's GarmentCodeData specification): panels + stitches, sized to the body in py/pattern.py
+  const sp = req.body?.spec && typeof req.body.spec === 'object' ? (req.body.spec.pattern || req.body.spec) : null;
+  const spec = sp && sp.panels && typeof sp.panels === 'object' && Array.isArray(sp.stitches) ? { panels: sp.panels, stitches: sp.stitches } : undefined;
   // lengths / widths measured on the photo (py/combine.py FIT_KEYS; numbers only)
   const overrides = {};
   for (const [k, v] of Object.entries(req.body?.overrides || {})) if (typeof k === 'string' && k.length < 40 && Number.isFinite(Number(v))) overrides[k] = Number(v);
-  if (!garment && !design) throw new HttpError(400, 'garment (an NGL garment) or design (GarmentCode) is required');
+  if (!garment && !design && !spec) throw new HttpError(400, 'garment (an NGL garment), design (GarmentCode) or spec (a pattern) is required');
   const sex = SEXES.includes(req.body?.sex) ? req.body.sex : 'female';
   const body = {};
   for (const k of MEASURES) { const v = Number(req.body?.body?.[k]); if (Number.isFinite(v) && v > 1 && v < 300) body[k] = v; }
   try {
-    res.json(await buildPattern({ garment, design, zone, overrides, sex, body }));
+    res.json(await buildPattern({ garment, design, spec, zone, overrides, sex, body }));
   } catch (e) {
     throw new HttpError(/ENOENT|No module/.test(e.message) ? 503 : 422, e.message);
   }

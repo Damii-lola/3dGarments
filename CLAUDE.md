@@ -118,9 +118,22 @@ parse.js (SegFormer clothes parsing, hem length measured on the wearer) → NGL 
 lengths, sleeves/neckline voted with NGL, every value validated against GarmentCode's schema; `py/pattern.py` sizes it to the body)
 → sew.js (sewn + draped, textured from the photo; bake.js) + TRELLIS.2's fitted 3D model when there is one (mesh3d.js: its look
 on the unseen sides and its relief).
-GPU models run on Kaggle: `python tools/garment_ml/kernel.py push <model> <photos>` (chatgarment; trellis2 has its own
-tools/garment_ml/trellis2/kernel.py) — every download shows % on https://ntfy.sh/<topic>, files SHA-256 checked.
-KAGGLE_API_TOKEN only in the shell, never in files. ChatGarment results for the test photos: tools/garment_ml/chatgarment/results.
+Before sewing: clean.js takes off what isn't the garment (NGL `on_garment` + always necklace/chain/hand/hair/bag strap: CLIPSeg,
+a thin-jewellery detector, skin openings) and LaMa paints the fabric back; the wearer's sex (NGL made_for/worn_by, CLIPSeg
+fallback) picks the model. After sewing, photofit.js measures hem / sleeve / leg on the photo against ViTPose keypoints (a top's hem
+against the widest-hip level, which is where COCO hips sit — our rig's hip joints are ~10 cm higher) and re-cuts the pattern until
+the model matches. AIpparel's pattern (`specs`, py/pattern.py `spec`) is a per-zone candidate: used only if its panels are the right
+kind (it reads nearly everything as a dress) and it measures closer to the photo than the fitted ChatGarment/NGL pattern.
+Garment meshes: fit.js `finish` winds every triangle to face away from the body (sewn back panels are mirrored fronts; the half-
+bright inside layer showing made white read grey). Sleeves take their own arm's skin weights, and the arm under a sleeve is
+sunk deep (`deep` in Body#setHidden): an arm resting on the side leaves the sleeve no room and would show through it.
+GPU models run on Kaggle: `python tools/garment_ml/kernel.py push <model> <photos>` (chatgarment, aipparel, hunyuan3d; trellis2
+has its own tools/garment_ml/trellis2/kernel.py) — every download shows % on https://ntfy.sh/<topic>, files SHA-256 checked.
+KAGGLE_API_TOKEN only in the shell, never in files. Results for the test photos: tools/garment_ml/{chatgarment,aipparel}/results.
+AIpparel on a T4: its 27 GB checkpoint is loaded memory-mapped onto a meta-device model in fp16 and split over both GPUs;
+transformers 4.31 needs a real `tokenizers` (without it LLaVA's AddedToken entries become 3 new tokens and every garment token
+id is off by 3): tokenizers 0.15.2 with the version table relaxed. The vision projector comes from LLaVA-1.5's second shard.
+GarmageNet: no pretrained weights are published (training code only); its dataset (Style3D/GarmageSet) is gated on HF.
 
 ## Roadmap / ideas
 - Clothing: front/side/back garment photos → garment fitted on the human (body-surface projection + cut-out textures; `garments.back_texture_path` exists)

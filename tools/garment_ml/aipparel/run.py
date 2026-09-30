@@ -38,7 +38,7 @@ def kaggle_load(cfg, dataset, torch_dtype):
     return model
 
 
-def kaggle_fill(model, path):
+def kaggle_fill(model, path, llava):
     import gc, time
     t = time.time()
     try:
@@ -54,6 +54,19 @@ def kaggle_fill(model, path):
         if keys and all(k.startswith(pre) for k in keys):
             sd = {k[len(pre):]: v for k, v in sd.items()}
     own = dict(model.named_parameters()); own.update(dict(model.named_buffers()))
+    # the vocabulary must be the one AIpparel was trained with (its garment tokens' ids)
+    rows, have = sd["model.embed_tokens.weight"].shape[0], own["model.embed_tokens.weight"].shape[0]
+    if rows != have:
+        raise RuntimeError(f"vocabulary: checkpoint {rows} tokens, tokenizer {have} - the garment token ids would not match")
+    # LLaVA-1.5's vision projector (AIpparel kept it frozen: not in its checkpoint)
+    lsd = torch.load(f"{llava}/pytorch_model-00002-of-00002.bin", map_location="cpu", mmap=True, weights_only=False)
+    proj = {k: v for k, v in lsd.items() if k.startswith("model.mm_projector.")}
+    print("LLaVA projector:", {k: tuple(v.shape) for k, v in proj.items()}, flush=True)
+    for k, v in proj.items():
+        if k not in sd: sd[k] = v
+    del lsd
+    bad = [(k, tuple(v.shape), tuple(own[k].shape)) for k, v in sd.items() if k in own and own[k].shape != v.shape]
+    if bad: print("shape mismatches:", bad[:10], flush=True)
     half = {}
     for k in list(sd):
         v = sd.pop(k)
@@ -101,7 +114,7 @@ def patch_script(AP):
         ('    vision_tower.to(dtype=torch_dtype, device="cuda")', '    vision_tower.to(dtype=torch_dtype)'),
         ('''    state_dict = torch.load(cfg.pre_trained, map_location='cpu')
     model.load_state_dict(state_dict, strict=False)
-    model = model.to("cuda")''', '    model = kaggle_place(kaggle_fill(model, cfg.pre_trained))'),
+    model = model.to("cuda")''', '    model = kaggle_place(kaggle_fill(model, cfg.pre_trained, cfg.version))'),
         ('num_workers=12,', 'num_workers=0,'),
     ]
     # the model built on the meta device (from_pretrained would download and load LLaVA's own 13 GB first)
@@ -135,21 +148,27 @@ def run():
     AP = f'{TMP}/AIpparel'
     sh(f'rm -rf {AP} && git clone -q --depth 1 https://github.com/georgeNakayama/AIpparel-Code {AP}', 'AIpparel source')
     # its own pins where they matter (generation internals: transformers 4.31); no DeepSpeed / flash-attn / wandb
-    # generation internals need transformers 4.31 (what it was built on); its tokenizers pin (<0.14) has no wheel on
-    # a new Python — then without the fast-tokenizer library (AIpparel uses the slow SentencePiece one)
-    common = ('"sentencepiece>=0.1.99" "accelerate==0.32.0" "huggingface_hub>=0.16,<0.25" "hydra-core==1.3.2" "omegaconf==2.3.0" '
-              'einops svgpathtools cairosvg scipy matplotlib opencv-python-headless')
-    if not sh(f'pip install -q "transformers==4.31.0" "tokenizers>=0.13.3,<0.14" {common}', 'Python dependencies', 'pip', optional=True):
-        sh(f'pip install -q --no-deps "transformers==4.31.0" && pip uninstall -y -q tokenizers; pip install -q {common}',
-           'Python dependencies (transformers 4.31 with the slow tokenizer)', 'pip')
-    sh('python -c "import transformers, sentencepiece, hydra; print(transformers.__version__)"', 'dependencies import', 'pip')
+    # generation internals need transformers 4.31 (what AIpparel was built on). Its tokenizers pin (<0.14) has no wheel
+    # for Kaggle's Python, and without the library transformers 4.31 reads LLaVA's AddedToken entries as 3 NEW tokens
+    # (every garment token id then off by 3): tokenizers 0.15.2 (abi3 wheel; token ids checked identical to 0.13.3
+    # on AIpparel's prompts) with transformers' version table relaxed
+    sh('pip install -q --no-deps "transformers==4.31.0" && pip install -q "tokenizers==0.15.2" "sentencepiece>=0.1.99" "accelerate==0.32.0" '
+       '"huggingface_hub>=0.16,<0.25" "hydra-core==1.3.2" "omegaconf==2.3.0" safetensors regex einops svgpathtools cairosvg scipy matplotlib opencv-python-headless',
+       'Python dependencies', 'pip')
+    import importlib.util
+    dv = os.path.join(os.path.dirname(importlib.util.find_spec('transformers').origin), 'dependency_versions_table.py')
+    txt = open(dv).read(); a = '"tokenizers": "tokenizers>=0.11.1,!=0.11.3,<0.14"'
+    if a not in txt: raise RuntimeError('transformers version table: tokenizers pin not found')
+    open(dv, 'w').write(txt.replace(a, '"tokenizers": "tokenizers>=0.11.1,!=0.11.3"'))
+    sh('python -c "import transformers, tokenizers, sentencepiece, hydra; print(transformers.__version__, tokenizers.__version__)"', 'dependencies import', 'pip')
     sh('(which apt-get && (apt-get install -y -q libcairo2 >/dev/null 2>&1 || true)); python -c "import cairosvg"', 'Cairo (pattern SVG → PNG)', 'pip')
 
-    stage(2, N, 'downloading ALL weights: AIpparel checkpoint (27 GB) + LLaVA-1.5-7B config/tokenizer + CLIP ViT-L/14')
-    # only what inference reads: AIpparel's checkpoint (not its datasets), LLaVA's config + tokenizer (its weights are
-    # inside AIpparel's checkpoint), CLIP's safetensors
+    stage(2, N, 'downloading ALL weights: AIpparel checkpoint (27 GB) + LLaVA-1.5-7B projector shard/config/tokenizer + CLIP ViT-L/14')
+    # only what inference reads: AIpparel's checkpoint (not its datasets); LLaVA's config + tokenizer and the shard with
+    # its vision projector (AIpparel's checkpoint has every other weight; the projector stayed LLaVA's); CLIP's safetensors
     got = fetch([('georgeNakayama/AIpparel', ''), ('liuhaotian/llava-v1.5-7b', ''), ('openai/clip-vit-large-patch14', '')], W,
-                skip=lambda p: p.endswith(('.zip', '.parquet', '.tar.gz', '.h5', '.msgpack')) or p.startswith(('pytorch_model', 'flax', 'tf_', 'rust')))
+                skip=lambda p: p.endswith(('.zip', '.parquet', '.tar.gz', '.h5', '.msgpack')) or p.startswith(('flax', 'tf_', 'rust'))
+                or (p.startswith('pytorch_model') and p != 'pytorch_model-00002-of-00002.bin'))
     CKPT = f'{W}/AIpparel/aipparel_pretrained.pth'
     LLAVA, CLIP = got['liuhaotian/llava-v1.5-7b'], got['openai/clip-vit-large-patch14']
     note('weights: ' + ', '.join(f'{os.path.relpath(p, W)} {os.path.getsize(p) / 1e9:.2f} GB' for p in glob.glob(f'{W}/**/*', recursive=True) if os.path.isfile(p) and os.path.getsize(p) > 5e7))
@@ -184,7 +203,7 @@ def run():
             if not os.path.exists(lf): continue
             lines = open(lf, errors='replace').read().splitlines()
             for l in lines[seen:]:
-                if l.startswith(('INPUT DONE', 'INPUT FAILED', 'still on meta', 'missing:', 'checkpoint', 'GPUs', 'GPU ', 'Total parameters', 'mmap')):
+                if l.startswith(('INPUT DONE', 'INPUT FAILED', 'still on meta', 'missing:', 'checkpoint', 'GPUs', 'GPU ', 'Total parameters', 'mmap', 'LLaVA projector', 'shape mismatches', 'RuntimeError', 'Added')):
                     note('  ' + l[:300])
             seen = len(lines)
     threading.Thread(target=follow, daemon=True).start()

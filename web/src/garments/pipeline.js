@@ -11,6 +11,8 @@
  *   ChatGarment    (a GPU job, tools/garment_ml/chatgarment) → GarmentCode design: the garment's CUT, when we have it
  *   pattern (API)  py/pattern.py + py/combine.py: ChatGarment's cut + our lengths + the votes → a sewing pattern
  *                  sized to this body
+ *   AIpparel       (a GPU job, tools/garment_ml/aipparel) → a whole sewing pattern; per zone, sewn too and kept when
+ *                  it measures closer to the photo (py/pattern.py `spec`)
  *   sew.js         the pattern sewn and draped on the body (cloth simulation), textured from the photo
  *   TRELLIS.2      (a GPU job, tools/garment_ml/trellis2) → a textured 3D garment, when we have it: its look on
  *                  the sides the photo can't see, and its relief (mesh3d.js fits it on the same body)
@@ -19,10 +21,11 @@
  *   describe(jpegDataUrl) → { garments: [NGL garment] }       (POST /api/ngl/describe)
  *   pattern(req) → pattern                                    (POST /api/ngl/pattern)
  *   designs?: { upper?, lower?, full? }  ChatGarment designs for this photo
+ *   specs?:   { upper?, lower?, full? }  AIpparel patterns for this photo (tools/garment_ml/aipparel)
  *   models?:  { upper?, lower?, full? }  TRELLIS.2 GLB urls for this photo
  *   onStep?(text)
  * }
- * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …) }]  lower garments first
+ * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …), source }]  lower garments first
  */
 import { parsePhoto, cutGarment, measuredLowerLength } from './parse.js';
 import { cleanGarment, wearerSex } from './clean.js';
@@ -47,7 +50,16 @@ export function bodyMeasures(human) {
   };
 }
 
-export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, models = {}, under = [], onStep = () => {}, fitRounds = 3 }) {
+/** an AIpparel pattern (GarmentCodeData specification) has the panels this garment needs in this zone */
+export function specFits(spec, zone, type) {
+  const names = Object.keys((spec.pattern || spec).panels || {});
+  const has = (re) => names.some((n) => re.test(n));
+  if (zone === 'upper') return has(/torso/);
+  if (zone === 'lower') return /pants|jeans|trousers|shorts/.test(type) ? has(/^pant_/) : has(/skirt/) && !has(/^pant_/);
+  return has(/torso/) && has(/skirt/);
+}
+
+export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, fitRounds = 3 }) {
   onStep('Finding the clothes in the photo…');
   const parsed = await parsePhoto(image);
   const c = document.createElement('canvas'), k = Math.min(1, 1024 / Math.max(image.width, image.height));
@@ -88,7 +100,9 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     seen.add(zone);
     const garment = structuredClone(g);
     if (zone !== 'upper' && garment.lower) garment.lower.length = measuredLowerLength(parsed, cut.mask) || garment.lower.length;
-    const clean = await cleanGarment(parsed, cut, { onGarment, onStep });
+    // the other garments the vision model saw in this zone are worn under this one (it's the one that got cut)
+    const underIt = garments.filter((o) => o !== g && zoneOf(o.type) === zone).map((o) => o.type);
+    const clean = await cleanGarment(parsed, cut, { onGarment, under: underIt, onStep });
     onStep(`Cutting the ${g.type}'s sewing pattern…`);
     const pat = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body });
     const item = { id: `${g.type}-${zone}`, name: g.type, type: g.type, category: CATEGORY[zone](g.type), zone, backFill: 'color' };
@@ -118,8 +132,19 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       fitLog.push({ overrides: o, now: n2, err: e2 });
       if (e2 < err) { built.dispose(); built = b2; now = n2; err = e2; fit = p2.fit || fit; ov = o; } else { b2.dispose(); break; }
     }
+    // AIpparel's pattern for this zone (a whole sewing pattern from the photo): a candidate when its panels are the
+    // right kind of garment (it reads nearly everything as a dress: no trouser legs for trousers → not used), sewn on
+    // the same body and kept only if it measures closer to the photo than the fitted ChatGarment/NGL pattern
+    let source = designs[zone] ? 'chatgarment' : 'ngl';
+    if (specs[zone] && specFits(specs[zone], zone, g.type)) {
+      onStep(`Trying AIpparel's pattern for the ${g.type}…`);
+      const p3 = await pattern({ spec: specs[zone], zone, sex: human.sex, body });
+      const b3 = sew(p3), n3 = modelMeasures(human, b3.posed.pts, zone), e3 = Object.keys(target).length ? fitError(target, n3) : Infinity;
+      fitLog.push({ source: 'aipparel', now: n3, err: e3 });
+      if (e3 < err) { built.dispose(); built = b3; now = n3; err = e3; source = 'aipparel'; } else b3.dispose();
+    }
     worn.push(built);
-    out.push({ zone, garment, built, target, fit: fitLog, sex });
+    out.push({ zone, garment, built, target, fit: fitLog, sex, source });
   }
   return out;
 }

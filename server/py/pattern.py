@@ -58,9 +58,55 @@ def curve(edge, verts):
     raise ValueError(f'unknown curve {c}')
 
 
+# which panels are worn where (GarmentCode's panel names, as AIpparel's classes)
+ZONE_OF = [('upper', ('torso', 'sleeve', 'collar', 'hood')), ('lower', ('skirt', 'pant', 'wb_'))]
+
+
+def panel_zone(name):
+    if name.startswith('sl_'): return 'upper'                   # sleeve cuffs (sl_*_cuff_skirt: a flared sleeve cuff)
+    if name.startswith('pant_'): return 'lower'                 # trouser legs and their cuffs
+    for z, keys in ZONE_OF:
+        if any(k in name for k in keys): return z
+    return 'full'
+
+
+def emit_spec(req):
+    """GarmentCodeData specification (AIpparel's answer) → our panels. The pattern was made for the body in its
+    photo at GarmentCodeData's scale: scaled to this body's height (x, y, and the placement), panels outside the
+    zone dropped with their stitches, and the photo fit's `spec.width` / `spec.length` factors applied"""
+    spec = req['spec'].get('pattern', req['spec'])
+    tmp = os.path.join('/tmp', f'body_{os.getpid()}.yaml')
+    used = body_file(req.get('sex', 'female'), req.get('body') or {}, tmp)
+    os.remove(tmp)
+    mean = yaml.safe_load(open(os.path.join(HERE, 'garmentcode/assets/bodies', f'mean_{"male" if req.get("sex") == "male" else "female"}.yaml')))['body']
+    k = used['height'] / mean['height']
+    ov = req.get('overrides') or {}
+    sx = k * min(1.6, max(0.6, float(ov.get('spec.width', 1)))); sy = k * min(1.6, max(0.6, float(ov.get('spec.length', 1))))
+    zone = req.get('zone') or 'full'
+    keep = {n for n in spec['panels'] if zone == 'full' or panel_zone(n) in (zone, 'full')}
+    panels = {}
+    for name in keep:
+        p = spec['panels'][name]
+        verts = np.array(p['vertices'], dtype=float)
+        edges = []
+        for e in p['edges']:
+            cv = curve(e, verts)
+            n = max(2, math.ceil(cv.length() / RES) + 1)
+            pts = [[round(z.real * sx, 3), round(z.imag * sy, 3)] for z in (cv.point(t) for t in np.linspace(0, 1, n))]
+            edges.append({'pts': pts, **({'label': e['label']} if e.get('label') else {})})
+        t = p.get('translation', [0, 0, 0])
+        panels[name] = {'translation': [round(t[0] * sx, 3), round(t[1] * sy, 3), round(t[2] * k, 3)],
+                        'rotation': [round(v, 3) for v in p.get('rotation', [0, 0, 0])], 'edges': edges}
+    stitches = [s for s in spec.get('stitches', []) if all(side['panel'] in keep for side in s)]
+    json.dump({'panels': panels, 'stitches': stitches, 'body': {kk: round(v, 2) for kk, v in used.items()},
+               'fit': {'spec.width': float(ov.get('spec.width', 1)), 'spec.length': float(ov.get('spec.length', 1))}}, sys.stdout)
+
+
 def main():
     req = json.load(sys.stdin)
     g = ngl.parse({'garments': [req['garment']]}) if req.get('garment') else []
+    if req.get('spec'):                        # a finished pattern (AIpparel): sized to this body, sampled like ours
+        return emit_spec(req)
     if req.get('design'):                      # ChatGarment's cut (+ our lengths): combine.py
         import combine
         design = combine.combine(req['design'], req.get('zone') or 'full', g[0] if g else None)

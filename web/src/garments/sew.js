@@ -387,12 +387,60 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       const d = (X[k * 3] - P[c * 3]) * Nn[c * 3] + (X[k * 3 + 1] - P[c * 3 + 1]) * Nn[c * 3 + 1] + (X[k * 3 + 2] - P[c * 3 + 2]) * Nn[c * 3 + 2];
       if (d < thick) for (let q = 0; q < 3; q++) X[k * 3 + q] += Nn[c * 3 + q] * (thick - d);
     }
+    // a sleeve is a tube around ITS arm: an arm resting against the side leaves the drape no room there, and the
+    // sleeve comes out squashed into the arm (holes where the arm shows through). Every sleeve point is put back
+    // out, radially from the arm's axis, to just past the arm's own surface in its direction
+    for (const sd of ['l', 'r']) {
+      const A = ctx.arms[sd]; if (!A) continue;
+      const sign = sd === 'l' ? 1 : -1, TB = 40, AB = 24;
+      const seg = (x, y, z) => {                        // → [t 0…2 along shoulder→elbow→wrist, axis point]
+        const f = (P, Q) => ((x - P.x) * (Q.x - P.x) + (y - P.y) * (Q.y - P.y) + (z - P.z) * (Q.z - P.z)) / ((Q.x - P.x) ** 2 + (Q.y - P.y) ** 2 + (Q.z - P.z) ** 2);
+        let t = f(A.S, A.E), P = A.S, Q = A.E, o = 0;
+        if (t > 1) { t = Math.min(1, f(A.E, A.W)); P = A.E; Q = A.W; o = 1; }
+        t = Math.max(0, t);
+        return [o + t, P.x + (Q.x - P.x) * t, P.y + (Q.y - P.y) * t, P.z + (Q.z - P.z) * t];
+      };
+      // the arm's radius per (band along it, direction around it): angle measured in the plane across the arm
+      const R = new Float32Array(TB * AB);
+      const ang = (dx, dy, dz, tt) => {
+        const P = tt <= 1 ? A.S : A.E, Q = tt <= 1 ? A.E : A.W;
+        let ax = Q.x - P.x, ay = Q.y - P.y, az = Q.z - P.z; const l = Math.hypot(ax, ay, az); ax /= l; ay /= l; az /= l;
+        // u: forward (+z) made square to the arm, v = arm × u
+        let ux = -ax * az, uy = -ay * az, uz = 1 - az * az; const lu = Math.hypot(ux, uy, uz) || 1; ux /= lu; uy /= lu; uz /= lu;
+        const vx = ay * uz - az * uy, vy = az * ux - ax * uz, vz = ax * uy - ay * ux;
+        return Math.atan2(dx * vx + dy * vy + dz * vz, dx * ux + dy * uy + dz * uz);
+      };
+      const bin = (tt, a) => Math.min(TB - 1, Math.floor(tt / 2 * TB)) * AB + ((Math.floor((a + Math.PI) / (2 * Math.PI) * AB) % AB) + AB) % AB;
+      for (let i = 0; i < nb; i++) {
+        if (ctx.part[i] !== 0 || reg[i] !== `arm_${sd}`) continue;
+        const [tt, cx, cy, cz] = seg(sk.Q[i * 3], sk.Q[i * 3 + 1], sk.Q[i * 3 + 2]);
+        const dx = sk.Q[i * 3] - cx, dy = sk.Q[i * 3 + 1] - cy, dz = sk.Q[i * 3 + 2] - cz;
+        const k = bin(tt, ang(dx, dy, dz, tt)), r = Math.hypot(dx, dy, dz);
+        if (r > R[k]) R[k] = r;
+      }
+      // empty bins take their neighbours' radius (around the arm)
+      for (let tb = 0; tb < TB; tb++) for (let pass = 0; pass < 3; pass++) for (let ab = 0; ab < AB; ab++) {
+        const k = tb * AB + ab;
+        if (!R[k]) R[k] = Math.max(R[tb * AB + (ab + 1) % AB], R[tb * AB + (ab + AB - 1) % AB]);
+      }
+      for (let k = 0; k < N; k++) {
+        if (!/sleeve|cuff/.test(panelOf[k]) || /skirt|pant/.test(panelOf[k]) || Math.sign(X[k * 3]) !== sign) continue;
+        const [tt, cx, cy, cz] = seg(X[k * 3], X[k * 3 + 1], X[k * 3 + 2]);
+        if (tt <= 0.02) continue;                                      // the shoulder: the torso's business
+        const dx = X[k * 3] - cx, dy = X[k * 3 + 1] - cy, dz = X[k * 3 + 2] - cz, r = Math.hypot(dx, dy, dz);
+        const need = R[bin(tt, ang(dx, dy, dz, tt))];
+        if (need && r < need + thick) { const g = (need + thick) / Math.max(r, 1e-4); X[k * 3] = cx + dx * g; X[k * 3 + 1] = cy + dy * g; X[k * 3 + 2] = cz + dz * g; }
+      }
+    }
   }
 
   /* ---- skin weights, hidden skin, mesh ---- */
   const weights = [];
   for (let k = 0; k < N; k++) {
-    const src = ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], (i) => reg[i] !== 'head' && reg[i] !== 'hand', 6);
+    // a sleeve moves with its own arm (the torso beside it is often nearer: the arm then swings through the sleeve)
+    const arm = /sleeve|cuff/.test(panelOf[k]) && !/skirt|pant/.test(panelOf[k]) ? (X[k * 3] > 0 ? 'arm_l' : 'arm_r') : null;
+    let src = arm ? ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], (i) => reg[i] === arm, 4) : -1;
+    if (src < 0) src = ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], (i) => reg[i] !== 'head' && reg[i] !== 'hand', 6);
     verts[k].src = src;
     weights.push(src >= 0 ? ctx.WL[src] : [[body.boneIndex.pelvis, 1]]);
   }
@@ -409,8 +457,32 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
     const dt2 = dx * dx + dy * dy + dz * dz - dn * dn;
     if (dn > -0.003 && dn < 0.045 && dt2 < 0.02 * 0.02) hide.add(i);
   }
+  // and the arm all along its sleeve: an arm resting against the side leaves the sleeve no room between them (it is
+  // squeezed off the arm there, as a real one is pressed flat), so the arm would show through it in a band — that
+  // skin sinks deeper (Body#setHidden `deep`)
+  const deep = new Set();
+  for (const sd of ['l', 'r']) {
+    const A = ctx.arms[sd]; if (!A) continue;
+    const S0 = A.S, E0 = A.E, W0 = A.W, sign = sd === 'l' ? 1 : -1;
+    const along = (x, y, z) => {                                  // 0 at the shoulder, 1 at the elbow, 2 at the wrist
+      const t = ((x - S0.x) * (E0.x - S0.x) + (y - S0.y) * (E0.y - S0.y) + (z - S0.z) * (E0.z - S0.z)) / ((E0.x - S0.x) ** 2 + (E0.y - S0.y) ** 2 + (E0.z - S0.z) ** 2);
+      if (t <= 1) return t;
+      return 1 + ((x - E0.x) * (W0.x - E0.x) + (y - E0.y) * (W0.y - E0.y) + (z - E0.z) * (W0.z - E0.z)) / ((W0.x - E0.x) ** 2 + (W0.y - E0.y) ** 2 + (W0.z - E0.z) ** 2);
+    };
+    const ts = [];
+    for (let k = 0; k < N; k++) if (/sleeve|cuff/.test(panelOf[k]) && !/skirt|pant/.test(panelOf[k]) && Math.sign(X[k * 3]) === sign) ts.push(along(X[k * 3], X[k * 3 + 1], X[k * 3 + 2]));
+    if (ts.length < 20) continue;
+    ts.sort((a, b) => a - b);
+    const end = ts[Math.floor(ts.length * 0.97)] - 0.04;         // a little short of the cuff: its edge stays drawn
+    for (let i = 0; i < nb; i++) {
+      if (ctx.part[i] !== 0 || reg[i] !== `arm_${sd}`) continue;
+      const t = along(Qs[i * 3], Qs[i * 3 + 1], Qs[i * 3 + 2]);
+      if (t > 0.05 && t < end) { hide.add(i); deep.add(i); }
+    }
+  }
   const res = finish(ctx, item, atlas, { verts, idx: tris, posed: X, weights, hide, covered: (i) => hide.has(i), s, thickness: fab.thick, cutout: false });
   res.state = { x: Float32Array.from(X) };
+  res.deep = deep;
   if (globalThis.__sewDebug) globalThis.__sewDebug = { ctx, cloth, pattern, panelInfo, N, tris: tris.length / 3, seams: seamPairs.length / 2 };
   return res;
 }

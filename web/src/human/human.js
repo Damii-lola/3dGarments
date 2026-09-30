@@ -190,16 +190,17 @@ class Body {
   }
 
   /** hide skin (and underwear) vertices: whatever a worn garment fully covers (a Set of vertex indices) */
-  setHidden(set) {
+  setHidden(set, deep = null) {
     const g = this.mesh.geometry, a = g.attributes._hide;
     a.array.fill(0);
-    for (const i of set) a.array[i] = 1;
+    // deep: skin a garment covers but can't sit on (an arm pressed against a sleeve): sunk ~4 cm, not ~1 cm
+    for (const i of set) a.array[i] = deep?.has(i) ? 3.5 : 1;
     // the skin just past a garment's edge sinks a little too: the triangles that cross the edge then slope
     // under the fabric instead of poking through it (a ragged saw-tooth at a waistband / hem)
     if (set.size && g.index) {
       const idx = g.index.array, ring = new Set();
       for (let t = 0; t < idx.length; t += 3) {
-        const p = idx[t], q = idx[t + 1], r = idx[t + 2], hp = a.array[p] === 1, hq = a.array[q] === 1, hr = a.array[r] === 1;
+        const p = idx[t], q = idx[t + 1], r = idx[t + 2], hp = a.array[p] >= 1, hq = a.array[q] >= 1, hr = a.array[r] >= 1;
         if ((hp || hq || hr) && !(hp && hq && hr)) { if (!hp) ring.add(p); if (!hq) ring.add(q); if (!hr) ring.add(r); }
       }
       for (const i of ring) a.array[i] = 0.45;

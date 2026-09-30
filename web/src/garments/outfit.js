@@ -69,7 +69,7 @@ export class Outfit {
   rebuild(warm = false) {
     clearTimeout(this.timer);
     const body = this.human.active;
-    const hidden = new Set();
+    const hidden = new Set(), deep = new Set();
     const under = [];
     this.building = true;
     try {
@@ -80,9 +80,10 @@ export class Outfit {
         w.built = g; w.body = body;
         if (w.item.zone !== 'feet' && w.item.zone !== 'head') under.push(g.posed);
         for (const i of g.hide) hidden.add(i);
+        for (const i of g.deep || []) deep.add(i);
       }
       for (const b of Object.values(this.human.bodies)) if (b !== body) b.setHidden(new Set());
-      body.setHidden(hidden);
+      body.setHidden(hidden, deep);
     } finally {
       this.building = false;
     }

@@ -29,6 +29,9 @@ export const PROMPTS = {
   sunglasses: ['sunglasses'], scarf: ['a scarf'], belt: ['a belt'],
 };
 const FABRIC = ['clothing fabric', 'a printed t-shirt', 'trousers'];
+/** garments worn under another, as CLIPSeg finds them */
+const UNDER = { tank: ['a white tank top', 'a tank top', 'an undershirt'], top: ['a top worn underneath'], shirt: ['a shirt worn underneath'],
+  sweater: ['a sweater worn underneath'], hoodie: ['a hoodie worn underneath'] };
 
 let clip = null, lama = null;
 // transformers.js prepares the text and the image; the model itself runs on our onnxruntime-web (the stable
@@ -333,9 +336,11 @@ export function thinJewellery(px, sil, W, H) {
 /**
  * @param parsed  parsePhoto() result (the whole photo)
  * @param cut     cutGarment() result for this garment
- * @param opts    { onGarment: NGL on_garment words (what the vision model saw on the garments), wrinkles: true, onStep }
+ * @param opts    { onGarment: NGL on_garment words (what the vision model saw on the garments), under: the other garments
+ *                  the vision model saw in this zone (a tank under an open shirt: an opening, never this garment's fabric),
+ *                  wrinkles: true, onStep }
  */
-export async function cleanGarment(parsed, cut, { onGarment = [], occluders = true, wrinkles = true, onStep = () => {} } = {}) {
+export async function cleanGarment(parsed, cut, { onGarment = [], under = [], occluders = true, wrinkles = true, onStep = () => {} } = {}) {
   const { w: PW, h: PH, rgba, label } = parsed;
   const { x: bx, y: by, w: W, h: H } = cut.bbox;
   // the garment's full silhouette (its holes are things on it) and the photo crop around it
@@ -359,21 +364,33 @@ export async function cleanGarment(parsed, cut, { onGarment = [], occluders = tr
     }
     // the wearer's skin inside the outline: a patch reaching the garment's edge is an OPENING (an open shirt's
     // front, a cut-out) — taken out of the garment; one enclosed by fabric is covered skin — painted over
-    const sk = skinIn(parsed, bx, by, W, H, sil, gm);
-    if (sk) {
+    const openOrPaint = (m) => {
       const seen = new Uint8Array(W * H);
       for (let s0 = 0; s0 < W * H; s0++) {
-        if (!sk[s0] || seen[s0]) continue;
+        if (!m[s0] || seen[s0] || !sil[s0]) continue;
         const comp = [s0], st = [s0]; seen[s0] = 1; let edge = false;
         while (st.length) {
           const i = st.pop(), x = i % W, y = (i / W) | 0;
           for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
             if (j < 0 || !sil[j]) { edge = true; continue; }
-            if (sk[j] && !seen[j]) { seen[j] = 1; st.push(j); comp.push(j); }
+            if (m[j] && !seen[j]) { seen[j] = 1; st.push(j); comp.push(j); }
           }
         }
         for (const i of comp) if (edge) opening[i] = 1; else hole[i] = 1;
       }
+    };
+    const sk = skinIn(parsed, bx, by, W, H, sil, gm);
+    if (sk) openOrPaint(sk);
+    // another garment seen through this one (a tank top in an open shirt's front): the same — an opening where it
+    // reaches the edge, painted over where fabric encloses it. Whatever is on it (a pendant) goes with it
+    if (under.length) {
+      onStep(`Separating the ${under.join(', ')} underneath…`);
+      try {
+        const u = await findOccluders(crop, under.flatMap((t) => UNDER[t] || [`a ${t.replace(/_/g, ' ')}`]));
+        let n = 0; for (let i = 0; i < W * H; i++) if (u[i] && sil[i]) n++;
+        // a reading that takes most of the garment is the garment itself (the words are close): ignored
+        if (n > 20 && n < 0.35 * sil.reduce((a, v) => a + v, 0)) openOrPaint(dilate(u, W, H, Math.max(2, Math.round(Math.max(W, H) / 150))));
+      } catch (e) { console.warn('CLIPSeg unavailable:', e.message); }
     }
     if (onGarment.some((w) => /necklace|chain|pendant/.test(w))) {
       // a necklace is taken with a band around it: LaMa continues any bit of a strand it can still see
