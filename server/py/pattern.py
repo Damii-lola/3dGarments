@@ -60,14 +60,20 @@ def curve(edge, verts):
 
 def main():
     req = json.load(sys.stdin)
-    g = ngl.parse({'garments': [req['garment']]})
-    if not g: raise SystemExit('invalid garment')
+    g = ngl.parse({'garments': [req['garment']]}) if req.get('garment') else []
+    if req.get('design'):                      # ChatGarment's cut (+ our lengths): combine.py
+        import combine
+        design = combine.combine(req['design'], req.get('zone') or 'full', g[0] if g else None)
+    elif g:
+        design = ngl.design(g[0])
+    else:
+        raise SystemExit('invalid garment')
     tmp = os.path.join('/tmp', f'body_{os.getpid()}.yaml')
     used = body_file(req.get('sex', 'female'), req.get('body') or {}, tmp)
     sys.path.insert(0, ngl.GC)
     from assets.garment_programs.meta_garment import MetaGarment
     from assets.bodies.body_params import BodyParameters
-    pat = MetaGarment('garment', BodyParameters(tmp), ngl.design(g[0])).assembly()
+    pat = MetaGarment('garment', BodyParameters(tmp), design).assembly()
     spec = pat.pattern
     os.remove(tmp)
     panels = {}

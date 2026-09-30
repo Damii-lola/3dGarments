@@ -38,15 +38,21 @@ const patternLimiter = rateLimit({ windowMs: 60 * 60_000, limit: 120, keyGenerat
 const SEXES = ['female', 'male'];
 const MEASURES = ['height', 'bust', 'underbust', 'waist', 'hips', 'leg_circ', 'wrist', 'shoulder_w', 'arm_length', 'waist_line'];
 
-/** POST { garment: NGL garment, sex, body: { height, bust, waist, hips … in cm } } → the sewing pattern for that body */
-ngl.post('/pattern', express.json({ limit: '64kb' }), patternLimiter, ah(async (req, res) => {
-  const [garment] = parseNGL({ garments: [req.body?.garment] });
-  if (!garment) throw new HttpError(400, 'garment (an NGL garment) is required');
+/**
+ * POST { garment?: NGL garment, design?: GarmentCode design (ChatGarment's), zone?: upper|lower|full, sex,
+ *        body: { height, bust, waist, hips … in cm } } → the sewing pattern for that body.
+ * With a design, its cut is used and the NGL garment's lengths win (py/combine.py).
+ */
+ngl.post('/pattern', express.json({ limit: '512kb' }), patternLimiter, ah(async (req, res) => {
+  const [garment] = req.body?.garment ? parseNGL({ garments: [req.body.garment] }) : [];
+  const design = req.body?.design && typeof req.body.design === 'object' && !Array.isArray(req.body.design) ? req.body.design : undefined;
+  const zone = ['upper', 'lower', 'full'].includes(req.body?.zone) ? req.body.zone : undefined;
+  if (!garment && !design) throw new HttpError(400, 'garment (an NGL garment) or design (GarmentCode) is required');
   const sex = SEXES.includes(req.body?.sex) ? req.body.sex : 'female';
   const body = {};
   for (const k of MEASURES) { const v = Number(req.body?.body?.[k]); if (Number.isFinite(v) && v > 1 && v < 300) body[k] = v; }
   try {
-    res.json(await buildPattern({ garment, sex, body }));
+    res.json(await buildPattern({ garment, design, zone, sex, body }));
   } catch (e) {
     throw new HttpError(/ENOENT|No module/.test(e.message) ? 503 : 422, e.message);
   }
