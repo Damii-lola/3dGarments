@@ -16,8 +16,9 @@
 import * as THREE from 'three';
 import Delaunator from 'delaunator';
 import { Cloth, makeCollider } from './cloth.js';
+import { bakeGarment } from './bake.js';
 import {
-  posedBody, skinBody, snapPose, setPose, lerpPose, armsAlong, affineOf, applyA, inv3, finish, makeAtlas, fabricOf, smooth,
+  posedBody, skinBody, snapPose, setPose, lerpPose, armsAlong, legsApart, affineOf, applyA, inv3, finish, fabricOf, smooth,
 } from './fit.js';
 
 const H = 1.5; // cm, mesh spacing (matches the pattern's edge sampling)
@@ -85,7 +86,6 @@ function meshPanel(panel) {
  * @param photos   { front: Photo, back?: Photo }
  */
 export function sewPattern(body, human, item, pattern, photos, { under = [], warm = null } = {}) {
-  const atlas = makeAtlas(item, photos, { bleed: 400 });   // every pixel near the garment carries its fabric
   const bones = body.bones;
   const display = snapPose(bones);
   const ctx = posedBody(body, human);
@@ -93,7 +93,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
   const fab = fabricOf(item.material || item.type, item.category);
 
   /* ---- where GarmentCode's body and ours differ: line the pattern up with our landmarks ---- */
-  // tops and dresses hang from the shoulders: the collar line starts 3 cm above our side-neck point and
+  // tops and dresses hang from the shoulders: the collar line starts 1 cm above our side-neck point and
   // drops on; skirts and trousers sit at our waist (GarmentCode's waist level: height − head − waist line)
   const Rt = new THREE.Matrix4(), vt = new THREE.Vector3();
   const topOf = (sel) => {
@@ -109,7 +109,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
   const upperGarment = Object.keys(pattern.panels).some((k) => /torso/.test(k));
   const gb = pattern.body || {};
   const lift = upperGarment
-    ? ctx.yNeckSide + 0.03 - topOf((k) => /torso/.test(k))
+    ? ctx.yNeckSide + 0.01 - topOf((k) => /torso/.test(k))
     : ctx.L.waistY - ((gb.height - gb.head_l - gb.waist_line) || 0) * 0.01;
 
   /* ---- panels → one mesh, placed in 3D ---- */
@@ -188,6 +188,10 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       armsAlong(body, human, { l: 0.79, r: 0.79 });
       simPose = snapPose(bones);
     }
+    if (Object.keys(pattern.panels).some((k) => /pant/.test(k))) {
+      legsApart(body, human, 9);
+      simPose = snapPose(bones);
+    }
   }
   const underPts = under.map((u) => u.pts), underNrm = under.map((u) => u.nrm);
   const skinNow = () => skinBody(body, human, ctx.Qc, ctx.WL);
@@ -203,19 +207,50 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
   const thick = 0.004 + (under.length ? 0.003 : 0) + fab.thick;
   const G = -9.81, dt = 1 / 60, SUB = 4;
 
+  // a skirt's / trousers' waist edge grips the body where it's worn (a waistband, elastic or buttoned, does
+  // not slide down): each waist point is held to the skin under it
+  let setAnchors = () => {};
+  const gripWaist = (Xs) => {                   // once sewn: the waist edge as it hangs now, held to the skin under it
+    if (upperGarment) return;
+    const segs = new Set(seamPairs);
+    const open = new Set();
+    for (const [a, b, , d] of edges.values()) if (d == null && !(segs.has(a) && segs.has(b))) { open.add(a); open.add(b); }
+    let topY = -Infinity; for (const k of open) topY = Math.max(topY, Xs[k * 3 + 1]);
+    const idx = [], src = [];
+    for (const k of open) {
+      if (Xs[k * 3 + 1] < topY - 0.03) continue;
+      const i = ctx.nearestSkin(Xs[k * 3], Xs[k * 3 + 1], Xs[k * 3 + 2], (q) => !/arm|hand|head/.test(reg[q]), 10);
+      if (i >= 0) { idx.push(k); src.push(i); }
+    }
+    if (!idx.length) return;
+    const t = new Float32Array(idx.length * 3);
+    cloth.anchors = { idx: Uint32Array.from(idx), t, k: 0.3 };
+    setAnchors = (sk) => {
+      const g = thick + 0.004;
+      src.forEach((i, q) => { for (let c = 0; c < 3; c++) t[q * 3 + c] = sk.Q[i * 3 + c] + sk.N[i * 3 + c] * g; });
+    };
+    setAnchors(sk);
+  };
+
   let sewn = null;                              // cloth as sewn in the sewing pose (for the texture projection)
   if (!warm) {
     cloth.stick = 0;
-    const SEW = 90;
+    const SEW = upperGarment ? 90 : 140;
+    let stopNow = false;
     for (let t = 0; t < SEW; t++) {
+      if (globalThis.__sewStop === 'f' + t) { stopNow = true; break; }
+      if (t === Math.round(SEW * 0.6)) gripWaist(cloth.x);     // seams nearly closed, before the weight comes on
       const k = Math.max(0, 1 - (t + 1) / (SEW * 0.7));
       for (let q = 0; q < rest0.length; q++) seam.rest[q] = rest0[q] * k;
       cloth.step(dt, SUB, G * smooth(SEW * 0.6, SEW, t), col, thick);
+      if (globalThis.__sewLog) { let a = 0, b = 9, gap = 0; for (let k = 0; k < N; k++) { a = Math.max(a, cloth.x[k * 3 + 1]); b = Math.min(b, cloth.x[k * 3 + 1]); } for (let q = 0; q < seamPairs.length; q += 2) { const i = seamPairs[q] * 3, j = seamPairs[q + 1] * 3; gap = Math.max(gap, Math.hypot(cloth.x[i] - cloth.x[j], cloth.x[i + 1] - cloth.x[j + 1], cloth.x[i + 2] - cloth.x[j + 2])); } globalThis.__sewLog.push([t, a.toFixed(3), b.toFixed(3), gap.toFixed(3)]); }
     }
     cloth.stick = 1;
-    for (let t = 0; t < 40; t++) cloth.step(dt, SUB, G, col, thick);
+    if (!stopNow) {
+      for (let t = 0; t < 40; t++) cloth.step(dt, SUB, G, col, thick);
+    }
     sewn = Float32Array.from(cloth.x);
-    if (globalThis.__sewStop === 'sewn') {                      // debug: the raw cloth as sewn
+    if (globalThis.__sewStop === 'sewn' || stopNow) {                      // debug: the raw cloth as sewn
       const gg = new THREE.BufferGeometry();
       gg.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(cloth.x), 3));
       gg.setIndex(tris); gg.computeVertexNormals();
@@ -228,7 +263,10 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       const X = cloth.x, W = [], a = new Float64Array(12), restP = new Float64Array(N * 3);
       for (let k = 0; k < N; k++) {
         const arm = /sleeve|cuff/.test(panelOf[k]) ? (X[k * 3] > 0 ? 'arm_l' : 'arm_r') : null;
-        const i = ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], arm ? (q) => reg[q] === arm : (q) => reg[q] !== 'head' && reg[q] !== 'hand', 8);
+        // a trouser leg follows its own leg (above the crotch: the pelvis too)
+        const leg = !arm && /pant/.test(panelOf[k]) ? (X[k * 3] > 0 ? 'leg_r' : 'leg_l') : null;
+        const i = ctx.nearestSkin(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], arm ? (q) => reg[q] === arm
+          : leg ? (q) => reg[q] !== leg && reg[q] !== 'head' && !/arm|hand/.test(reg[q]) : (q) => reg[q] !== 'head' && reg[q] !== 'hand', 8);
         W.push(i >= 0 ? ctx.WL[i] : [[body.boneIndex.pelvis, 1]]);
       }
       for (let k = 0; k < N; k++) {
@@ -241,7 +279,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       place(sk.ME, prev);
       for (let t = 1; t <= STEPS; t++) {
         lerpPose(bones, simPose, display, smooth(0, 1, t / STEPS));
-        sk = skinNow(); col = collider(sk);
+        sk = skinNow(); col = collider(sk); setAnchors(sk);
         place(sk.ME, cur);
         for (let q = 0; q < N * 3; q++) { const dd = cur[q] - prev[q]; cloth.x[q] += dd; cloth.p[q] += dd; }
         prev.set(cur);
@@ -249,37 +287,36 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       }
     }
   }
+  if (warm) gripWaist(cloth.x);
   setPose(bones, display);
   human.object.updateMatrixWorld(true);
-  sk = skinNow(); col = collider(sk);
+  sk = skinNow(); col = collider(sk); setAnchors(sk);
   for (let t = 0; t < (warm ? 50 : 80); t++) cloth.step(dt, SUB, G, col, thick, t > 50 ? 0.97 : 0.995);
   const X = cloth.x;
-
-  /* ---- texture: the photos projected onto the garment as sewn (front panels ← front photo, back ← back) ---- */
-  const T = sewn || X;
-  const bbox = (sel) => {
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let k = 0; k < N; k++) if (sel(k)) { x0 = Math.min(x0, T[k * 3]); x1 = Math.max(x1, T[k * 3]); y0 = Math.min(y0, T[k * 3 + 1]); y1 = Math.max(y1, T[k * 3 + 1]); }
-    return { x0, x1, y0, y1 };
-  };
-  const isFront = (k) => panelInfo[panelOf[k]].front;
-  const gF = bbox(isFront), gB = bbox((k) => !isFront(k));
-  const alphaBox = (ph) => {
-    let x0 = ph.w, x1 = 0, y0 = ph.h, y1 = 0;
-    for (let y = 0; y < ph.h; y += 2) for (let x = 0; x < ph.w; x += 2) if (ph.data[(y * ph.w + x) * 4 + 3] > 128) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-    return { x0: x0 / ph.h, x1: x1 / ph.h, y0: y0 / ph.h, y1: y1 / ph.h };
-  };
-  const pF = alphaBox(atlas.front), pB = alphaBox(atlas.back);
-  const verts = [];
-  for (let k = 0; k < N; k++) {
-    const f = isFront(k), g = f ? gF : gB, p = f ? pF : pB;
-    let u = (T[k * 3] - g.x0) / ((g.x1 - g.x0) || 1), w = (g.y1 - T[k * 3 + 1]) / ((g.y1 - g.y0) || 1);
-    if (!f) u = 1 - u;                                  // the back photo is seen from behind
-    const gx = p.x0 + u * (p.x1 - p.x0), gy = p.y0 + w * (p.y1 - p.y0);
-    verts.push({ uv: atlas.uv(f ? 'front' : 'back', gx, gy) });
+  // seams closed exactly: every stitched point on the midpoint of its pair(s) — one surface, no slit
+  // (the same point → the same skin weights → it stays closed in every pose)
+  for (let it = 0; it < 3; it++) {
+    const acc = new Float64Array(N * 3), cnt = new Uint16Array(N);
+    for (let q = 0; q < seamPairs.length; q += 2) {
+      const a = seamPairs[q], b = seamPairs[q + 1];
+      for (let c = 0; c < 3; c++) { const m = (X[a * 3 + c] + X[b * 3 + c]) / 2; acc[a * 3 + c] += m; acc[b * 3 + c] += m; }
+      cnt[a]++; cnt[b]++;
+    }
+    for (let k = 0; k < N; k++) if (cnt[k]) for (let c = 0; c < 3; c++) X[k * 3 + c] = acc[k * 3 + c] / cnt[k];
   }
-  // metres of garment per unit of photo height (for the weave scale)
-  const s = (gF.y1 - gF.y0) / ((pF.y1 - pF.y0) || 1);
+
+  /* ---- texture: baked in pattern space from the photos (bake.js) ---- */
+  const baked = bakeGarment({
+    N, X, tris, P2,
+    panels: Object.entries(panelInfo).map(([name, p]) => ({ name, base: p.base, count: p.count, front: p.front, grain: /sleeve|cuff/.test(name) ? 'u' : 'v', limb: /sleeve|cuff/.test(name) })),
+    lower: !upperGarment,
+  }, photos);
+  const tex = (c, srgb) => { const t = new THREE.CanvasTexture(c); t.flipY = false; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; return t; };
+  const atlas = { map: tex(baked.map, true), normalMap: tex(baked.normal, false), W: baked.W, H: baked.H, front: { h: baked.H } };
+  const verts = [];
+  for (let k = 0; k < N; k++) verts.push({ uv: [baked.uv[k * 2], baked.uv[k * 2 + 1]] });
+  const s = baked.H / baked.ppm;                       // finish(): metres per texel = s / H
+  globalThis.__bake = { frame: baked.frame, patch: baked.patch, W: baked.W, H: baked.H, ppm: baked.ppm };
 
   /* ---- skin weights, hidden skin, mesh ---- */
   const weights = [];
@@ -289,13 +326,17 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
     weights.push(src >= 0 ? ctx.WL[src] : [[body.boneIndex.pelvis, 1]]);
   }
   const cg = makeCollider(X, new Float32Array(X.length), 0.035);
+  // skin the garment covers (hidden: it can't poke through): the cloth right above it, along its normal —
+  // past an open edge (neck, hem, cuffs) the nearest cloth is off to the side, so that skin stays drawn
   const hide = new Set(), Qs = sk.Q, Ns = sk.N;
   for (let i = 0; i < nb; i++) {
     if (ctx.part[i] !== 0 || reg[i] === 'head' || reg[i] === 'hand') continue;
     const c = cg.nearest(Qs[i * 3], Qs[i * 3 + 1], Qs[i * 3 + 2]);
     if (c < 0) continue;
     const dx = X[c * 3] - Qs[i * 3], dy = X[c * 3 + 1] - Qs[i * 3 + 1], dz = X[c * 3 + 2] - Qs[i * 3 + 2];
-    if (dx * Ns[i * 3] + dy * Ns[i * 3 + 1] + dz * Ns[i * 3 + 2] > -0.003 && Math.hypot(dx, dy, dz) < 0.035) hide.add(i);
+    const dn = dx * Ns[i * 3] + dy * Ns[i * 3 + 1] + dz * Ns[i * 3 + 2];
+    const dt2 = dx * dx + dy * dy + dz * dz - dn * dn;
+    if (dn > -0.003 && dn < 0.045 && dt2 < 0.02 * 0.02) hide.add(i);
   }
   const res = finish(ctx, item, atlas, { verts, idx: tris, posed: X, weights, hide, covered: (i) => hide.has(i), s, thickness: fab.thick, cutout: false });
   res.state = { x: Float32Array.from(X) };

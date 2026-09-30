@@ -13,6 +13,7 @@ export class Cloth {
     this.groups = [];                 // { a, b, rest, alpha }
     this.near = new Int32Array(this.n).fill(-1);
     this.stick = 1;
+    this.anchors = null;              // { idx: Uint32Array, t: Float32Array (xyz per anchor), k } — pulled toward t
   }
 
   /** a set of distance constraints; returns the group (its rest lengths may be changed later) */
@@ -68,6 +69,18 @@ export class Cloth {
         }
       }
       if (col) this.#collide(col, thick);
+      // the floor: a long hem rests on it (and slides a little less than on skin)
+      for (let i = 0; i < n; i++) {
+        const o = i * 3 + 1;
+        if (x[o] < thick) { x[o] = thick; x[o - 1] = p[o - 1] + (x[o - 1] - p[o - 1]) * 0.3; x[o + 1] = p[o + 1] + (x[o + 1] - p[o + 1]) * 0.3; }
+      }
+      if (this.anchors) {
+        const { idx, t, k } = this.anchors;
+        for (let q = 0; q < idx.length; q++) {
+          const o = idx[q] * 3;
+          x[o] += (t[q * 3] - x[o]) * k; x[o + 1] += (t[q * 3 + 1] - x[o + 1]) * k; x[o + 2] += (t[q * 3 + 2] - x[o + 2]) * k;
+        }
+      }
     }
   }
 

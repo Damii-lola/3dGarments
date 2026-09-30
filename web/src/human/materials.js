@@ -64,10 +64,10 @@ export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {}, 
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vRest;\nattribute float _part;\nvarying float vPart;\nattribute float _edge;\nattribute float _band;\nvarying float vEdge;\nvarying float vBand;\nattribute float _hide;\nvarying float vHide;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvPart = _part;\nvEdge = _edge;\nvBand = _band;\nvHide = _hide;\n// clothing sits a hair off the skin so it never z-fights or sinks in\nif (_part > 3.5 && _part < 4.5) transformed += objectNormal * 0.0025;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvPart = _part;\nvEdge = _edge;\nvBand = _band;\nvHide = _hide;\n// skin inside a worn garment sinks under it (never pokes through; no hole past the garment's edge)\ntransformed -= objectNormal * _hide * 0.012;\n// clothing sits a hair off the skin so it never z-fights or sinks in\nif (_part > 3.5 && _part < 4.5) transformed += objectNormal * 0.0025;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nuniform vec3 uSSS; uniform float uClay; uniform vec3 uEyeL; uniform vec3 uEyeR;\nvarying vec3 vRest; varying float vPart; varying float vEdge; varying float vBand; varying float vHide;\n${NOISE}\n${KNIT}`)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vHide > 0.999) discard;           // skin fully inside a worn garment')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>')
       .replace('#include <map_fragment>', `#include <map_fragment>
 float isFabric = step(3.5, vPart) * step(vPart, 4.5);
 Knit kf = Knit(0.5, 0.0, 0.0, 0.0, 0.0, 0.0); // evaluated once, reused by the bump below

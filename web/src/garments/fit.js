@@ -238,6 +238,24 @@ function armsAlong(body, human, angle) {
   obj.updateMatrixWorld(true);
 }
 
+/** the legs spread apart by `deg` (each thigh swung out), as a pattern is sewn around them: with the feet
+ *  together an inseam would have to pass between the knees */
+function legsApart(body, human, deg) {
+  const obj = human.object;
+  obj.updateMatrixWorld(true);
+  const wq = new THREE.Quaternion(), pq = new THREE.Quaternion(), r = new THREE.Quaternion(), z = new THREE.Vector3();
+  for (const s of ['l', 'r']) {
+    const bone = body.bones[body.boneIndex[`thigh_${s}`]];
+    z.set(0, 0, 1).transformDirection(obj.matrixWorld);
+    r.setFromAxisAngle(z, THREE.MathUtils.degToRad(s === 'l' ? deg : -deg));
+    bone.getWorldQuaternion(wq);
+    bone.parent.getWorldQuaternion(pq);
+    bone.quaternion.copy(pq.invert().multiply(r.multiply(wq)));
+    bone.updateMatrixWorld(true);
+  }
+  obj.updateMatrixWorld(true);
+}
+
 /* ================================================================ photos */
 
 /** mirror a garment-space measurement set left ↔ right (a photo flipped horizontally) */
@@ -880,4 +898,4 @@ function finish(ctx, item, atlas, r) {
 }
 
 // shared with sew.js (GarmentCode patterns)
-export { posedBody, skinBody, snapPose, setPose, lerpPose, armsAlong, affineOf, applyA, inv3, finish, makeAtlas, fabricOf, smooth };
+export { posedBody, skinBody, snapPose, setPose, lerpPose, armsAlong, legsApart, affineOf, applyA, inv3, finish, makeAtlas, fabricOf, smooth };

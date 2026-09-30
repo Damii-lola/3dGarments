@@ -63,10 +63,13 @@ def design(g):
     S('meta.upper', None); S('meta.bottom', None); S('meta.wb', None)
 
     if u:
-        S('meta.upper', 'FittedShirt' if u['fit'] in ('tight', 'fitted') else 'Shirt')
-        S('shirt.width', {'tight': 1.0, 'fitted': 1.0, 'regular': 1.05, 'loose': 1.15, 'oversized': 1.28}[u['fit']])
+        # GarmentCode's FittedShirt is a darted bodice that always ends at the waist (its length is ignored):
+        # a waist-length fitted top uses it; anything longer is a Shirt, tapered toward the hem when fitted
+        fitted = u['fit'] in ('tight', 'fitted')
+        S('meta.upper', 'FittedShirt' if fitted and u['length'] == 'cropped' else 'Shirt')
+        S('shirt.width', {'tight': 1.0, 'fitted': 1.06, 'regular': 1.12, 'loose': 1.22, 'oversized': 1.35}[u['fit']])   # × bust: real ease
         # length in units of the body's shoulder-to-waist line
-        S('shirt.length', {'cropped': 0.8, 'waist': 1.0, 'high_hip': 1.15, 'hip': 1.35, 'thigh': 1.7}[u['length']])
+        S('shirt.length', {'cropped': 0.85, 'waist': 1.25, 'high_hip': 1.4, 'hip': 1.55, 'thigh': 1.9}[u['length']])  # 'waist' = at the trousers' waistband
         S('shirt.flare', {'straight': 1.0, 'slightly_flared': 1.15, 'flared': 1.4}[u['hem']])
         nl = u['neckline']
         S('shirt.strapless', nl == 'strapless')
@@ -74,13 +77,19 @@ def design(g):
                               'boat': 'CircleArcNeckHalf', 'sweetheart': 'Bezier2NeckHalf', 'turtleneck': 'CircleNeckHalf',
                               'collar': 'VNeckHalf', 'hood': 'VNeckHalf', 'strapless': 'CircleNeckHalf'}[nl])
         S('collar.b_collar', 'CircleNeckHalf')
-        depth = {'shallow': 0.35, 'medium': 0.6, 'deep': 1.1, 'plunging': 1.6}[u['neckline_depth']]
-        if nl == 'crew': depth = min(depth, 0.45)
-        if nl == 'scoop': depth = max(depth, 0.8)
+        # depth, in units of ~40 cm (GarmentCode: of the front's collar corner): a crew neck drops ~7 cm at the
+        # front, a scoop ~14, a deep V ~30
+        depth = {'shallow': 0.25, 'medium': 0.42, 'deep': 0.75, 'plunging': 1.1}[u['neckline_depth']]
+        if nl in ('crew', 'turtleneck'): depth = {'shallow': 0.16, 'medium': 0.2}.get(u['neckline_depth'], 0.26)
+        if nl == 'scoop': depth = max(depth, 0.35)
         if nl == 'boat': depth = 0.3
         S('collar.fc_depth', depth)
         S('collar.bc_depth', 0.15 if nl in ('scoop', 'square', 'boat', 'sweetheart') else 0)
-        S('collar.width', {'narrow': -0.2, 'medium': 0.2, 'wide': 0.6}[u['neckline_width']] if nl != 'boat' else 0.8)
+        # collar width: 0 = the body's own neck width, 1 = out to the shoulder point. A crew / turtleneck / shirt
+        # collar hugs the neck (a wider one slides off the shoulders); open necklines spread with the words
+        W = {'crew': (0.0, 0.05, 0.18), 'turtleneck': (0.0, 0.0, 0.05), 'collar': (0.02, 0.05, 0.12), 'hood': (0.05, 0.1, 0.2)}.get(
+            nl, (0.1, 0.28, 0.6))
+        S('collar.width', W[('narrow', 'medium', 'wide').index(u['neckline_width'])] if nl != 'boat' else 0.8)
         S('collar.component.style', {'turtleneck': 'Turtle', 'collar': 'SimpleLapel', 'hood': 'Hood2Panels'}.get(nl))
         sl = u['sleeve_length']
         S('sleeve.sleeveless', sl == 'sleeveless')

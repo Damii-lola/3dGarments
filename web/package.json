@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.45.0",
     "delaunator": "^5.1.0",
     "n8ao": "^2.0.1",
+    "onnxruntime-web": "^1.30.0",
     "postprocessing": "^6.39.5",
     "three": "^0.169.0"
   },
