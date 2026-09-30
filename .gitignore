@@ -15,3 +15,5 @@ __pycache__/
 server/.pydeps/
 tools/garment_ml/trellis2/out/
 tools/garment_ml/trellis2/.topic
+web/public/_tmp/
+web/glbview.html
