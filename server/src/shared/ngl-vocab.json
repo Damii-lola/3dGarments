@@ -157,5 +157,10 @@
   "sunglasses",
   "scarf",
   "belt"
+ ],
+ "made_for": [
+  "men",
+  "women",
+  "unisex"
  ]
 }

@@ -19,6 +19,7 @@ Answer with strict JSON only, no prose, choosing every value ONLY from the optio
   "upper": { ${opts(VOCAB.upper)} },
   "lower": { ${opts(VOCAB.lower)} }
 } ],
+ "made_for": one of ${VOCAB.made_for.join('|')} (whose clothes these are: the cut, the fit, the styling and who wears them in the photo),
  "on_garment": [ things that are NOT part of the garments but lie on or in front of them in this photo, only from: ${VOCAB.on_garment.join('|')} ] }
 Rules:
 - One entry per separate garment that is visible (e.g. a top and a skirt are two entries; a dress or jumpsuit is ONE entry).
@@ -35,6 +36,15 @@ const pick = (v, allowed, dflt) => {
   const t = String(v ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   return allowed.includes(t) ? t : dflt;
 };
+
+/** whose clothes these are → 'men' | 'women' | 'unisex' (unisex when unsure) */
+export function parseMadeFor(answer) {
+  if (typeof answer === 'string') {
+    const s = answer.slice(answer.indexOf('{'), answer.lastIndexOf('}') + 1);
+    try { answer = s ? JSON.parse(s) : {}; } catch { answer = {}; }
+  }
+  return pick(answer?.made_for, VOCAB.made_for, 'unisex');
+}
 
 /** what the model says lies on the garments (accessories, hands …) → words from VOCAB.on_garment */
 export function parseOnGarment(answer) {
