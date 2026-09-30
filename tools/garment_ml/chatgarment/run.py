@@ -119,6 +119,17 @@ def run():
        'cairosvg psutil matplotlib tensorboard opencv-python-headless',
        'Python dependencies', 'pip')
     sh('(which apt-get && (apt-get install -y -q libcairo2 >/dev/null 2>&1 || true)); python -c "import cairosvg"', 'Cairo (SVG → PNG for GarmentCode)', 'pip')
+    # transformers 4.37: with the model split over two GPUs the KV cache of a layer can sit on the other GPU
+    # than the states it's joined with — join on the new states' GPU
+    import importlib.util
+    cu = os.path.join(os.path.dirname(importlib.util.find_spec('transformers').origin), 'cache_utils.py')
+    txt = open(cu).read()
+    for kv in ('key', 'value'):
+        a = f'torch.cat([self.{kv}_cache[layer_idx], {kv}_states], dim=-2)'
+        if a not in txt: raise RuntimeError(f'cache_utils patch target missing: {a}')
+        txt = txt.replace(a, f'torch.cat([self.{kv}_cache[layer_idx].to({kv}_states.device), {kv}_states], dim=-2)')
+    open(cu, 'w').write(txt)
+    note('✓ transformers KV cache patched for two GPUs')
     sh(f'pip install -q --no-deps -e {CG}', 'ChatGarment package', 'pip')
     sh(f'pip install -q --no-deps -e {GC}', 'GarmentCode package', 'pip', optional=True)
     # ChatGarment's training module imports DeepSpeed at load time; inference never calls it
