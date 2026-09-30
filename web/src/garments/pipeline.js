@@ -54,7 +54,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   c.width = Math.round(image.width * k); c.height = Math.round(image.height * k);
   c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
   onStep('Reading what each garment is…');
-  const { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await describe(c.toDataURL('image/jpeg', 0.9));
+  let { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await describe(c.toDataURL('image/jpeg', 0.9));
   // what the vision model named on the garments, plus what's always worth a look (its list varies from run to run)
   const onGarment = [...new Set([...named, 'necklace', 'chain', 'hand', 'long_hair', 'bag_strap'])];
   // whose clothes: menswear on the male model, womenswear on the female one (unisex: the one shown)
@@ -67,6 +67,17 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   const body = bodyMeasures(human);
   onStep('Finding the body in the photo…');
   const kp = await detectPose(parsed).catch(() => null);
+  // the vision model named nothing (it happens): the clothes-parsing model's own classes stand in
+  if (!garments.length) {
+    const cnt = new Map(); for (const l of parsed.label) cnt.set(l, (cnt.get(l) || 0) + 1);
+    const share = (...ls) => ls.reduce((a, l) => a + (cnt.get(l) || 0), 0) / parsed.label.length;
+    if (share(7) > 0.03) garments.push({ type: 'dress', upper: {}, lower: {} });
+    else {
+      if (share(4) > 0.02) garments.push({ type: 'top', upper: {} });
+      if (share(6) > 0.02) garments.push({ type: 'pants', lower: {} });
+      else if (share(5) > 0.02) garments.push({ type: 'skirt', lower: {} });
+    }
+  }
   const out = [], worn = [...under], seen = new Set();
   const order = garments.map((g) => ({ g, zone: zoneOf(g.type) })).sort((a, b) => (a.zone === 'lower' ? -1 : 1) - (b.zone === 'lower' ? -1 : 1));
   for (const { g, zone } of order) {
@@ -93,7 +104,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     const sew = (p) => sewPattern(B, human, item, p, photo, { under: worn.map((w) => w.posed), detail });
     let built = sew(pat);
     // the fit: measured on the photo, measured on our model, re-cut until they agree
-    const target = kp ? photoMeasures(parsed, cut.mask, kp, zone) : {};
+    const target = kp ? photoMeasures(parsed, cut.mask, kp, zone, { kind: /pants|jeans|trousers/.test(g.type) ? 'pants' : g.type }) : {};
     let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = pat.fit || {}, ov = {};
     const fitLog = [{ now, err }];
     for (let r = 0; r < fitRounds && Object.keys(target).length && err > 0.05; r++) {

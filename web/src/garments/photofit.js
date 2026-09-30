@@ -20,7 +20,7 @@ const mid = (a, b) => (a && b ? lerp(a, b, 0.5) : a || b || null);
 /* ================================================================ the photo */
 
 /** @param mask garment mask over the whole photo, kp: pose.js keypoints → { hem, sleeve, top, legW } (null = unseen) */
-export function photoMeasures(parsed, mask, kp, zone) {
+export function photoMeasures(parsed, mask, kp, zone, opts = {}) {
   const { w, h } = parsed;
   const at = (x, y) => { x = Math.round(x); y = Math.round(y); return x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x]; };
   const near = (x, y, r = 2) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (at(x + dx, y + dy)) return true; return false; };
@@ -33,7 +33,7 @@ export function photoMeasures(parsed, mask, kp, zone) {
       const x = S.x + (Hp.x - S.x) * ((y - S.y) / (Hp.y - S.y)) + dx;
       if (at(x, y)) hem = Math.max(hem, y);
     }
-    if (hem > 0 && hem < h - 4) out.hem = (hem - S.y) / (Hp.y - S.y);
+    if (hem > 0 && hem < h * 0.96) out.hem = (hem - S.y) / (Hp.y - S.y);      // at the photo's edge: unseen
     // sleeves: how far down each arm the garment covers it, continuously from the shoulder
     const sl = [];
     for (const s of ['l', 'r']) {
@@ -59,13 +59,25 @@ export function photoMeasures(parsed, mask, kp, zone) {
       let hem = -1;
       const lineX = (y) => (y <= K.y ? Hs.x + (K.x - Hs.x) * ((y - Hs.y) / (K.y - Hs.y)) : A ? K.x + (A.x - K.x) * ((y - K.y) / ((A.y - K.y) || 1)) : K.x);
       for (let y = Math.round(Hs.y); y < h; y++) for (let dx = -8; dx <= 8; dx += 4) if (at(lineX(y) + dx, y)) hem = Math.max(hem, y);
-      if (hem > 0 && hem < h - 4) hems.push(hem <= K.y ? (hem - Hs.y) / (K.y - Hs.y) : A ? 1 + (hem - K.y) / ((A.y - K.y) || 1) : null);
+      if (hem > 0 && hem < h * 0.96) hems.push(hem <= K.y ? (hem - Hs.y) / (K.y - Hs.y) : A ? 1 + (hem - K.y) / ((A.y - K.y) || 1) : null);
       // the leg's width at the knee: the garment run through the knee point
       let x0 = K.x, x1 = K.x;
-      if (at(K.x, K.y)) { while (at(x0 - 1, K.y)) x0--; while (at(x1 + 1, K.y)) x1++; widths.push(x1 - x0); }
+      if (at(K.x, K.y)) {
+        while (at(x0 - 1, K.y)) x0--; while (at(x1 + 1, K.y)) x1++;
+        // legs touching at the knee: the run spans both — split at the middle between the knees
+        const other = kp[`knee_${s === 'l' ? 'r' : 'l'}`];
+        if (other && other.x > x0 && other.x < x1) { const m = (K.x + other.x) / 2; if (m > K.x) x1 = m; else x0 = m; }
+        widths.push(x1 - x0);
+      }
     }
     const hv = hems.filter((v) => v != null);
     if (hv.length) out.hem = hv.reduce((a, b) => a + b) / hv.length;
+    // trousers running out of the bottom of the photo go on past it: to the ankle, as trousers do
+    else if (zone === 'lower' && opts.kind === 'pants') {
+      let atEdge = 0;
+      for (let x = 0; x < w; x++) if (mask[(h - 2) * w + x]) atEdge++;
+      if (atEdge > 0.02 * w) out.hem = 1.95;
+    }
     const hipW = kp.hip_l && kp.hip_r ? Math.hypot(kp.hip_l.x - kp.hip_r.x, kp.hip_l.y - kp.hip_r.y) : 0;
     if (widths.length && hipW) out.legW = widths.reduce((a, b) => a + b) / widths.length / hipW;
     // the waistband: the garment's top on the body's centre line
@@ -105,7 +117,9 @@ export function modelMeasures(human, pts, zone) {
           const t = ((p.x - P.x) * ex + (p.y - P.y) * ey + (p.z - P.z) * ez) / l2;
           if (t < 0 || t > 1) continue;
           const d = Math.hypot(p.x - P.x - ex * t, p.y - P.y - ey * t, p.z - P.z - ez * t);
-          if (d < 0.09 && t0 + t > best) best = t0 + t;
+          // a sleeve is on the arm's outer side (the shirt's body beside the arm isn't sleeve)
+          const ax = P.x + ex * t;
+          if (d < 0.09 && Math.abs(p.x) > Math.abs(ax) - 0.01 && t0 + t > best) best = t0 + t;
         }
       }
       if (best > 0.1) sl.push(best);

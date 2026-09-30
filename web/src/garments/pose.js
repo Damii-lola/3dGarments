@@ -48,7 +48,10 @@ export async function detectPose(parsed, minScore = 0.3) {
     // quarter-pixel refinement toward the higher neighbour (as the reference post-processing does)
     const at = (x, y) => (x >= 0 && y >= 0 && x < HW && y < HH ? d[k * HH * HW + y * HW + x] : best);
     const fx = hx + 0.25 * Math.sign(at(hx + 1, hy) - at(hx - 1, hy)), fy = hy + 0.25 * Math.sign(at(hx, hy + 1) - at(hx, hy - 1));
-    res[KP[k]] = best < minScore ? null : { x: cx - bw / 2 + ((fx + 0.5) / HW) * bw, y: cy - bh / 2 + ((fy + 0.5) / HH) * bh, score: best };
+    const x = cx - bw / 2 + ((fx + 0.5) / HW) * bw, y = cy - bh / 2 + ((fy + 0.5) / HH) * bh;
+    // a point at the photo's edge is a guess about what's outside it: unseen
+    const edge = x < 0.03 * w || x > 0.97 * w || y < 0.03 * h || y > 0.97 * h;
+    res[KP[k]] = best < minScore || edge ? null : { x, y, score: best };
   }
   return res;
 }
