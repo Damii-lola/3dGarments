@@ -439,3 +439,32 @@ export async function cleanGarment(parsed, cut, { onGarment = [], occluders = tr
   return { cut: out, geometry, mask: fullMask, bbox: { x: bx + comp.bbox.x, y: by + comp.bbox.y, w: comp.width, h: comp.height },
     removed: removed / Math.max(1, sil.reduce((a, v) => a + v, 0)), hole, crop };
 }
+
+
+/** who wears the clothes, from the photo itself: CLIPSeg's "a man" vs "a woman" over the person (every pixel
+ *  the clothes-parsing model didn't call background) → 'male' | 'female' | null (too close to call) */
+export async function wearerSex(parsed) {
+  const { w, h, label, canvas } = parsed;
+  const [tok, proc, sess] = await loadClip();
+  const texts = ['a man', 'a woman', "a man's body", "a woman's body"], n = texts.length;
+  const ti = tok(texts, { padding: true, truncation: true });
+  const im = new RawImage(canvas.getContext('2d').getImageData(0, 0, w, h).data, w, h, 4).rgb();
+  const pv = (await proc(im)).pixel_values;
+  const rep = new Float32Array(pv.data.length * n);
+  for (let t = 0; t < n; t++) rep.set(pv.data, t * pv.data.length);
+  const i64 = (x) => new ort.Tensor('int64', BigInt64Array.from(Array.from(x.data, (v) => BigInt(v))), x.dims);
+  const feeds = { pixel_values: new ort.Tensor('float32', rep, [n, ...pv.dims.slice(1)]) };
+  for (const k of sess.inputNames) if (k === 'input_ids') feeds.input_ids = i64(ti.input_ids); else if (k === 'attention_mask') feeds.attention_mask = i64(ti.attention_mask);
+  const res = await sess.run(feeds), L = (res.logits || res[sess.outputNames[0]]);
+  const [, S1, S2] = L.dims, d = L.data;
+  let m = 0, f = 0, c = 0;
+  for (let y = 0; y < S1; y++) for (let x = 0; x < S2; x++) {
+    const px = Math.min(w - 1, ((x + 0.5) / S2 * w) | 0), py = Math.min(h - 1, ((y + 0.5) / S1 * h) | 0);
+    if (!label[py * w + px]) continue;
+    const q = y * S2 + x, P = S1 * S2;
+    m += d[q] + d[2 * P + q]; f += d[P + q] + d[3 * P + q]; c++;
+  }
+  if (!c) return null;
+  const diff = (m - f) / (2 * c);                  // mean logit difference
+  return diff > 0.15 ? 'male' : diff < -0.15 ? 'female' : null;
+}

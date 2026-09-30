@@ -25,7 +25,7 @@
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …) }]  lower garments first
  */
 import { parsePhoto, cutGarment, measuredLowerLength } from './parse.js';
-import { cleanGarment } from './clean.js';
+import { cleanGarment, wearerSex } from './clean.js';
 import { detectPose } from './pose.js';
 import { photoMeasures, modelMeasures, nextOverrides, fitError } from './photofit.js';
 import { posedBody, Photo } from './fit.js';
@@ -59,7 +59,9 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   const onGarment = [...new Set([...named, 'necklace', 'chain', 'hand', 'long_hair', 'bag_strap'])];
   // whose clothes: menswear on the male model, womenswear on the female one (unisex: the one shown)
   // (unisex: whoever wears them in the photo; nobody: the model already shown)
-  const sex = madeFor === 'men' ? 'male' : madeFor === 'women' ? 'female' : wornBy === 'man' ? 'male' : wornBy === 'woman' ? 'female' : human.sex;
+  let sex = madeFor === 'men' ? 'male' : madeFor === 'women' ? 'female' : wornBy === 'man' ? 'male' : wornBy === 'woman' ? 'female' : null;
+  // the vision model can't tell (a torso without a face): the photo itself decides (CLIPSeg over the person)
+  if (!sex) sex = (await wearerSex(parsed).catch(() => null)) || human.sex;
   if (sex !== human.sex) { onStep(`These are ${madeFor}'s clothes: dressing the ${sex} model…`); human.setSex(sex); }
   const B = human.active;
   const body = bodyMeasures(human);
