@@ -162,8 +162,9 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
     sp.push(a, b); sr.push(d2(a, b));
     if (d != null) { bp.push(c, d); br.push(d2(c, d)); }
   }
-  cloth.addGroup(sp, sr, fab.stretch).limit = 1.08;
-  cloth.addGroup(bp, br, fab.bend);
+  const stretchG = cloth.addGroup(sp, sr, fab.stretch);
+  stretchG.limit = 1.08;
+  const bendG = cloth.addGroup(bp, br, fab.bend);
   // stitches: each point to the point at the same fraction of the other edge (a gathered edge ruffles)
   const seamPairs = [], seamRest = [], seen = new Set();
   const p3 = (i) => new THREE.Vector3(X0[i * 3], X0[i * 3 + 1], X0[i * 3 + 2]);
@@ -307,6 +308,28 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
   human.object.updateMatrixWorld(true);
   sk = skinNow(); col = collider(sk); setAnchors(sk);
   for (let t = 0; t < (warm ? 50 : 80); t++) cloth.step(dt, SUB, G, col, thick, t > 50 ? 0.97 : 0.995);
+  /* ---- a fitted / tight garment hugs the body: knits (and stretch denim, a pencil skirt) are cut SMALLER than the
+     body and stretched onto it — negative ease. GarmentCode's plain shirt is a straight box from the chest down (a man's
+     waist is ~15 cm smaller than his chest: all of it hung loose). The crosswise rest lengths shrink (by how crosswise
+     each edge runs in the flat pattern), the fabric may stretch back that far and a little more, and it settles onto
+     the body in the pose shown (the collider keeps it outside the skin) ---- */
+  const hug = { tight: 0.08, fitted: 0.05, skinny: 0.06, bodycon: 0.08, slim: 0.03 }[item.fit] || 0;
+  if (hug) {
+    // (the cut itself follows the body: py/pattern.py shapes a fitted top's side seams to the waist; this is the
+    // knit's own pull on top of that.) Sleeves keep their size: shrunk against an armhole that isn't, they gather
+    for (const g of [stretchG, bendG]) {
+      for (let k = 0; k < g.a.length; k++) {
+        const a = g.a[k], b = g.b[k];
+        if (/sleeve|cuff/.test(panelOf[a])) continue;
+        const du = P2[a * 2] - P2[b * 2], dv = P2[a * 2 + 1] - P2[b * 2 + 1], l2 = du * du + dv * dv;
+        // along the grain (lengthwise) it keeps its length: a tee doesn't get shorter when it's snug
+        g.rest[k] *= 1 - hug * (l2 ? (du * du) / l2 : 0);
+      }
+    }
+    stretchG.limit = 1 / (1 - hug) + 0.04;
+    for (let t = 0; t < 70; t++) cloth.step(dt, SUB, G, col, thick, t > 40 ? 0.97 : 0.995);
+    globalThis.__hug = { fit: item.fit, hug };
+  }
   const X = cloth.x;
   // seams closed exactly: every stitched point on the midpoint of its pair(s) — one surface, no slit
   // (the same point → the same skin weights → it stays closed in every pose)
@@ -401,7 +424,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
         return [o + t, P.x + (Q.x - P.x) * t, P.y + (Q.y - P.y) * t, P.z + (Q.z - P.z) * t];
       };
       // the arm's radius per (band along it, direction around it): angle measured in the plane across the arm
-      const R = new Float32Array(TB * AB);
+      const Rl = Array.from({ length: TB * AB }, () => []);
       const ang = (dx, dy, dz, tt) => {
         const P = tt <= 1 ? A.S : A.E, Q = tt <= 1 ? A.E : A.W;
         let ax = Q.x - P.x, ay = Q.y - P.y, az = Q.z - P.z; const l = Math.hypot(ax, ay, az); ax /= l; ay /= l; az /= l;
@@ -415,13 +438,28 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
         if (ctx.part[i] !== 0 || reg[i] !== `arm_${sd}`) continue;
         const [tt, cx, cy, cz] = seg(sk.Q[i * 3], sk.Q[i * 3 + 1], sk.Q[i * 3 + 2]);
         const dx = sk.Q[i * 3] - cx, dy = sk.Q[i * 3 + 1] - cy, dz = sk.Q[i * 3 + 2] - cz;
-        const k = bin(tt, ang(dx, dy, dz, tt)), r = Math.hypot(dx, dy, dz);
-        if (r > R[k]) R[k] = r;
+        Rl[bin(tt, ang(dx, dy, dz, tt))].push(Math.hypot(dx, dy, dz));
       }
+      // a robust radius per bin (90th percentile: a stray deltoid point near the shoulder made spikes), then smoothed
+      // over the neighbouring bins along and around the arm
+      let R = new Float32Array(TB * AB);
+      Rl.forEach((l, k) => { if (l.length) { l.sort((p, q) => p - q); R[k] = l[Math.min(l.length - 1, Math.floor(l.length * 0.9))]; } });
       // empty bins take their neighbours' radius (around the arm)
       for (let tb = 0; tb < TB; tb++) for (let pass = 0; pass < 3; pass++) for (let ab = 0; ab < AB; ab++) {
         const k = tb * AB + ab;
         if (!R[k]) R[k] = Math.max(R[tb * AB + (ab + 1) % AB], R[tb * AB + (ab + AB - 1) % AB]);
+      }
+      for (let pass = 0; pass < 2; pass++) {
+        const S = new Float32Array(TB * AB);
+        for (let tb = 0; tb < TB; tb++) for (let ab = 0; ab < AB; ab++) {
+          let a = 0, c = 0;
+          for (let dt = -1; dt <= 1; dt++) for (let da = -1; da <= 1; da++) {
+            const t2 = tb + dt; if (t2 < 0 || t2 >= TB) continue;
+            const v = R[t2 * AB + (ab + da + AB) % AB]; if (v) { a += v; c++; }
+          }
+          S[tb * AB + ab] = c ? a / c : 0;
+        }
+        R = S;
       }
       for (let k = 0; k < N; k++) {
         if (!/sleeve|cuff/.test(panelOf[k]) || /skirt|pant/.test(panelOf[k]) || Math.sign(X[k * 3]) !== sign) continue;
@@ -429,7 +467,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
         if (tt <= 0.02) continue;                                      // the shoulder: the torso's business
         const dx = X[k * 3] - cx, dy = X[k * 3 + 1] - cy, dz = X[k * 3 + 2] - cz, r = Math.hypot(dx, dy, dz);
         const need = R[bin(tt, ang(dx, dy, dz, tt))];
-        if (need && r < need + thick) { const g = (need + thick) / Math.max(r, 1e-4); X[k * 3] = cx + dx * g; X[k * 3 + 1] = cy + dy * g; X[k * 3 + 2] = cz + dz * g; }
+        if (need && r < need + thick) { const g = Math.min(need + thick, r + 0.02) / Math.max(r, 1e-4); X[k * 3] = cx + dx * g; X[k * 3 + 1] = cy + dy * g; X[k * 3 + 2] = cz + dz * g; }
       }
     }
   }

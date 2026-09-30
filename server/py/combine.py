@@ -80,6 +80,9 @@ def combine(cg_design, zone, ngl_garment=None):
                 for k in ('width', 'fc_depth', 'bc_depth'): c[k]['v'] = nc[k]['v']
             elif u.get('neckline') not in ('boat', 'strapless'):
                 c['width']['v'] = min(c['width']['v'], nc['width']['v'])
+        # a top our reading sees as fitted / tight is never cut looser than that (ChatGarment reads cut, not ease)
+        if zone != 'lower' and u.get('fit') in ('tight', 'fitted'):
+            d['shirt']['width']['v'] = min(d['shirt']['width']['v'], nd['shirt']['width']['v'])
         for path in LENGTH_KEYS.get(zone, []) + (LENGTH_KEYS['lower'] if zone == 'full' else []):
             src_leaf, dst_leaf = _get(nd, path), _get(d, path)
             if isinstance(src_leaf, dict) and isinstance(dst_leaf, dict): dst_leaf['v'] = src_leaf['v']

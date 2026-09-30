@@ -124,6 +124,10 @@ fallback) picks the model. After sewing, photofit.js measures hem / sleeve / leg
 against the widest-hip level, which is where COCO hips sit — our rig's hip joints are ~10 cm higher) and re-cuts the pattern until
 the model matches. AIpparel's pattern (`specs`, py/pattern.py `spec`) is a per-zone candidate: used only if its panels are the right
 kind (it reads nearly everything as a dress) and it measures closer to the photo than the fitted ChatGarment/NGL pattern.
+Fit: GarmentCode's plain `Shirt` is a box, bust-wide down to the hem; py/pattern.py `shape_waist` curves a fitted/tight top's
+side seams in to the waist girth and moves the hem corner in to the hips (+ease), and combine.py never cuts a fitted top looser
+than NGL's width. sew.js then hugs fitted/tight/skinny garments (knit negative ease: crosswise rest lengths of stretch + bend
+shrink 5–8 %, sleeves excluded — shrunk against an armhole that isn't, they gather) and settles them on the body.
 Garment meshes: fit.js `finish` winds every triangle to face away from the body (sewn back panels are mirrored fronts; the half-
 bright inside layer showing made white read grey). Sleeves take their own arm's skin weights, and the arm under a sleeve is
 sunk deep (`deep` in Body#setHidden): an arm resting on the side leaves the sleeve no room and would show through it.

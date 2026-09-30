@@ -102,6 +102,62 @@ def emit_spec(req):
                'fit': {'spec.width': float(ov.get('spec.width', 1)), 'spec.length': float(ov.get('spec.length', 1))}}, sys.stdout)
 
 
+WAIST_EASE = {'tight': 1.02, 'fitted': 1.08}
+
+
+def shape_waist(spec, body, fit):
+    """a fitted / tight top follows the waist: GarmentCode's plain shirt is a straight box from the chest down (bust
+    wide at the waist too — a man's waist is ~15 cm smaller than his chest). Each torso panel's side seam is curved
+    in to the body's waist girth (+ a little ease) at the waist's height, the way a tailor takes a boxy tee in; the
+    front and back side seams curve alike, so they still meet"""
+    ease = WAIST_EASE.get(fit)
+    if not ease: return
+    waist_y = body['height'] - body['head_l'] - body['waist_line']          # world cm (GarmentCode's frame)
+    sides = []
+    for name, p in spec['panels'].items():
+        if 'torso' not in name or any(abs(r) > 1e-3 for r in p.get('rotation', [0, 0, 0])): continue
+        verts = np.array(p['vertices'], dtype=float)
+        p['_verts'] = verts                                                   # moved in place, written back below
+        yl = waist_y - p['translation'][1]                                   # the waist in the panel's own frame
+        best = None
+        for e in p['edges']:
+            if e.get('curvature'): continue
+            a, b = verts[e['endpoints'][0]], verts[e['endpoints'][1]]
+            lo, hi = min(a[1], b[1]), max(a[1], b[1])
+            if not (lo + 2 < yl < hi - 2) or abs(b[1] - a[1]) < 2 * abs(b[0] - a[0]): continue
+            t = (yl - a[1]) / (b[1] - a[1])
+            x = abs(a[0] + (b[0] - a[0]) * t)
+            if best is None or x > best[0]: best = (x, e, a, b, t)
+        if best and best[0] > 5: sides.append(best)
+    if len(sides) < 2: return
+    # the hem (below the waist) comes in to the hips too: its corner on the side seam moves toward the centre line
+    lows = [(a if a[1] < b[1] else b) for x, e, a, b, t in sides]
+    have_h = sum(abs(v[0]) for v in lows) * 4 / len(sides)
+    want_h = body['hips'] * (ease - 0.02)
+    if want_h < have_h * 0.98:
+        kh = want_h / have_h
+        for v in lows: v[0] *= kh                                             # a, b are views of the panel's vertices
+    sides = [(abs(a[0] + (b[0] - a[0]) * t), e, a, b, t) for x, e, a, b, t in sides]
+    have = sum(x for x, *_ in sides) * 4 / len(sides)                         # the ring at the waist, cm
+    want = body['waist'] * ease
+    if want >= have * 0.98: return
+    k = want / have
+    for x, e, a, b, t in sides:
+        d = x * (1 - k)                                                       # how far in, at the waist
+        L = float(np.hypot(*(b - a)))
+        s = min(0.8, max(0.2, t))
+        for sign in (1, -1):
+            # a quadratic with its control at the waist's place along the seam: its offset there is 2s(1−s)·p1·L
+            cv = [s, sign * d / (2 * s * (1 - s) * L)]
+            C = a + cv[0] * (b - a) + cv[1] * np.array([-(b - a)[1], (b - a)[0]])
+            m = (1 - s) ** 2 * a + 2 * s * (1 - s) * C + s ** 2 * b
+            if abs(m[0]) < x - 0.5 * d:                                       # inward: nearer the centre line (x = 0)
+                e['curvature'] = cv
+                break
+    for p in spec['panels'].values():
+        if '_verts' in p: p['vertices'] = p.pop('_verts').tolist()
+
+
 def main():
     req = json.load(sys.stdin)
     g = ngl.parse({'garments': [req['garment']]}) if req.get('garment') else []
@@ -124,6 +180,8 @@ def main():
     from assets.bodies.body_params import BodyParameters
     pat = MetaGarment('garment', BodyParameters(tmp), design).assembly()
     spec = pat.pattern
+    if g and (design.get('meta', {}).get('upper', {}) or {}).get('v') == 'Shirt':
+        shape_waist(spec, used, ((g[0].get('upper') or {}).get('fit')))
     os.remove(tmp)
     panels = {}
     for name, p in spec['panels'].items():

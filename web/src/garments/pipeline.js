@@ -105,7 +105,10 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     const clean = await cleanGarment(parsed, cut, { onGarment, under: underIt, onStep });
     onStep(`Cutting the ${g.type}'s sewing pattern…`);
     const pat = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body });
-    const item = { id: `${g.type}-${zone}`, name: g.type, type: g.type, category: CATEGORY[zone](g.type), zone, backFill: 'color' };
+    // how close it sits (sew.js hugs a fitted / tight garment onto the body: negative ease, as a knit is worn)
+    const snug = zone === 'lower' ? (/skinny/.test(garment.lower?.leg) ? 'skinny' : /pencil|straight|bodycon/.test(garment.lower?.skirt_shape) && g.type === 'skirt' ? 'fitted' : null)
+      : garment.upper?.fit;
+    const item = { id: `${g.type}-${zone}`, name: g.type, type: g.type, category: CATEGORY[zone](g.type), zone, backFill: 'color', fit: snug };
     let detail = null;
     if (models[zone]) {
       onStep(`Fitting the ${g.type}'s 3D model…`);
