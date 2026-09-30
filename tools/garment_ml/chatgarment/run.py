@@ -15,6 +15,61 @@ for d in (TMP, W, OUT): os.makedirs(d, exist_ok=True)
 N = 6
 
 
+KAGGLE_PLACE = '''def kaggle_place(model):
+        """merge the LoRA, then split the fp16 model over the GPUs"""
+        import gc
+        from accelerate import infer_auto_device_map, dispatch_model
+        model = model.merge_and_unload()
+        model.eval()
+        gc.collect()
+        n = torch.cuda.device_count()
+        mem = {i: torch.cuda.get_device_properties(i).total_memory for i in range(n)}
+        print('GPUs', n, {i: m // 2**30 for i, m in mem.items()}, flush=True)
+        # GPU 0 also holds the vision tower, the activations and the KV cache
+        max_memory = {i: f"{max(1, int(mem[i] / 2**30 - (3.5 if i == 0 else 1.2)))}GiB" for i in range(n)}
+        max_memory["cpu"] = "40GiB"
+        dmap = infer_auto_device_map(model, max_memory=max_memory, dtype=torch.float16,
+                                     no_split_module_classes=["LlamaDecoderLayer", "CLIPEncoderLayer", "CLIPVisionEmbeddings"])
+        print("device map:", sorted(set(map(str, dmap.values()))), flush=True)
+        return dispatch_model(model, device_map=dmap)
+'''
+
+
+def patch_script(CG, IMGS):
+    """ChatGarment's inference script adapted to Kaggle T4s → scripts/kaggle_imggen.py; returns its arguments"""
+    src = open(f'{CG}/scripts/evaluate_garment_v2_imggen_1float.py').read()
+    rep = [
+        ("attn_implementation = 'flash_attention_2'", "attn_implementation = 'eager'"),
+        ('import deepspeed\n', ''),
+        ('torch_dtype=(torch.bfloat16 if training_args.bf16 else None),', 'torch_dtype=torch.float16, low_cpu_mem_usage=True,'),
+        ('vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)',
+         'vision_tower.to(dtype=torch.float16)'),
+        ('assert args.precision == "bf16"\n    model = model.bfloat16().cuda()', 'model = model.half()'),
+        ('state_dict = torch.load(resume_path, map_location="cpu")', 'state_dict = torch.load(resume_path, map_location="cpu", mmap=True)'),
+        ('model.load_state_dict(state_dict, strict=True)\n    model = model.bfloat16().cuda()\n    device = model.device',
+         'model.load_state_dict(state_dict, strict=True)\n    del state_dict\n    model = kaggle_place(model)\n    device = torch.device("cuda:0")'),
+        ('assert args.precision == "bf16"\n            image_clip = image_clip.bfloat16()', 'image_clip = image_clip.half()'),
+    ]
+    for a, b in rep:
+        if a not in src: raise RuntimeError(f'patch target not found: {a[:70]}')
+        src = src.replace(a, b)
+    src = src.replace('def main(args):', KAGGLE_PLACE + '\n\ndef main(args):', 1)
+    open(f'{CG}/scripts/kaggle_imggen.py', 'w').write(src)
+
+    args = ('--lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5 '
+            '--model_name_or_path liuhaotian/llava-v1.5-7b --version v1 --data_path ./ '
+            f'--data_path_eval {IMGS} --image_folder ./ --vision_tower openai/clip-vit-large-patch14-336 '
+            '--mm_projector_type mlp2x_gelu --mm_vision_select_layer -2 --mm_use_im_start_end False '
+            '--mm_use_im_patch_token False --image_aspect_ratio pad --group_by_modality_length True '
+            '--fp16 True --bf16 False --output_dir ./checkpoints/llava-v1.5-7b-task-lora --num_train_epochs 1 '
+            '--per_device_train_batch_size 1 --per_device_eval_batch_size 1 --gradient_accumulation_steps 1 '
+            '--evaluation_strategy no --save_strategy no --learning_rate 2e-4 --weight_decay 0. --warmup_ratio 0.03 '
+            '--lr_scheduler_type cosine --logging_steps 1 --model_max_length 3072 --gradient_checkpointing True '
+            '--dataloader_num_workers 1 --lazy_preprocess True --report_to none')
+
+    return args
+
+
 def run():
     gpu = subprocess.run('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader', shell=True, capture_output=True, text=True).stdout.strip()
     note(f'started on {gpu.replace(chr(10), " + ") or "NO GPU"} · {len(INPUTS)} photos')
@@ -57,54 +112,7 @@ def run():
     note(f'{len(INPUTS)} photos: {", ".join(INPUTS)}')
 
     stage(4, N, 'patching the inference script for T4 (fp16, eager attention, 2 GPUs)')
-    src = open(f'{CG}/scripts/evaluate_garment_v2_imggen_1float.py').read()
-    rep = [
-        ("attn_implementation = 'flash_attention_2'", "attn_implementation = 'eager'"),
-        ('import deepspeed\n', ''),
-        ('torch_dtype=(torch.bfloat16 if training_args.bf16 else None),', 'torch_dtype=torch.float16, low_cpu_mem_usage=True,'),
-        ('vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)',
-         'vision_tower.to(dtype=torch.float16)'),
-        ('assert args.precision == "bf16"\n    model = model.bfloat16().cuda()', 'model = model.half()'),
-        ('state_dict = torch.load(resume_path, map_location="cpu")', 'state_dict = torch.load(resume_path, map_location="cpu", mmap=True)'),
-        ('model.load_state_dict(state_dict, strict=True)\n    model = model.bfloat16().cuda()\n    device = model.device',
-         'model.load_state_dict(state_dict, strict=True)\n    del state_dict\n    model = kaggle_place(model)\n    device = torch.device("cuda:0")'),
-        ('assert args.precision == "bf16"\n            image_clip = image_clip.bfloat16()', 'image_clip = image_clip.half()'),
-    ]
-    for a, b in rep:
-        if a not in src: raise RuntimeError(f'patch target not found: {a[:70]}')
-        src = src.replace(a, b)
-    src = src.replace('def main(args):', '''def kaggle_place(model):
-        """merge the LoRA, then split the fp16 model over the GPUs"""
-        import gc
-        from accelerate import infer_auto_device_map, dispatch_model
-        model = model.merge_and_unload()
-        model.eval()
-        gc.collect()
-        n = torch.cuda.device_count()
-        mem = {i: torch.cuda.get_device_properties(i).total_memory for i in range(n)}
-        print('GPUs', n, {i: m // 2**30 for i, m in mem.items()}, flush=True)
-        # GPU 0 also holds the vision tower, the activations and the KV cache
-        max_memory = {i: f"{max(1, int(mem[i] / 2**30 - (3.5 if i == 0 else 1.2)))}GiB" for i in range(n)}
-        max_memory["cpu"] = "40GiB"
-        dmap = infer_auto_device_map(model, max_memory=max_memory, dtype=torch.float16,
-                                     no_split_module_classes=["LlamaDecoderLayer", "CLIPEncoderLayer", "CLIPVisionEmbeddings"])
-        print("device map:", sorted(set(map(str, dmap.values()))), flush=True)
-        return dispatch_model(model, device_map=dmap)
-
-
-    def main(args):''', 1)
-    open(f'{CG}/scripts/kaggle_imggen.py', 'w').write(src)
-
-    args = ('--lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5 '
-            '--model_name_or_path liuhaotian/llava-v1.5-7b --version v1 --data_path ./ '
-            f'--data_path_eval {IMGS} --image_folder ./ --vision_tower openai/clip-vit-large-patch14-336 '
-            '--mm_projector_type mlp2x_gelu --mm_vision_select_layer -2 --mm_use_im_start_end False '
-            '--mm_use_im_patch_token False --image_aspect_ratio pad --group_by_modality_length True '
-            '--fp16 True --bf16 False --output_dir ./checkpoints/llava-v1.5-7b-task-lora --num_train_epochs 1 '
-            '--per_device_train_batch_size 1 --per_device_eval_batch_size 1 --gradient_accumulation_steps 1 '
-            '--evaluation_strategy no --save_strategy no --learning_rate 2e-4 --weight_decay 0. --warmup_ratio 0.03 '
-            '--lr_scheduler_type cosine --logging_steps 1 --model_max_length 3072 --gradient_checkpointing True '
-            '--dataloader_num_workers 1 --lazy_preprocess True --report_to none')
+    args = patch_script(CG, IMGS)
     args = args.replace('liuhaotian/llava-v1.5-7b', LLAVA).replace('openai/clip-vit-large-patch14-336', CLIP)
 
     stage(5, N, 'ChatGarment: photo → sewing pattern (loads the 7B model, then each photo)')
