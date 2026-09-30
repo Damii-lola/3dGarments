@@ -13,6 +13,7 @@
  * The two blend over a few pixels, so there is no line where the photo ends.
  */
 import { prepareFabric } from './fabric.js';
+import { makeCollider } from './cloth.js';
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -112,7 +113,7 @@ function pack(boxes, maxW = 2048, maxH = 2048) {
  * @param photos { front: Photo, back?: Photo }
  * @returns { map (canvas), normal (canvas), uv: Float32Array(N·2), W, H, ppm }
  */
-export function bakeGarment(g, photos) {
+export function bakeGarment(g, photos, detail = null) {
   const { N, X, tris, P2, panels } = g;
   /* ---- layout ---- */
   const boxes = panels.map((p) => {
@@ -185,6 +186,50 @@ export function bakeGarment(g, photos) {
     }
   };
   const Dat = (P, x, y) => P.D[Math.max(0, Math.min(P.h - 1, Math.round(y))) * P.w + Math.max(0, Math.min(P.w - 1, Math.round(x)))];
+  /* ---- the 3D model's surface (TRELLIS.2, fitted on the same body): its texture covers every side the photo
+     can't see (the back, the sleeves, the sides) — its colours matched to the photo's (per channel mean/std,
+     from points both see), since the generated texture can drift in tone ---- */
+  let dAt = null;
+  if (detail) {
+    const iw = detail.image.width, ih = detail.image.height, dc = document.createElement('canvas');
+    dc.width = iw; dc.height = ih;
+    const dx = dc.getContext('2d', { willReadFrequently: true }); dx.drawImage(detail.image, 0, 0);
+    const dpx = dx.getImageData(0, 0, iw, ih).data, dn = detail.pts.length / 3;
+    const dcol = makeCollider(detail.pts, new Float32Array(detail.pts.length), 0.03);
+    const raw = (x, y, z, out) => {
+      const c = dcol.nearest(x, y, z); if (c < 0) return false;
+      if (Math.hypot(detail.pts[c * 3] - x, detail.pts[c * 3 + 1] - y, detail.pts[c * 3 + 2] - z) > 0.05) return false;
+      const u = Math.min(iw - 1, Math.max(0, Math.round(detail.uv[c * 2] * iw))), v = Math.min(ih - 1, Math.max(0, Math.round(detail.uv[c * 2 + 1] * ih)));
+      const i = (v * iw + u) * 4; out[0] = dpx[i]; out[1] = dpx[i + 1]; out[2] = dpx[i + 2];
+      return true;
+    };
+    // colour match: points on the front both the photo and the model see
+    const sA = [[], [], []], sB = [[], [], []], t = [0, 0, 0], pc = [0, 0, 0];
+    for (let k = 0; k < N; k += 3) {
+      if (!panels[panelIdx[k]].front || !fF) continue;
+      const ix = fF.cx + X[k * 3] * fF.sx, iy = fF.top + (yTop - X[k * 3 + 1]) * fF.sy;
+      if (Dat(F, ix, iy) < 6 || !raw(X[k * 3], X[k * 3 + 1], X[k * 3 + 2], t)) continue;
+      sample(F, F.col, ix, iy, pc, 0);
+      for (let c = 0; c < 3; c++) { sA[c].push(t[c]); sB[c].push(pc[c]); }
+    }
+    const ms = (a) => { const m = a.reduce((p, q) => p + q, 0) / (a.length || 1); return [m, Math.sqrt(a.reduce((p, q) => p + (q - m) ** 2, 0) / (a.length || 1)) || 1]; };
+    const fit = [0, 1, 2].map((c) => { const [ma, sa] = ms(sA[c]), [mb, sb] = ms(sB[c]); const g = Math.max(0.3, Math.min(4, sb / sa)); return sA[c].length > 30 ? [g, mb - ma * g] : [1, 0]; });
+    // what this garment's fabric looks like (the photo, well inside the cut-out): a colour the 3D model has that
+    // the garment never has (the wearer's skin, a bag, the background it guessed) is not taken
+    const gc = [], gs = [];
+    { const acc = [[], [], []];
+      for (let i = 0; i < F.w * F.h; i += 5) if (F.D[i] > 5) for (let c = 0; c < 3; c++) acc[c].push(F.col[i * 4 + c]);
+      for (let c = 0; c < 3; c++) { const [m, sd] = ms(acc[c]); gc.push(m); gs.push(sd); } }
+    const tol = Math.max(45, 2.5 * Math.hypot(gs[0], gs[1], gs[2]));
+    dAt = (x, y, z, out) => {
+      const keep = [out[0], out[1], out[2]];
+      if (!raw(x, y, z, out)) return false;
+      for (let c = 0; c < 3; c++) out[c] = Math.max(0, Math.min(255, out[c] * fit[c][0] + fit[c][1]));
+      if (Math.hypot(out[0] - gc[0], out[1] - gc[1], out[2] - gc[2]) > tol) { out[0] = keep[0]; out[1] = keep[1]; out[2] = keep[2]; return false; }
+      return true;
+    };
+  }
+
   const tileAt = (u, v, out, o, arr) => {               // u, v: metres along the fabric (v = grain)
     if (!patch) { sample(F, arr, F.w / 2, F.h / 2, out, o); return; }
     const s = patch.side, m = (t) => { t = ((t % (2 * s)) + 2 * s) % (2 * s); return t < s ? t : 2 * s - t - 0.001; };
@@ -210,6 +255,7 @@ export function bakeGarment(g, photos) {
       const pu = P2[a * 2] * l1 + P2[b * 2] * l2 + P2[c * 2] * l3, pv = P2[a * 2 + 1] * l1 + P2[b * 2 + 1] * l2 + P2[c * 2 + 1] * l3;
       const [gu, gv] = p.grain === 'u' ? [pv, pu] : [pu, -pv];
       tileAt(gu, gv, cA, 0, F.col); tileAt(gu, gv, nA, 0, F.nrm);
+      if (dAt) dAt(x, y, I(X, 2), cA);                     // the 3D model's look where it has one
       // photo: front (or back) view of this point
       let w = 0;
       const view = p.front ? (fF && { P: F, f: fF, sgn: 1 }) : (fB && { P: B, f: fB, sgn: -1 });

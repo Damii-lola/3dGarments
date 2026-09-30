@@ -257,6 +257,6 @@ export function measuredLowerLength(parsed, mask) {
   if (shoeBot > 0 && hem > shoeTop + 0.35 * (shoeBot - shoeTop)) return 'floor';
   const r = (hem - top) / Math.max(1, floor - top);
   // on a body, waist → floor: mid-thigh ≈ 0.3, knee ≈ 0.55, mid-calf ≈ 0.75, ankle ≈ 0.92
-  return r < 0.2 ? 'micro' : r < 0.3 ? 'mini' : r < 0.45 ? 'above_knee' : r < 0.6 ? 'knee' : r < 0.72 ? 'below_knee'
+  return r < 0.22 ? 'micro' : r < 0.4 ? 'mini' : r < 0.47 ? 'above_knee' : r < 0.6 ? 'knee' : r < 0.72 ? 'below_knee'
     : r < 0.86 ? 'midi' : r < 0.97 ? 'ankle' : 'floor';
 }

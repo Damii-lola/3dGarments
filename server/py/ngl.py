@@ -102,8 +102,8 @@ def design(g):
 
     if l:
         rise = {'low': 0.6, 'mid': 0.8, 'high': 1.0}[l['rise']]
-        skirt_len = {'micro': 0.12, 'mini': 0.22, 'above_knee': 0.34, 'knee': 0.45, 'below_knee': 0.55, 'midi': 0.66,
-                     'ankle': 0.85, 'floor': 0.95}[l['length']]
+        skirt_len = {'micro': 0.1, 'mini': 0.16, 'above_knee': 0.25, 'knee': 0.36, 'below_knee': 0.46, 'midi': 0.58,
+                     'ankle': 0.8, 'floor': 0.9}[l['length']]
         if t in ('pants', 'shorts', 'jumpsuit'):
             S('meta.bottom', 'Pants')
             plen = {'micro': 0.2, 'mini': 0.22, 'above_knee': 0.3, 'knee': 0.42, 'below_knee': 0.5, 'midi': 0.6,

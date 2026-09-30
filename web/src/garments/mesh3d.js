@@ -359,5 +359,30 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   const res = finish(ctx, item, atlas, { verts, idx: Array.from(R.index), posed, weights, hide, covered: (i) => hide.has(i), s: gh * s, thickness: 0.0005, cutout: false });
   res.state = { x: Float32Array.from(X) };
   res.debug = { N, tris: R.index.length / 3, scale: s };
+  // its surface as fitted (display pose) + texture: for sew.js to take the look and relief from
+  // its local relief: how far each point stands off its own smoothed surface along the normal (a pocket,
+  // a flap, a fold, a collar's roll: + out, − in) — size-independent detail another garment can take on
+  const Xs = Float32Array.from(X), tmp2 = new Float32Array(N * 3);
+  for (let it = 0; it < 30; it++) {
+    for (let i = 0; i < N; i++) {
+      const l = nbr[i].length; if (!l) { for (let c = 0; c < 3; c++) tmp2[i * 3 + c] = Xs[i * 3 + c]; continue; }
+      for (let c = 0; c < 3; c++) { let a = 0; for (const j of nbr[i]) a += Xs[j * 3 + c]; tmp2[i * 3 + c] = 0.5 * Xs[i * 3 + c] + 0.5 * a / l; }
+    }
+    Xs.set(tmp2);
+  }
+  const VN = new Float32Array(N * 3);
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3;
+    const ux = Xs[b] - Xs[a], uy = Xs[b + 1] - Xs[a + 1], uz = Xs[b + 2] - Xs[a + 2], vx = Xs[c] - Xs[a], vy = Xs[c + 1] - Xs[a + 1], vz = Xs[c + 2] - Xs[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    for (const v of [a, b, c]) { VN[v] += nx; VN[v + 1] += ny; VN[v + 2] += nz; }
+  }
+  const h = new Float32Array(nr);
+  for (let v = 0; v < nr; v++) {
+    const i = simOf[v], l = Math.hypot(VN[i * 3], VN[i * 3 + 1], VN[i * 3 + 2]) || 1;
+    let d = 0; for (let c = 0; c < 3; c++) d += (X[i * 3 + c] - Xs[i * 3 + c]) * VN[i * 3 + c] / l;
+    h[v] = d;
+  }
+  res.detail = { pts: Float32Array.from(posed), uv: R.uv, image: src.map.image, h };
   return res;
 }

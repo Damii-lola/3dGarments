@@ -250,6 +250,9 @@ export function createFabricMaterial({ map, normalMap, material, metresPerUV = [
     sheenRoughness: sheenRough,
     sheenColor: new THREE.Color('#ffffff'),
     side: THREE.FrontSide,
+    // drawn a hair in front of whatever is right behind it (the skin under a snug waistband or shoulder
+    // seam, a few mm away): the fabric wins, never a ragged edge of skin poking through
+    polygonOffset: !inner, polygonOffsetFactor: -1, polygonOffsetUnits: -6,
   });
   mat.name = inner ? 'fabric-inner' : 'fabric';
   mat.onBeforeCompile = (shader) => {
