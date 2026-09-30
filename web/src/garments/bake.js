@@ -190,7 +190,7 @@ export function bakeGarment(g, photos, detail = null) {
      can't see (the back, the sleeves, the sides) — its colours matched to the photo's (per channel mean/std,
      from points both see), since the generated texture can drift in tone ---- */
   let dAt = null;
-  if (detail) {
+  if (detail && detail.image) {                  // an untextured model (Hunyuan3D's shape) gives relief only
     const iw = detail.image.width, ih = detail.image.height, dc = document.createElement('canvas');
     dc.width = iw; dc.height = ih;
     const dx = dc.getContext('2d', { willReadFrequently: true }); dx.drawImage(detail.image, 0, 0);

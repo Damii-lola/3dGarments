@@ -46,7 +46,7 @@ def push(model, pngs):
     src = head + open(f'{HERE}/common/progress.py').read() + '\n\n# ======== ' + model + '\n' + open(f'{HERE}/{model}/run.py').read()
     k = tempfile.mkdtemp()
     open(f'{k}/run.py', 'w').write(src)
-    json.dump({'id': f'{user()}/{slug(model)}', 'title': f'3dGarments {model}', 'code_file': 'run.py', 'language': 'python',
+    json.dump({'id': f'{user()}/{slug(model)}', 'title': f'3dGarments {model}' + (f' {STAGE}' if STAGE else ''), 'code_file': 'run.py', 'language': 'python',
                'kernel_type': 'script', 'is_private': True, 'enable_gpu': True, 'enable_internet': True, 'machine_shape': 'NvidiaTeslaT4',
                'dataset_sources': [], 'competition_sources': [],
                # an earlier stage's output, mounted at /kaggle/input/<its slug>

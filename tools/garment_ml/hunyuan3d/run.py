@@ -33,9 +33,14 @@ def run():
     # Blender is only used to write the textured GLB (we write it with trimesh): a stub keeps its imports working
     STUB = f'{TMP}/stubs'; os.makedirs(f'{STUB}/bpy', exist_ok=True)
     open(f'{STUB}/bpy/__init__.py', 'w').write('def __getattr__(name):\n    raise RuntimeError("no Blender here (bpy." + name + ")")\n')
-    paint_ok = sh(f'cd {HY}/hy3dpaint/custom_rasterizer && TORCH_CUDA_ARCH_LIST="7.5" MAX_JOBS=4 pip install -q --no-build-isolation -e .',
-                  'custom_rasterizer (CUDA, sm_75)', 'build', optional=True)
-    paint_ok = sh(f'cd {HY}/hy3dpaint/DifferentiableRenderer && bash compile_mesh_painter.sh', 'mesh painter (C++)', 'build', optional=True) and paint_ok
+    # (verbose: a failed CUDA build shows its compiler errors on the progress page)
+    cuda = 'CUDA_HOME=$(dirname $(dirname $(which nvcc 2>/dev/null || echo /usr/local/cuda/bin/nvcc)))'
+    paint_ok = sh(f'cd {HY}/hy3dpaint/custom_rasterizer && {cuda} TORCH_CUDA_ARCH_LIST="7.5" MAX_JOBS=4 pip install -v --no-build-isolation . '
+                  '&& cd / && python -c "import torch, custom_rasterizer, custom_rasterizer_kernel"', 'custom_rasterizer (CUDA, sm_75)', 'build', optional=True)
+    # its compile script needs python3-config (not on Kaggle): the extension suffix from sysconfig instead
+    paint_ok = sh(f'cd {HY}/hy3dpaint/DifferentiableRenderer && c++ -O3 -Wall -shared -std=c++11 -fPIC $(python -m pybind11 --includes) '
+                  'mesh_inpaint_processor.cpp -o mesh_inpaint_processor$(python -c "import sysconfig; print(sysconfig.get_config_var(\'EXT_SUFFIX\'))") '
+                  '&& python -c "import torch, mesh_inpaint_processor"', 'mesh painter (C++)', 'build', optional=True) and paint_ok
     os.makedirs(f'{HY}/hy3dpaint/ckpt', exist_ok=True)
     if paint_ok:
         paint_ok = sh(f'curl -sSfL -o {HY}/hy3dpaint/ckpt/RealESRGAN_x4plus.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth',
@@ -64,12 +69,24 @@ def run():
         note(f'(torchvision fix: {e})')
     summary = {}
 
+    # STAGE paint: the shapes of the last run (its output mounted as a kernel source) are textured, not remade
+    prev = {}
+    if STAGE == 'paint':
+        for f in glob.glob('/kaggle/input/**/*_shape.glb', recursive=True):
+            prev[os.path.basename(f)[:-len('_shape.glb')]] = f
+        note(f'reusing {len(prev)} shapes: {", ".join(prev)}')
+        for name, f in prev.items():
+            if name in INPUTS:
+                shutil.copy(f, f'{OUT}/{name}_shape.glb'); summary[name] = {'shape': f'{name}_shape.glb', 'reused': True}
     stage(4, N, 'Hunyuan3D-Shape-2.1: cut-out → shape (fp16)')
     from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
     from hy3dshape.postprocessors import FloaterRemover, DegenerateFaceRemover, FaceReducer
-    pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained('tencent/Hunyuan3D-2.1', device='cuda:0', dtype=torch.float16)
-    note(f'shape model loaded · GPU 0 {torch.cuda.memory_allocated(0) / 2**30:.1f} GiB')
-    for i, name in enumerate(INPUTS, 1):
+    pipe = None
+    if [n for n in INPUTS if n not in summary]:
+        pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained('tencent/Hunyuan3D-2.1', device='cuda:0', dtype=torch.float16)
+        note(f'shape model loaded · GPU 0 {torch.cuda.memory_allocated(0) / 2**30:.1f} GiB')
+    todo = [n for n in INPUTS if n not in summary]
+    for i, name in enumerate(todo, 1):
         img = Image.open(f'{IMGS}/{name}.png')
         best = None
         for seed in SEEDS:
@@ -85,11 +102,11 @@ def run():
             # the one whose silhouette from the front fills the cut-out best (both seeds usually agree)
             ext = mesh.bounds[1] - mesh.bounds[0]
             score = abs((ext[0] / max(ext[1], 1e-6)) - img.width / img.height)
-            note(f'  {i}/{len(INPUTS)} {name} seed {seed}: {len(mesh.faces)} faces, aspect off by {score:.2f} ({time.time() - t:.0f}s)')
+            note(f'  {i}/{len(todo)} {name} seed {seed}: {len(mesh.faces)} faces, aspect off by {score:.2f} ({time.time() - t:.0f}s)')
             if best is None or score < best[0]: best = (score, seed, mesh)
         best[2].export(f'{OUT}/{name}_shape.glb')
         summary[name] = {'shape': f'{name}_shape.glb', 'seed': best[1], 'faces': len(best[2].faces)}
-        note(f'✓ {i}/{len(INPUTS)} {name}: shape (seed {best[1]})')
+        note(f'✓ {i}/{len(todo)} {name}: shape (seed {best[1]})')
     del pipe; gc.collect(); torch.cuda.empty_cache()
 
     stage(5, N, 'Hunyuan3D-Paint-2.1: PBR texture (6 views, 512; optional)')

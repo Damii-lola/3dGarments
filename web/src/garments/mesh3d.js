@@ -22,11 +22,21 @@ export async function loadGarmentGLB(url) {
   const g = await new GLTFLoader().loadAsync(url);
   let mesh = null;
   g.scene.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
-  const geo = mesh.geometry;
+  const geo = mesh.geometry, n = geo.attributes.position.count;
+  // Hunyuan3D's shapes come untextured (no UVs, no map): relief only
   return {
-    pos: geo.attributes.position.array, uv: geo.attributes.uv.array, index: geo.index.array,
-    map: mesh.material.map,
+    pos: geo.attributes.position.array, uv: geo.attributes.uv ? geo.attributes.uv.array : new Float32Array(n * 2),
+    index: geo.index ? geo.index.array : Uint32Array.from({ length: n }, (_, i) => i),
+    map: mesh.material.map || null,
   };
+}
+
+/** a real 3D garment, not a flat slab (a model given a cut-out with holes can return a relief of the photo):
+ *  its depth is at least a fifth of its width */
+export function isVolumetric(src) {
+  const P = src.pos, lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < P.length; i += 3) for (let c = 0; c < 3; c++) { lo[c] = Math.min(lo[c], P[i + c]); hi[c] = Math.max(hi[c], P[i + c]); }
+  return (hi[2] - lo[2]) / Math.max(1e-6, hi[0] - lo[0]) > 0.2;
 }
 
 /** simplified to ~`tris` triangles, UVs kept; → { pos, uv, index } compacted */
@@ -354,8 +364,10 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
     if (dn > -0.003 && dn < 0.045 && dx * dx + dy * dy + dz * dz - dn * dn < 0.02 * 0.02) hide.add(i);
   }
   const flat = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1); flat.needsUpdate = true;
-  src.map.flipY = false;
-  const atlas = { map: src.map, normalMap: flat, W: 1, H: 1, front: { h: 1 } };
+  let map = src.map;
+  if (!map) { const c = document.createElement('canvas'); c.width = c.height = 4; const g = c.getContext('2d'); g.fillStyle = '#808080'; g.fillRect(0, 0, 4, 4); map = new THREE.CanvasTexture(c); }
+  map.flipY = false;
+  const atlas = { map, normalMap: flat, W: 1, H: 1, front: { h: 1 } };
   const res = finish(ctx, item, atlas, { verts, idx: Array.from(R.index), posed, weights, hide, covered: (i) => hide.has(i), s: gh * s, thickness: 0.0005, cutout: false });
   res.state = { x: Float32Array.from(X) };
   res.debug = { N, tris: R.index.length / 3, scale: s };
@@ -383,6 +395,6 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
     let d = 0; for (let c = 0; c < 3; c++) d += (X[i * 3 + c] - Xs[i * 3 + c]) * VN[i * 3 + c] / l;
     h[v] = d;
   }
-  res.detail = { pts: Float32Array.from(posed), uv: R.uv, image: src.map.image, h };
+  res.detail = { pts: Float32Array.from(posed), uv: R.uv, image: src.map ? src.map.image : null, h };
   return res;
 }

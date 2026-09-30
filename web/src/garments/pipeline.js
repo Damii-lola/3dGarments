@@ -16,13 +16,14 @@
  *   sew.js         the pattern sewn and draped on the body (cloth simulation), textured from the photo
  *   TRELLIS.2      (a GPU job, tools/garment_ml/trellis2) → a textured 3D garment, when we have it: its look on
  *                  the sides the photo can't see, and its relief (mesh3d.js fits it on the same body)
+ *   Hunyuan3D 2.1  (tools/garment_ml/hunyuan3d) → an untextured 3D garment shape: its relief, where TRELLIS.2 has none
  *
  * @param opts {
  *   describe(jpegDataUrl) → { garments: [NGL garment] }       (POST /api/ngl/describe)
  *   pattern(req) → pattern                                    (POST /api/ngl/pattern)
  *   designs?: { upper?, lower?, full? }  ChatGarment designs for this photo
  *   specs?:   { upper?, lower?, full? }  AIpparel patterns for this photo (tools/garment_ml/aipparel)
- *   models?:  { upper?, lower?, full? }  TRELLIS.2 GLB urls for this photo
+ *   models?:  { upper?, lower?, full? }  3D model GLB url(s) for this photo, best first (TRELLIS.2, Hunyuan3D 2.1)
  *   onStep?(text)
  * }
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …), source }]  lower garments first
@@ -33,7 +34,7 @@ import { detectPose } from './pose.js';
 import { photoMeasures, modelMeasures, nextOverrides, fitError, resolveTarget } from './photofit.js';
 import { posedBody, Photo } from './fit.js';
 import { sewPattern } from './sew.js';
-import { loadGarmentGLB, fitMeshGarment } from './mesh3d.js';
+import { loadGarmentGLB, fitMeshGarment, isVolumetric } from './mesh3d.js';
 
 const UPPER = ['top', 'shirt', 'sweater', 'hoodie', 'jacket', 'tank'], LOWER = ['skirt', 'pants', 'shorts'];
 export const zoneOf = (t) => (UPPER.includes(t) ? 'upper' : LOWER.includes(t) ? 'lower' : 'full');
@@ -109,12 +110,17 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     const snug = zone === 'lower' ? (/skinny/.test(garment.lower?.leg) ? 'skinny' : /pencil|straight|bodycon/.test(garment.lower?.skirt_shape) && g.type === 'skirt' ? 'fitted' : null)
       : garment.upper?.fit;
     const item = { id: `${g.type}-${zone}`, name: g.type, type: g.type, category: CATEGORY[zone](g.type), zone, backFill: 'color', fit: snug };
+    // the 3D models of this garment, best first (TRELLIS.2: look + relief; Hunyuan3D 2.1: relief): the first that is
+    // a real 3D garment (not a flat relief of the photo) gives the sewn garment its relief and unseen sides
     let detail = null;
-    if (models[zone]) {
+    for (const url of [].concat(models[zone] || [])) {
+      const src = await loadGarmentGLB(url).catch(() => null);
+      if (!src || !isVolumetric(src)) continue;
       onStep(`Fitting the ${g.type}'s 3D model…`);
       const fm = await fitMeshGarment(B, human, { ...item, length: zone === 'upper' ? garment.upper?.length : garment.lower?.length },
-        await loadGarmentGLB(models[zone]), { under: worn.map((w) => w.posed) });
+        src, { under: worn.map((w) => w.posed) });
       detail = fm.detail; fm.dispose();
+      break;
     }
     onStep(`Sewing the ${g.type} on the model…`);
     const photo = { front: new Photo(clean.cut, clean.geometry) };

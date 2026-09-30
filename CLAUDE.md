@@ -137,6 +137,11 @@ KAGGLE_API_TOKEN only in the shell, never in files. Results for the test photos:
 AIpparel on a T4: its 27 GB checkpoint is loaded memory-mapped onto a meta-device model in fp16 and split over both GPUs;
 transformers 4.31 needs a real `tokenizers` (without it LLaVA's AddedToken entries become 3 new tokens and every garment token
 id is off by 3): tokenizers 0.15.2 with the version table relaxed. The vision projector comes from LLaVA-1.5's second shard.
+Hunyuan3D 2.1 (tools/garment_ml/hunyuan3d; its shapes face +z, y up, like glTF) is a second 3D model per zone after TRELLIS.2:
+`models[zone]` is a list, best first, and the first that `isVolumetric` (depth ≥ ⅕ width — a cut-out with holes can come back as
+a flat relief of the photo) gives the relief; an untextured one gives relief only. Its PBR paint needs custom_rasterizer (built
+non-editable; import torch before it: libc10) and the mesh painter (extension suffix from sysconfig: no python3-config on
+Kaggle); `STAGE=paint KERNEL_SOURCES=3dgarments-hunyuan3d` textures the last run's shapes.
 GarmageNet: no pretrained weights are published (training code only); its dataset (Style3D/GarmageSet) is gated on HF.
 
 ## Roadmap / ideas
