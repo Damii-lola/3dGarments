@@ -136,11 +136,32 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   if (upper) gx = cx0;
   const invW = new THREE.Matrix4().copy(human.object.matrixWorld).invert();
   const jpt = (name) => body.bones[body.boneIndex[name]].getWorldPosition(new THREE.Vector3()).applyMatrix4(invW);
+  const thickTop = 0.008;
   const X0 = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
     X0[i * 3] = (P0[i * 3] - gx) * s;
     X0[i * 3 + 1] = topY + (P0[i * 3 + 1] - y1) * s;
     X0[i * 3 + 2] = zc + (P0[i * 3 + 2] - gz) * s;
+  }
+
+  /* ---- shoulders: each side of a top lifted / lowered so its shoulder line sits on ours (the photo's wearer
+     may drop a shoulder, or have narrower ones), fading to nothing at the collar and down the body ---- */
+  if (item.zone !== 'lower') {
+    for (const side of ['l', 'r']) {
+      const sg = side === 'l' ? 1 : -1, S = jpt(`upperarm_${side}`);
+      const x0 = ctx.xN + 0.02, x1 = Math.abs(S.x) + 0.02;
+      let gTop = -Infinity, bTop = -Infinity;
+      for (let i = 0; i < N; i++) { const x = sg * X0[i * 3]; if (x > x1 - 0.04 && x < x1 + 0.02 && X0[i * 3 + 1] > S.y - 0.15) gTop = Math.max(gTop, X0[i * 3 + 1]); }
+      for (let i = 0; i < nb; i++) { const x = sg * Q[i * 3]; if (x > x1 - 0.04 && x < x1 + 0.02 && reg[i] !== 'head' && reg[i] !== 'neck') bTop = Math.max(bTop, Q[i * 3 + 1]); }
+      if (!Number.isFinite(gTop) || !Number.isFinite(bTop)) continue;
+      const dy = bTop + thickTop - gTop;
+      if (Math.abs(dy) < 0.004) continue;
+      for (let i = 0; i < N; i++) {
+        const x = sg * X0[i * 3]; if (x < x0) continue;
+        const w = smooth(x0, x1 - 0.02, x) * smooth(S.y - 0.35, S.y - 0.1, X0[i * 3 + 1]) + (x > x1 ? smooth(S.y - 0.35, S.y - 0.25, X0[i * 3 + 1]) * 0 : 0);
+        X0[i * 3 + 1] += dy * Math.min(1, w);
+      }
+    }
   }
 
   /* ---- sleeves onto our arms: each sleeve turned about the shoulder onto our upper arm (the photo's arm pose
@@ -149,11 +170,16 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
     for (const side of ['l', 'r']) {
       const sg = side === 'l' ? 1 : -1, S = jpt(`upperarm_${side}`), E = jpt(`lowerarm_${side}`);
       const xs = Math.abs(S.x) - 0.03, yLow = S.y - 0.14;
+      // sleeve = fabric whose nearest body part is this arm, or that reaches out past the shoulder above it
       const idx = [];
-      for (let i = 0; i < N; i++) if (sg * X0[i * 3] > xs && X0[i * 3 + 1] > yLow - 0.25) idx.push(i);
+      for (let i = 0; i < N; i++) {
+        if (sg * X0[i * 3] < xs - 0.02) continue;
+        const q = ctx.nearestSkin(X0[i * 3], X0[i * 3 + 1], X0[i * 3 + 2], null, 12);
+        if ((q >= 0 && reg[q] === `arm_${side}`) || (sg * X0[i * 3] > xs + 0.06 && X0[i * 3 + 1] > S.y - 0.06)) idx.push(i);
+      }
       if (idx.length < 50) continue;
       // the sleeve's direction: from the shoulder to the mean of its far half
-      const far = idx.filter((i) => sg * X0[i * 3] > xs + 0.05);
+      const far = idx.filter((i) => Math.hypot(X0[i * 3] - S.x, X0[i * 3 + 1] - S.y, X0[i * 3 + 2] - S.z) > 0.08);
       if (far.length < 20) continue;
       const a = new THREE.Vector3();
       for (const i of far) a.add(new THREE.Vector3(X0[i * 3] - S.x, X0[i * 3 + 1] - S.y, X0[i * 3 + 2] - S.z));
@@ -161,7 +187,7 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
       const b = new THREE.Vector3().subVectors(E, S).normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(a, b), qi = new THREE.Quaternion(), v = new THREE.Vector3();
       for (const i of idx) {
-        const w = smooth(xs + 0.04, xs + 0.12, sg * X0[i * 3]);
+        const w = smooth(0.03, 0.1, Math.hypot(X0[i * 3] - S.x, X0[i * 3 + 1] - S.y, X0[i * 3 + 2] - S.z));
         qi.identity().slerp(q, w);
         v.set(X0[i * 3] - S.x, X0[i * 3 + 1] - S.y, X0[i * 3 + 2] - S.z).applyQuaternion(qi);
         X0[i * 3] = S.x + v.x; X0[i * 3 + 1] = S.y + v.y; X0[i * 3 + 2] = S.z + v.z;
