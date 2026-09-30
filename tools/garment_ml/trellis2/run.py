@@ -14,6 +14,7 @@ out-of-memory) · 6 done: /kaggle/working/out/<name>.glb + summary.json
 import base64, hashlib, json, os, subprocess, sys, time, traceback, urllib.request
 
 TOPIC = '__TOPIC__'
+SEEDS = [1, 7, 42]
 INPUTS = {}  # name → base64 PNG (RGBA cut-out), filled in by kernel.py
 
 WORK, W, OUT = '/kaggle/working', '/tmp/weights', '/kaggle/working/out'
@@ -164,30 +165,41 @@ try:
     stage(5, f'making {len(INPUTS)} garments')
     for i, (name, b64) in enumerate(INPUTS.items(), 1):
         img = Image.open(io.BytesIO(base64.b64decode(b64))).convert('RGBA')
+        k = 1024 / max(img.size)                        # a small cut-out, enlarged (the model sees 518+ px)
+        if k > 1: img = img.resize((round(img.width * k), round(img.height * k)), Image.Resampling.LANCZOS)
         img.save(f'{OUT}/{name}_input.png')
-        info = {}
-        for kind in ('1024_cascade', '512'):
+        info, best = {}, None
+        # a few seeds; keep the one with the most real depth (a garment, not a flat card printed with the photo)
+        for seed in SEEDS:
+            kind = '1024_cascade'
             try:
                 t = time.time(); torch.cuda.reset_peak_memory_stats()
-                note(f'▶ {i}/{len(INPUTS)} {name}: generating ({kind})')
-                mesh = pipe.run(img, seed=1, pipeline_type=kind)[0]
-                mesh.simplify(16777216)
-                glb = o_voxel.postprocess.to_glb(vertices=mesh.vertices, faces=mesh.faces, attr_volume=mesh.attrs, coords=mesh.coords,
-                                                 attr_layout=mesh.layout, voxel_size=mesh.voxel_size, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-                                                 decimation_target=400000, texture_size=2048, remesh=True, remesh_band=1, remesh_project=0, verbose=False)
-                glb.export(f'{OUT}/{name}.glb', extension_webp=True)
-                info = {'pipeline': kind, 'seconds': round(time.time() - t), 'peak_gpu_gb': round(torch.cuda.max_memory_allocated() / 1e9, 1),
-                        'glb_mb': round(os.path.getsize(f'{OUT}/{name}.glb') / 1e6, 1)}
-                note(f'✓ {i}/{len(INPUTS)} {name}: {info}')
-                break
-            except torch.cuda.OutOfMemoryError:
-                note(f'⚠ {name}: out of GPU memory at {kind}, trying 512', prio=4)
-                torch.cuda.empty_cache()
+                note(f'▶ {i}/{len(INPUTS)} {name}: seed {seed} ({kind})')
+                try:
+                    mesh = pipe.run(img, seed=seed, pipeline_type=kind)[0]
+                except torch.cuda.OutOfMemoryError:
+                    torch.cuda.empty_cache(); kind = '512'
+                    note(f'⚠ {name}: out of GPU memory at 1024, using 512', prio=4)
+                    mesh = pipe.run(img, seed=seed, pipeline_type=kind)[0]
+                ext = (mesh.vertices.max(0).values - mesh.vertices.min(0).values).float().cpu().tolist()
+                depth = min(ext) / max(ext)
+                note(f'  {name} seed {seed}: depth/size {depth:.2f} ({time.time() - t:.0f}s)')
+                if best is None or depth > best[0]:
+                    mesh.simplify(16777216)
+                    glb = o_voxel.postprocess.to_glb(vertices=mesh.vertices, faces=mesh.faces, attr_volume=mesh.attrs, coords=mesh.coords,
+                                                     attr_layout=mesh.layout, voxel_size=mesh.voxel_size, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+                                                     decimation_target=400000, texture_size=2048, remesh=True, remesh_band=1, remesh_project=0, verbose=False)
+                    glb.export(f'{OUT}/{name}.glb', extension_webp=True)
+                    best = (depth, seed)
+                    info = {'pipeline': kind, 'seed': seed, 'depth': round(depth, 3), 'seconds': round(time.time() - t),
+                            'peak_gpu_gb': round(torch.cuda.max_memory_allocated() / 1e9, 1), 'glb_mb': round(os.path.getsize(f'{OUT}/{name}.glb') / 1e6, 1)}
+                del mesh; torch.cuda.empty_cache()
+                if depth >= 0.3: break                    # clearly a 3D garment
             except Exception as e:
-                info = {'error': f'{type(e).__name__}: {e}', 'trace': traceback.format_exc()[-1500:]}
-                note(f'✗ {name}: {info["error"]}\n{info["trace"][-600:]}', prio=5)
+                info.setdefault('errors', []).append(f'seed {seed}: {type(e).__name__}: {e}')
+                note(f'✗ {name} seed {seed}: {type(e).__name__}: {e}\n{traceback.format_exc()[-600:]}', prio=5)
                 torch.cuda.empty_cache()
-                break
+        note(f'✓ {i}/{len(INPUTS)} {name}: {info}')
         summary['garments'][name] = info
         json.dump(summary, open(f'{WORK}/summary.json', 'w'), indent=1)
 
