@@ -16,25 +16,32 @@ N = 6
 
 
 KAGGLE_PLACE = '''def kaggle_place(model):
-        """merge the LoRA, then split the fp16 model over the GPUs"""
-        import gc
-        from accelerate import infer_auto_device_map, dispatch_model
-        model = model.merge_and_unload().half()
+    """merge the LoRA, fp16, then split the model over the GPUs (the float head, its inputs and outputs on GPU 0)"""
+    import gc
+    from accelerate import infer_auto_device_map, dispatch_model
+    model = model.merge_and_unload().half()
+    model.eval()
+    gc.collect()
     meta = [n for n, p in list(model.named_parameters()) + list(model.named_buffers()) if p.is_meta]
     print("still on meta:", meta[:10], len(meta), flush=True)
-    if meta: raise RuntimeError(f"{len(meta)} tensors never loaded, e.g. {meta[:5]}")
-        model.eval()
-        gc.collect()
-        n = torch.cuda.device_count()
-        mem = {i: torch.cuda.get_device_properties(i).total_memory for i in range(n)}
-        print('GPUs', n, {i: m // 2**30 for i, m in mem.items()}, flush=True)
-        # GPU 0 also holds the vision tower, the activations and the KV cache
-        max_memory = {i: f"{max(1, int(mem[i] / 2**30 - (3.5 if i == 0 else 1.2)))}GiB" for i in range(n)}
-        max_memory["cpu"] = "40GiB"
-        dmap = infer_auto_device_map(model, max_memory=max_memory, dtype=torch.float16,
-                                     no_split_module_classes=["LlamaDecoderLayer", "CLIPEncoderLayer", "CLIPVisionEmbeddings"])
-        print("device map:", sorted(set(map(str, dmap.values()))), flush=True)
-        return dispatch_model(model, device_map=dmap)
+    if meta:
+        raise RuntimeError(f"{len(meta)} tensors never loaded, e.g. {meta[:5]}")
+    n = torch.cuda.device_count()
+    mem = {i: torch.cuda.get_device_properties(i).total_memory for i in range(n)}
+    print("GPUs", n, {i: m // 2**30 for i, m in mem.items()}, flush=True)
+    # GPU 0 also holds the vision tower, the activations and the KV cache
+    max_memory = {i: f"{max(1, int(mem[i] / 2**30 - (3.5 if i == 0 else 1.2)))}GiB" for i in range(n)}
+    max_memory["cpu"] = "40GiB"
+    dmap = infer_auto_device_map(model, max_memory=max_memory, dtype=torch.float16,
+                                 no_split_module_classes=["LlamaDecoderLayer", "CLIPEncoderLayer", "CLIPVisionEmbeddings"])
+    for k in list(dmap):
+        if k == "float_layer" or k.startswith("float_layer."):
+            dmap[k] = 0
+    print("device map:", sorted(set(map(str, dmap.values()))), flush=True)
+    model.config.use_cache = True
+    if hasattr(model, "gradient_checkpointing_disable"):
+        model.gradient_checkpointing_disable()
+    return dispatch_model(model, device_map=dmap)
 '''
 
 
@@ -57,6 +64,32 @@ def patch_script(CG, IMGS):
         if a not in src: raise RuntimeError(f'patch target not found: {a[:70]}')
         src = src.replace(a, b)
     src = src.replace('def main(args):', KAGGLE_PLACE + '\n\ndef main(args):', 1)
+    # the parser gets plain CPU floats
+    a = 'all_json_spec_files = run_garmentcode_parser_float50(all_json_spec_files, json_output, float_preds, output_dir)'
+    if a not in src: raise RuntimeError('patch target not found: parser call')
+    src = src.replace(a, a.replace('float_preds, output_dir', 'float_preds.float().cpu().numpy(), output_dir'))
+    # one photo failing doesn't stop the others
+    L = src.split('\n')
+    i0 = next(i for i, l in enumerate(L) if l.startswith('    for i in range(len_val_dataset):'))
+    i1 = next(i for i, l in enumerate(L) if l.startswith('    saved_json_Path'))
+    body = ['    ' + l if l.strip() else l for l in L[i0 + 1:i1]]
+    L = L[:i0 + 1] + ['        try:'] + body + [
+        '        except Exception as e:',
+        '            import traceback; traceback.print_exc()',
+        '            print("PHOTO FAILED", i, type(e).__name__, e, flush=True)',
+        '        print("PHOTO DONE", i, flush=True)'] + L[i1:]
+    src = '\n'.join(L)
+    # the float head's inputs moved to its GPU (the model is split over two)
+    fp = f'{CG}/llava/model/language_model/llava_garment_float50.py'
+    m = open(fp).read()
+    for a, b in [
+        ('last_hidden_state = self.float_layer(output_hidden_states).reshape(1, -1, self.last_dim)',
+         'fdev = next(self.float_layer.parameters()).device\n                seg_token_mask = seg_token_mask.to(fdev)\n                last_hidden_state = self.float_layer(output_hidden_states.to(fdev)).reshape(1, -1, self.last_dim)'),
+        ('[torch.zeros(1).long().cuda(), seg_token_offset], dim=0', '[torch.zeros(1, dtype=torch.long, device=seg_token_offset.device), seg_token_offset], dim=0'),
+    ]:
+        if a not in m: raise RuntimeError(f'patch target not found: {a[:60]}')
+        m = m.replace(a, b)
+    open(fp, 'w').write(m)
     open(f'{CG}/scripts/kaggle_imggen.py', 'w').write(src)
 
     args = ('--lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5 '
@@ -124,7 +157,22 @@ def run():
 
     stage(5, N, 'ChatGarment: photo → sewing pattern (loads the 7B model, then each photo)')
     env = f'cd {CG} && HF_HOME={TMP}/hf PYTHONPATH={STUB}:{CG}:{GC} TOKENIZERS_PARALLELISM=false'
-    sh(f'{env} python scripts/kaggle_imggen.py {args}', 'ChatGarment inference', 'inference')
+    import threading
+    stop = threading.Event()
+    def follow():
+        seen, lf = 0, f'{WORK}/logs_inference.txt'
+        while not stop.wait(20):
+            if not os.path.exists(lf): continue
+            lines = open(lf, errors='replace').read().splitlines()
+            for l in lines[seen:]:
+                if l.startswith(('PHOTO DONE', 'PHOTO FAILED', 'still on meta', 'GPUs', 'device map', 'val_dataset')) or 'image_path' in l:
+                    note('  ' + l[:300])
+            seen = len(lines)
+    threading.Thread(target=follow, daemon=True).start()
+    try:
+        sh(f'{env} python scripts/kaggle_imggen.py {args}', 'ChatGarment inference', 'inference')
+    finally:
+        stop.set()
 
     stage(6, N, 'results')
     per = {}
@@ -136,6 +184,8 @@ def run():
         for s in specs:
             dst = f'{OUT}/{gid}__{os.path.basename(s)}'
             shutil.copy(s, dst); per[gid]['specs'].append(os.path.basename(dst))
+        for y in glob.glob(f'{p}/**/design.yaml', recursive=True):
+            shutil.copy(y, f'{OUT}/{gid}__{os.path.basename(os.path.dirname(y))}__design.yaml')
         for png in glob.glob(f'{p}/**/*.png', recursive=True)[:6]: shutil.copy(png, f'{OUT}/{gid}__{os.path.basename(png)}')
     json.dump(per, open(f'{WORK}/summary.json', 'w'), indent=1)
     n = sum(len(v['specs']) for v in per.values())
