@@ -19,7 +19,10 @@ KAGGLE_PLACE = '''def kaggle_place(model):
         """merge the LoRA, then split the fp16 model over the GPUs"""
         import gc
         from accelerate import infer_auto_device_map, dispatch_model
-        model = model.merge_and_unload()
+        model = model.merge_and_unload().half()
+    meta = [n for n, p in list(model.named_parameters()) + list(model.named_buffers()) if p.is_meta]
+    print("still on meta:", meta[:10], len(meta), flush=True)
+    if meta: raise RuntimeError(f"{len(meta)} tensors never loaded, e.g. {meta[:5]}")
         model.eval()
         gc.collect()
         n = torch.cuda.device_count()
@@ -47,7 +50,7 @@ def patch_script(CG, IMGS):
         ('assert args.precision == "bf16"\n    model = model.bfloat16().cuda()', 'model = model.half()'),
         ('state_dict = torch.load(resume_path, map_location="cpu")', 'state_dict = torch.load(resume_path, map_location="cpu", mmap=True)'),
         ('model.load_state_dict(state_dict, strict=True)\n    model = model.bfloat16().cuda()\n    device = model.device',
-         'model.load_state_dict(state_dict, strict=True)\n    del state_dict\n    model = kaggle_place(model)\n    device = torch.device("cuda:0")'),
+         'model.load_state_dict(state_dict, strict=True, assign=True)\n    del state_dict\n    model = kaggle_place(model)\n    device = torch.device("cuda:0")'),
         ('assert args.precision == "bf16"\n            image_clip = image_clip.bfloat16()', 'image_clip = image_clip.half()'),
     ]
     for a, b in rep:
