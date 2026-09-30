@@ -84,11 +84,23 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   /* ---- place + scale: where and how big it is worn ---- */
   let y0 = Infinity, y1 = -Infinity;
   for (let i = 0; i < N; i++) { y0 = Math.min(y0, P0[i * 3 + 1]); y1 = Math.max(y1, P0[i * 3 + 1]); }
+  // a top: its collar is the top of the TORSO column (a sleeve raised in the photo may reach higher); the
+  // torso's centre from its lower part (below the sleeves)
+  let cx0 = 0;
+  if (upper) {
+    let sx = 0, sn = 0, xa = Infinity, xb = -Infinity;
+    for (let i = 0; i < N; i++) { xa = Math.min(xa, P0[i * 3]); xb = Math.max(xb, P0[i * 3]); }
+    for (let i = 0; i < N; i++) if (P0[i * 3 + 1] < y0 + 0.3 * (y1 - y0)) { sx += P0[i * 3]; sn++; }
+    cx0 = sn ? sx / sn : 0;
+    let yc = -Infinity;
+    for (let i = 0; i < N; i++) if (Math.abs(P0[i * 3] - cx0) < 0.12 * (xb - xa)) yc = Math.max(yc, P0[i * 3 + 1]);
+    if (Number.isFinite(yc)) y1 = yc;
+  }
   const gh = y1 - y0;
   // the garment's width over the torso band (below the sleeves) / at the waist, vs the body's there
   const gBand = upper ? [0.55, 0.8] : [0.03, 0.12];
   let gw = 0, cnt = 0;
-  for (let f = gBand[0]; f <= gBand[1]; f += 0.05) { const w = widthAt(P0, N, y1 - f * gh, 0.01 * gh); if (w) { gw += w; cnt++; } }
+  for (let f = gBand[0]; f <= gBand[1]; f += 0.05) { const w = widthAt(P0, N, y1 - f * gh, 0.01 * gh, cx0); if (w) { gw += w; cnt++; } }
   gw /= cnt || 1;
   const topY = upper ? ctx.yNeckSide + 0.01 : ctx.L.waistY + 0.01;
   // first guess of the scale from the body's own width at the same place (then refined once, as the band's
@@ -106,6 +118,9 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   // trousers / skirts with a length measured on the photo (parse.js measuredLowerLength): the hem where the
   // photo shows it (floor: on the floor; ankle: at the ankle …) — more reliable than the waist width
   const REACH = { floor: 1, ankle: 0.93, midi: 0.8, below_knee: 0.68, knee: 0.55, above_knee: 0.4, mini: 0.3, micro: 0.2 };
+  // tops: the hem at the length the photo shows (NGL length word), relative to our waist / hips
+  const TOPHEM = { cropped: ctx.L.waistY + 0.05, waist: ctx.L.waistY - 0.12, high_hip: ctx.L.waistY - 0.15, hip: ctx.L.hipY - 0.02, thigh: ctx.L.crotchY - 0.08 };
+  if (upper && item.zone === 'upper' && TOPHEM[item.length] != null) s = (topY - TOPHEM[item.length]) / gh;
   if (!upper && REACH[item.length] != null) {
     const hemY = item.length === 'floor' ? 0.012 : topY * (1 - REACH[item.length]);
     s = (topY - hemY) / gh;
@@ -118,6 +133,7 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   let gz = 0, gzn = 0, gx = 0;
   for (let i = 0; i < N; i++) if (Math.abs(P0[i * 3 + 1] - (y1 - 0.5 * (gBand[0] + gBand[1]) * gh)) < 0.03 * gh) { gz += P0[i * 3 + 2]; gx += P0[i * 3]; gzn++; }
   gz /= gzn || 1; gx /= gzn || 1;
+  if (upper) gx = cx0;
   const invW = new THREE.Matrix4().copy(human.object.matrixWorld).invert();
   const jpt = (name) => body.bones[body.boneIndex[name]].getWorldPosition(new THREE.Vector3()).applyMatrix4(invW);
   const X0 = new Float32Array(N * 3);
@@ -125,6 +141,32 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
     X0[i * 3] = (P0[i * 3] - gx) * s;
     X0[i * 3 + 1] = topY + (P0[i * 3 + 1] - y1) * s;
     X0[i * 3 + 2] = zc + (P0[i * 3 + 2] - gz) * s;
+  }
+
+  /* ---- sleeves onto our arms: each sleeve turned about the shoulder onto our upper arm (the photo's arm pose
+     is not ours), fading to nothing at the armhole so the seam stays whole ---- */
+  if (item.zone !== 'lower') {
+    for (const side of ['l', 'r']) {
+      const sg = side === 'l' ? 1 : -1, S = jpt(`upperarm_${side}`), E = jpt(`lowerarm_${side}`);
+      const xs = Math.abs(S.x) - 0.03, yLow = S.y - 0.14;
+      const idx = [];
+      for (let i = 0; i < N; i++) if (sg * X0[i * 3] > xs && X0[i * 3 + 1] > yLow - 0.25) idx.push(i);
+      if (idx.length < 50) continue;
+      // the sleeve's direction: from the shoulder to the mean of its far half
+      const far = idx.filter((i) => sg * X0[i * 3] > xs + 0.05);
+      if (far.length < 20) continue;
+      const a = new THREE.Vector3();
+      for (const i of far) a.add(new THREE.Vector3(X0[i * 3] - S.x, X0[i * 3 + 1] - S.y, X0[i * 3 + 2] - S.z));
+      a.normalize();
+      const b = new THREE.Vector3().subVectors(E, S).normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(a, b), qi = new THREE.Quaternion(), v = new THREE.Vector3();
+      for (const i of idx) {
+        const w = smooth(xs + 0.04, xs + 0.12, sg * X0[i * 3]);
+        qi.identity().slerp(q, w);
+        v.set(X0[i * 3] - S.x, X0[i * 3 + 1] - S.y, X0[i * 3 + 2] - S.z).applyQuaternion(qi);
+        X0[i * 3] = S.x + v.x; X0[i * 3 + 1] = S.y + v.y; X0[i * 3 + 2] = S.z + v.z;
+      }
+    }
   }
 
   /* ---- trouser legs onto our legs: below the crotch each leg tube is moved (in x, z) to our leg's axis ---- */
@@ -184,10 +226,29 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   CP.set(Q); CN.set(Nb);
   { let o = nb * 3; underPts.forEach((u, k) => { CP.set(u, o); CN.set(underNrm[k], o); o += u.length; }); }
   for (let i = 0; i < nb; i++) if (skip(i)) CP[i * 3 + 1] = 1e3;         // not part of this garment's collider
-  const col = makeCollider(CP, CN, 0.04);
+  // each skin point's closest point on its bone: the body starts shrunk onto its bones (inside the garment
+  // wherever the garment is — a generated top can be shallower than our chest) and grows back to full size
+  const jw = body.bones.map((b) => b.getWorldPosition(new THREE.Vector3()).applyMatrix4(invW));
+  const childOf = body.bones.map((b) => body.bones.indexOf(b.children.find((c) => c.isBone)));
+  const axis = new Float32Array(nb * 3);
+  for (let i = 0; i < nb; i++) {
+    let best = 0, bw = -1;
+    for (const [b, w] of ctx.WL[i]) if (w > bw) { bw = w; best = b; }
+    const A = jw[best], c = childOf[best], B = c >= 0 ? jw[c] : A;
+    const ex = B.x - A.x, ey = B.y - A.y, ez = B.z - A.z, l2 = ex * ex + ey * ey + ez * ez;
+    const t = l2 > 1e-8 ? Math.max(0, Math.min(1, ((Q[i * 3] - A.x) * ex + (Q[i * 3 + 1] - A.y) * ey + (Q[i * 3 + 2] - A.z) * ez) / l2)) : 0;
+    axis[i * 3] = A.x + ex * t; axis[i * 3 + 1] = A.y + ey * t; axis[i * 3 + 2] = A.z + ez * t;
+  }
+  const GROW = upper ? 16 : 0;
+  let col = makeCollider(CP, CN, 0.04);
   let top = -Infinity; for (let i = 0; i < N; i++) top = Math.max(top, X[i * 3 + 1]);
   const D = new Float32Array(N * 3), fixed = new Uint8Array(N), tmp = new Float32Array(N * 3);
-  for (let it = 0; it < (stage === 'all' ? 30 : 0); it++) {
+  for (let it = 0; it < (stage === 'all' ? 30 + GROW : 0); it++) {
+    if (GROW && it <= GROW) {
+      const f = 0.45 + 0.55 * smooth(0, GROW, it);
+      for (let i = 0; i < nb; i++) if (CP[i * 3 + 1] < 900) for (let c = 0; c < 3; c++) CP[i * 3 + c] = axis[i * 3 + c] + (Q[i * 3 + c] - axis[i * 3 + c]) * f;
+      col = makeCollider(CP, CN, 0.04);
+    }
     D.fill(0); fixed.fill(0);
     let inside = 0;
     for (let i = 0; i < N; i++) {
@@ -205,7 +266,7 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
         fixed[i] = 1; if (d < 0) inside++;
       }
     }
-    if (!inside && it > 4 && it % 4 !== 0) break;
+    if (!inside && it > 4 + GROW && it % 4 !== 0) break;
     // spread the pushes through space (a 2.5 cm grid, blurred): everything near a pushed point — the other
     // layer of the fabric, the fold beside it — moves with it, so the garment moves as a whole
     const G = 0.025, gx0 = -1.5, gy0 = -0.2, gz0 = -1.5, NX = 120, NY = 100, NZ = 120;
