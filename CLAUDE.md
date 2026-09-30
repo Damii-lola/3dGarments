@@ -111,6 +111,17 @@ render.yaml             Render blueprint
 - Categories are `top | outerwear | dress | skirt | pants | shorts`. `WRAP_MODE` maps them to the `upper | full | skirt | legs` wrap strategies.
 - Vision model: `CF_VISION_MODEL` (default `@cf/meta/llama-4-scout-17b-16e-instruct`). If AI fails, the silhouette guess is used and a failed call never blocks processing.
 
+## Garments from photos (the combined pipeline)
+`web/src/garments/pipeline.js` `garmentsFromPhoto(human, image, { describe, pattern, designs, models })` runs every system:
+parse.js (SegFormer clothes parsing, hem length measured on the wearer) → NGL words (`POST /api/ngl/describe`, Cloudflare) →
+`POST /api/ngl/pattern` with the ChatGarment design when there is one (`server/py/combine.py`: ChatGarment's cut, our measured
+lengths, sleeves/neckline voted with NGL, every value validated against GarmentCode's schema; `py/pattern.py` sizes it to the body)
+→ sew.js (sewn + draped, textured from the photo; bake.js) + TRELLIS.2's fitted 3D model when there is one (mesh3d.js: its look
+on the unseen sides and its relief).
+GPU models run on Kaggle: `python tools/garment_ml/kernel.py push <model> <photos>` (chatgarment; trellis2 has its own
+tools/garment_ml/trellis2/kernel.py) — every download shows % on https://ntfy.sh/<topic>, files SHA-256 checked.
+KAGGLE_API_TOKEN only in the shell, never in files. ChatGarment results for the test photos: tools/garment_ml/chatgarment/results.
+
 ## Roadmap / ideas
 - Clothing: front/side/back garment photos → garment fitted on the human (body-surface projection + cut-out textures; `garments.back_texture_path` exists)
 - Better segmentation for busy backgrounds (e.g. a segmentation model or Cloudflare Images `segment=foreground`)
