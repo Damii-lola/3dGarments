@@ -2,6 +2,8 @@
  * One photo → the garments in it, made and worn on the model. Every system we have, each for what it does best:
  *
  *   parse.js       clothes parsing (SegFormer): which pixels are which garment; hem length measured on the wearer
+ *   clean.js       what isn't the garment taken off it (the vision model names it — a necklace, a bag strap, a hand;
+ *                  CLIPSeg + a jewellery detector find it; LaMa paints the fabric back) and its wrinkles smoothed out
  *   NGL (API)      Cloudflare vision → garment words: what each garment is, a second opinion on sleeves / neckline
  *   ChatGarment    (a GPU job, tools/garment_ml/chatgarment) → GarmentCode design: the garment's CUT, when we have it
  *   pattern (API)  py/pattern.py + py/combine.py: ChatGarment's cut + our lengths + the votes → a sewing pattern
@@ -20,6 +22,7 @@
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …) }]  lower garments first
  */
 import { parsePhoto, cutGarment, measuredLowerLength } from './parse.js';
+import { cleanGarment } from './clean.js';
 import { posedBody, Photo } from './fit.js';
 import { sewPattern } from './sew.js';
 import { loadGarmentGLB, fitMeshGarment } from './mesh3d.js';
@@ -47,7 +50,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   c.width = Math.round(image.width * k); c.height = Math.round(image.height * k);
   c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
   onStep('Reading what each garment is…');
-  const { garments = [] } = await describe(c.toDataURL('image/jpeg', 0.9));
+  const { garments = [], onGarment = [] } = await describe(c.toDataURL('image/jpeg', 0.9));
   const body = bodyMeasures(human);
   const out = [], worn = [...under], seen = new Set();
   const order = garments.map((g) => ({ g, zone: zoneOf(g.type) })).sort((a, b) => (a.zone === 'lower' ? -1 : 1) - (b.zone === 'lower' ? -1 : 1));
@@ -59,6 +62,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     seen.add(zone);
     const garment = structuredClone(g);
     if (zone !== 'upper' && garment.lower) garment.lower.length = measuredLowerLength(parsed, cut.mask) || garment.lower.length;
+    const clean = await cleanGarment(parsed, cut, { onGarment, onStep });
     onStep(`Cutting the ${g.type}'s sewing pattern…`);
     const pat = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body });
     const item = { id: `${g.type}-${zone}`, name: g.type, type: g.type, category: CATEGORY[zone](g.type), zone, backFill: 'color' };
@@ -70,7 +74,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       detail = fm.detail; fm.dispose();
     }
     onStep(`Sewing the ${g.type} on the model…`);
-    const built = sewPattern(B, human, item, pat, { front: new Photo(cut.cut, cut.geometry) }, { under: worn.map((w) => w.posed), detail });
+    const built = sewPattern(B, human, item, pat, { front: new Photo(clean.cut, clean.geometry) }, { under: worn.map((w) => w.posed), detail });
     worn.push(built);
     out.push({ zone, garment, built });
   }

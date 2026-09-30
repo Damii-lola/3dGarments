@@ -9,6 +9,7 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
     "@pmndrs/assets": "^1.7.0",
     "@supabase/supabase-js": "^2.45.0",
     "delaunator": "^5.1.0",

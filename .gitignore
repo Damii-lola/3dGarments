@@ -19,3 +19,5 @@ web/public/_tmp/
 web/glbview.html
 tools/garment_ml/*/out/
 tools/garment_ml/*/.topic
+web/blank.html
+web/src/_probe.js
