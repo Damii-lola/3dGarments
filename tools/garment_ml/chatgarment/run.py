@@ -79,8 +79,10 @@ def run():
     sh(f'rm -rf {CG} {GC} && git clone -q --depth 1 https://github.com/biansy000/ChatGarment {CG} && '
        f'git clone -q --depth 1 https://github.com/biansy000/GarmentCodeRC {GC}', 'ChatGarment + GarmentCode source')
     sh('pip install -q "transformers==4.37.2" "tokenizers==0.15.2" "sentencepiece>=0.2" "peft==0.10.0" "accelerate==0.32.0" '
-       'easydict "einops==0.6.1" "einops-exts==0.0.4" "timm==0.6.13" shortuuid svgwrite svgpathtools pyyaml scipy json-repair',
+       'easydict "einops==0.6.1" "einops-exts==0.0.4" "timm==0.6.13" shortuuid svgwrite svgpathtools pyyaml scipy json-repair '
+       'cairosvg psutil matplotlib tensorboard opencv-python-headless',
        'Python dependencies', 'pip')
+    sh('(which apt-get && (apt-get install -y -q libcairo2 >/dev/null 2>&1 || true)); python -c "import cairosvg"', 'Cairo (SVG → PNG for GarmentCode)', 'pip')
     sh(f'pip install -q --no-deps -e {CG}', 'ChatGarment package', 'pip')
     sh(f'pip install -q --no-deps -e {GC}', 'GarmentCode package', 'pip', optional=True)
     # ChatGarment's training module imports DeepSpeed at load time; inference never calls it
