@@ -18,19 +18,33 @@ Answer with strict JSON only, no prose, choosing every value ONLY from the optio
   "type": one of ${VOCAB.types.join('|')},
   "upper": { ${opts(VOCAB.upper)} },
   "lower": { ${opts(VOCAB.lower)} }
-} ]}
+} ],
+ "on_garment": [ things that are NOT part of the garments but lie on or in front of them in this photo, only from: ${VOCAB.on_garment.join('|')} ] }
 Rules:
 - One entry per separate garment that is visible (e.g. a top and a skirt are two entries; a dress or jumpsuit is ONE entry).
 - "upper" is required for top/shirt/sweater/hoodie/jacket/tank/dress/jumpsuit; omit it for skirt/pants/shorts.
 - "lower" is required for dress/jumpsuit/skirt/pants/shorts; omit it for tops. For a dress, "lower" describes its skirt part.
 - "skirt_shape" is only for skirts/dresses; "leg" only for pants/shorts/jumpsuits.
 - Lengths are where the hem falls on the wearer's body. For a flat-laid garment, judge from its proportions.
-- If a detail is hidden, give your best guess from the options.`;
+- If a detail is hidden, give your best guess from the options.
+- "on_garment": list every accessory or body part covering part of a garment (a necklace or chain over a top, a bag strap
+  across it, a hand on it, long hair over it …); an empty list if nothing covers them. Prints, logos, pockets, buttons
+  and patches ARE part of the garment: never list them.`;
 
 const pick = (v, allowed, dflt) => {
   const t = String(v ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   return allowed.includes(t) ? t : dflt;
 };
+
+/** what the model says lies on the garments (accessories, hands …) → words from VOCAB.on_garment */
+export function parseOnGarment(answer) {
+  if (typeof answer === 'string') {
+    const s = answer.slice(answer.indexOf('{'), answer.lastIndexOf('}') + 1);
+    try { answer = s ? JSON.parse(s) : {}; } catch { answer = {}; }
+  }
+  const list = Array.isArray(answer?.on_garment) ? answer.on_garment : [];
+  return [...new Set(list.map((w) => pick(w, VOCAB.on_garment, null)).filter(Boolean))];
+}
 
 /** the model's answer (object or text) → [{ type, upper?, lower? }] with every value from the vocabulary */
 export function parseNGL(answer) {

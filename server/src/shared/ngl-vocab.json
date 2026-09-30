@@ -140,5 +140,22 @@
    "waistband": "band",
    "slit": "none"
   }
- }
+ },
+ "on_garment": [
+  "necklace",
+  "chain",
+  "pendant",
+  "bag",
+  "bag_strap",
+  "hand",
+  "bracelet",
+  "watch",
+  "ring",
+  "long_hair",
+  "cup",
+  "phone",
+  "sunglasses",
+  "scarf",
+  "belt"
+ ]
 }
