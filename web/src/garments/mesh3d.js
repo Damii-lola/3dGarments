@@ -246,7 +246,7 @@ export async function fitMeshGarment(body, human, item, src, { under = [], tris 
   for (let it = 0; it < (stage === 'all' ? 30 + GROW : 0); it++) {
     if (GROW && it <= GROW) {
       const f = 0.45 + 0.55 * smooth(0, GROW, it);
-      for (let i = 0; i < nb; i++) if (CP[i * 3 + 1] < 900) for (let c = 0; c < 3; c++) CP[i * 3 + c] = axis[i * 3 + c] + (Q[i * 3 + c] - axis[i * 3 + c]) * f;
+      for (let i = 0; i < nb; i++) if (CP[i * 3 + 1] < 900 && reg[i] === 'torso') for (let c = 0; c < 3; c++) CP[i * 3 + c] = axis[i * 3 + c] + (Q[i * 3 + c] - axis[i * 3 + c]) * f;
       col = makeCollider(CP, CN, 0.04);
     }
     D.fill(0); fixed.fill(0);
