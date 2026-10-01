@@ -101,7 +101,8 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         line, collar capped 9 cm) and one per sleeve (along the arm from the shoulder joint × around it). One
                         SkinnedMesh of the body's skin triangles (subset geometry: its bones, morph targets, suitGap/suitNrm),
                         alpha-tested (the photo's outline = the garment's edges), 1.2 mm over the suit; Body.layers re-binds it.
-                        Hidden skin + underwear (materials.js _hide) sink only 4 mm and are DRAWN 3 cm DEEPER (pushed along the
+                        Hidden skin (materials.js _hide; underwear is never hidden: it's 2.5 mm off the skin, under fabric
+                        that is ≥ 2.7 mm off it) sinks only 4 mm and is DRAWN 3 cm DEEPER (pushed along the
                         line of sight in project_vertex: same pixels, only depth) — a point sunk deep near a bending joint
                         comes out through the skin, and a depth step at an open edge reads as a crease to the AO: so the
                         hide set skips the skin's last triangle at an open edge. Tops only so far.
@@ -115,6 +116,14 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         each cut on its side (shell.js `seam`), so the seam is a smooth line. shell.reskin re-mixes the
                         garment's bones when the body re-weights its armpits (weightListeners). collide.js: after every pose
                         the arms/hands push the torso's hang in (drapeK), the dent smoothed.
+                        COLLAR: the fall stands off the neck as a cone (drape.js collarTop/collarFlare); collarLine cuts one
+                        smooth anti-aliased roll line (highest at the nape, lower at the sides, nothing at the throat — on the
+                        hanger its sides climb toward the hook), the fall's edge 45 mm under it is stepped (edgeBands) and
+                        shaded; the front/back photos are welded at the sides (else a line of pinholes). POCKETS: pocketPlan
+                        (sheet's kind + place → torso-chart rects, kept 22 mm clear of an open front) → drawPockets (stitching,
+                        patch hem fold, flap, welt slit, shadow) + raised in edgeBands. drawButtonholes: each button's mirror
+                        on the other panel, 15 mm in from its edge. CLOSE-UPS (photos that aren't whole views): buttonFace
+                        (details.js) cuts the real button out of one → the 3D buttons' face.
                         3D + DETAILS (the AI decides, the code builds): POST /api/ngl/details (shared/details.js: the vision
                         model fills a fixed vocabulary — collar style, closure + button count/colour, placket, pockets, cuffs,
                         hem, fabric material/finish/pattern/weight, colours, what's shown inside, accessories). shell.js makes

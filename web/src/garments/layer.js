@@ -420,11 +420,123 @@ function finishTexture(T) {
 }
 
 /**
+ * POCKETS (the detail sheet's kind + place): where a shirt / jacket has them, on the torso chart — u (front half
+ * 0 … 0.5, image left = the wearer's right; 1 u ≈ 1024 mm round the body) × h (m below the shoulder line). Each:
+ * { u0, u1, h0, h1, kind } and inside(u, h) → mm in from its outline (< 0 outside); a patch pocket's bottom corners
+ * rounded, a flap's point.
+ */
+const U_MM = 1024;
+function pocketPlan(det, T = null) {
+  const out = [];
+  for (const p of det?.pockets || []) {
+    const kind = p.kind || 'patch';
+    const add = (uc, w, h0, h1) => out.push({ u0: uc - w / 2, u1: uc + w / 2, h0, h1, kind });
+    const both = (off, w, h0, h1) => { add(0.25 - off, w, h0, h1); add(0.25 + off, w, h0, h1); };
+    switch (p.place) {
+      case 'chest_left': add(0.25 + 0.1, kind === 'welt' ? 0.11 : 0.12, 0.17, kind === 'welt' ? 0.185 : 0.31); break;
+      case 'chest_right': add(0.25 - 0.1, kind === 'welt' ? 0.11 : 0.12, 0.17, kind === 'welt' ? 0.185 : 0.31); break;
+      case 'chest_both': both(0.1, 0.12, 0.17, 0.31); break;
+      case 'waist_both': both(0.12, 0.16, 0.44, kind === 'welt' ? 0.46 : 0.6); break;
+      case 'hip_both': both(0.12, 0.16, 0.5, kind === 'welt' ? 0.52 : 0.66); break;
+      case 'front_center': add(0.25, 0.24, 0.46, 0.64); break;
+    }
+  }
+  // on its own panel: an open front (or a placket) mustn't run through a pocket — moved out to 22 mm clear of the
+  // front edge at its rows
+  if (T) for (const q of out) {
+    if (q.kind === 'kangaroo') continue;
+    const right = q.u0 + q.u1 > 0.5, row = (h) => Math.max(0, Math.min(T.H - 1, Math.floor(((h - TORSO.top) / (TORSO.bottom - TORSO.top)) * T.H)));
+    let edge = right ? 0 : 1;
+    for (let h = q.h0; h <= q.h1; h += 0.005) {
+      const j = row(h);
+      if (right) { let i = Math.floor(0.25 * T.W); while (i < T.W / 2 && T.data[(j * T.W + i) * 4 + 3] < 128) i++; edge = Math.max(edge, i / T.W); }
+      else { let i = Math.floor(0.25 * T.W); while (i > 0 && T.data[(j * T.W + i) * 4 + 3] < 128) i--; edge = Math.min(edge, (i + 1) / T.W); }
+    }
+    const gap = 22 / U_MM, w = q.u1 - q.u0;
+    if (right && q.u0 < edge + gap) { q.u0 = edge + gap; q.u1 = q.u0 + w; }
+    if (!right && q.u1 > edge - gap) { q.u1 = edge - gap; q.u0 = q.u1 - w; }
+  }
+  for (const q of out) {
+    const rc = q.kind === 'kangaroo' ? 0 : 0.012;                                   // rounded bottom corners (m)
+    q.inside = (u, h) => {
+      const x = (u - q.u0) * U_MM, y = (h - q.h0) * 1000, W = (q.u1 - q.u0) * U_MM, H = (q.h1 - q.h0) * 1000;
+      // a kangaroo pocket narrows to its top (its openings slant in at the sides)
+      const sl = q.kind === 'kangaroo' ? 40 * (1 - y / H) : 0;
+      let d = Math.min(x - sl, W - sl - x, y, H - y);
+      const R = rc * 1000, cx = x < R ? R : x > W - R ? W - R : x, cy = H - R;
+      if (R && y > cy && (x < R || x > W - R)) d = Math.min(d, R - Math.hypot(x - cx, y - cy));
+      return d;
+    };
+    q.flap = q.kind === 'patch_flap' ? (u, h) => {                                // a flap over its top 45 mm, pointed
+      const x = (u - q.u0) * U_MM, y = (h - q.h0) * 1000, W = (q.u1 - q.u0) * U_MM, lim = 45 + 12 * (1 - Math.abs(x - W / 2) / (W / 2));
+      return Math.min(x + 3, W + 3 - x, y + 2, lim - y);
+    } : null;
+  }
+  return out;
+}
+
+/** a pocket drawn on the torso's texture: the stitching, the hem fold at a patch's top, the edge catching the light
+ *  and its shadow on the shirt (finishTexture then turns the shading into relief) */
+function drawPockets(T, plan) {
+  const { W, H, data: d } = T, mmV = H / ((TORSO.bottom - TORSO.top) * 1000);
+  const shade = (o, k, add = 0) => { for (let c = 0; c < 3; c++) d[o + c] = Math.max(0, Math.min(255, d[o + c] * k + add)); };
+  for (const q of plan) {
+    const i0 = Math.floor(q.u0 * W) - 8, i1 = Math.ceil(q.u1 * W) + 8;
+    const j0 = Math.floor(((q.h0 - TORSO.top) / (TORSO.bottom - TORSO.top)) * H) - 8, j1 = Math.ceil(((q.h1 - TORSO.top) / (TORSO.bottom - TORSO.top)) * H) + 8;
+    for (let j = Math.max(0, j0); j < Math.min(H, j1); j++) for (let i = i0; i < i1; i++) {
+      const ii = ((i % W) + W) % W, o = (j * W + ii) * 4;
+      if (d[o + 3] < 128) continue;
+      const u = (ii + 0.5) / W, h = TORSO.top + ((j + 0.5) / H) * (TORSO.bottom - TORSO.top), e = q.inside(u, h);
+      if (e < 0) { if (e > -3) shade(o, 0.6 + 0.13 * -e); continue; }                         // its shadow
+      if (e < 1.2) { shade(o, 1.15, 14); continue; }                                            // the edge
+      const stitch = (dd) => Math.abs(e - dd) < 0.45 && Math.floor((((u - q.u0) * U_MM) + (h - q.h0) * 1000) / 2.4) % 2 === 0;
+      if (q.kind !== 'welt' && stitch(3)) { shade(o, 1.25, 30); continue; }                    // the topstitching
+      const top = (h - q.h0) * 1000;
+      if (q.kind === 'patch' && Math.abs(top - 22) < 0.7) { shade(o, 0.7); continue; }         // the hem's fold
+      if (q.kind === 'welt' && top < 1.4) { shade(o, 0.35); continue; }                         // the welt's slit
+      if (q.kind === 'kangaroo' && (q.inside(u, h) < 6)) { shade(o, 0.92); continue; }
+      if (q.flap) {
+        const f = q.flap(u, h);
+        if (f >= 0 && f < 1.2) { shade(o, 1.15, 12); continue; }
+        if (f < 0 && f > -2.5) { shade(o, 0.6); continue; }
+        if (f > 2.5 && f < 3.4 && Math.floor(((u - q.u0) * U_MM + top) / 2.4) % 2 === 0) { shade(o, 1.25, 30); continue; }
+      }
+    }
+  }
+  T.canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(d.buffer, d.byteOffset, d.length), W, H), 0, 0);
+  return mmV;
+}
+
+/** the buttonholes, on the other front panel: each button's mirror, 15 mm in from that panel's edge — a slit along
+ *  the placket, its two rows of satin stitch round it (as the close-ups show them) */
+function drawButtonholes(T, buttons) {
+  const { W, H, data: d } = T, rowsPerMm = H / ((TORSO.bottom - TORSO.top) * 1000);
+  for (const b of buttons) {
+    const j = Math.floor(((b.h - TORSO.top) / (TORSO.bottom - TORSO.top)) * H);
+    if (j < 0 || j >= H) continue;
+    // the other panel's front edge at this row
+    const right = b.u < 0.25;
+    let i = Math.floor(0.25 * W);
+    if (right) { while (i < W / 2 && d[(j * W + i) * 4 + 3] < 128) i++; } else { while (i > 0 && d[(j * W + i) * 4 + 3] < 128) i--; }
+    if (i <= 0 || i >= W / 2 - 1) continue;
+    const ic = i + (right ? 1 : -1) * Math.round(15 * (W / U_MM)), half = Math.max(5, (b.r * 1000 + 2)) * rowsPerMm;
+    for (let jj = Math.floor(j - half - 2); jj <= j + half + 2; jj++) for (let q = -3; q <= 3; q++) {
+      if (jj < 0 || jj >= H) continue;
+      const o = (jj * W + ic + q) * 4; if (d[o + 3] < 128) continue;
+      const ends = Math.abs(jj - j) > half, aq = Math.abs(q);
+      const k = !ends && aq === 0 ? 0.3 : (!ends && aq <= 2) || (ends && aq <= 2 && Math.abs(jj - j) <= half + 2) ? 1.3 : 1;
+      for (let c = 0; c < 3; c++) d[o + c] = Math.max(0, Math.min(255, d[o + c] * k + (k > 1 ? 22 : 0)));
+    }
+  }
+  T.canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(d.buffer, d.byteOffset, d.length), W, H), 0, 0);
+}
+
+/**
  * How a garment's edges are finished (from its detail sheet): along every edge a band of doubled fabric stands out a
  * little — a collar along the neckline and lapels, the placket along a buttoned front, a folded hem, a rolled or
  * hemmed cuff. A distance-to-the-edge field on the chart (chamfer, millimetres) → raise(u, v) in metres.
  */
-function edgeBands(T, kind, det) {
+function edgeBands(T, kind, det, plan = []) {
   const { W, H, data } = T, D = new Float32Array(W * H);
   // millimetres per texel across / down the chart (around: ~ a chest's or an arm's girth over its width)
   const du = kind === 'torso' ? 1.0 : 0.65, dv = kind === 'torso' ? ((TORSO.bottom - TORSO.top) * 1000) / H : (SLEEVE.len * 1000) / H, dd = Math.hypot(du, dv);
@@ -447,7 +559,7 @@ function edgeBands(T, kind, det) {
   // a band: full height up to its width, easing off over its last quarter
   // a band: full height up to its width, then a short step down (a folded edge, not a slope)
   const band = (d, width, height, ease = 8) => (d >= width ? 0 : d <= width - ease ? height : height * (width - d) / ease);
-  const collar = det?.collar?.style && det.collar.style !== 'none';
+  const collar = det?.collar?.style && det.collar.style !== 'none', pockets = kind === 'torso' ? plan : [];
   const buttoned = det?.closure && det.closure.type !== 'none' && det.closure.type !== 'pullover';
   const cuff = det?.sleeves?.cuff || 'hemmed';
   if (kind === 'sleeve') {
@@ -465,6 +577,13 @@ function edgeBands(T, kind, det) {
     if (buttoned && frontC && h >= 0.1) r = Math.max(r, band(d, 24, 0.0012));                  // the placket
     if (h > 0.3 && !frontC) r = Math.max(r, band(d, 16, 0.0009));                              // the hem's fold
     if (h > 0.3 && frontC) r = Math.max(r, band(d, 16, 0.0009));
+    // pockets: a patch stands out by its two layers, a flap more, a welt is a narrow lip
+    for (const q of pockets) {
+      if (u < q.u0 - 0.01 || u > q.u1 + 0.01 || h < q.h0 - 0.01 || h > q.h1 + 0.01) continue;
+      const e = q.inside(u, h);
+      if (e > 0) r = Math.max(r, (q.kind === 'welt' ? 0.0012 : 0.0011) * Math.min(1, e / 1.5));
+      if (q.flap) { const f = q.flap(u, h); if (f > 0) r = Math.max(r, 0.0022 * Math.min(1, f / 1.5)); }
+    }
     return r;
   };
 }
@@ -503,7 +622,13 @@ export function layerGarment(human, photos, opts = {}) {
 
   const inTorso = (i) => part[i] < 0.5 && (region[i] === 'torso' || (region[i].startsWith('leg') && Q[i * 3 + 1] > body.crotchY));
   const ring = torsoRings(body, inTorso);
-  const torsoT = finishTexture(torsoTexture(front, back));
+  const torsoRaw = torsoTexture(front, back), plan = pocketPlan(opts.details, torsoRaw);
+  if (plan.length) drawPockets(torsoRaw, plan);
+  if (opts.buttons?.length) drawButtonholes(torsoRaw, opts.buttons.map((b) => {
+    const t = F.torsoAt(b.y); if (!t) return null;
+    return { u: ((b.x - t[0]) / ((t[1] - t[0]) || 1)) * 0.5, h: (b.y - F.shoulderY) * front.s, r: b.r * front.s };
+  }).filter(Boolean));
+  const torsoT = finishTexture(torsoRaw);
   const torsoUV = (i) => {
     const [half, f] = ring(Q[i * 3], Q[i * 3 + 1], Q[i * 3 + 2]);
     const h = body.ys - Q[i * 3 + 1];
@@ -614,7 +739,7 @@ export function layerGarment(human, photos, opts = {}) {
   const thick = opts.thick ?? 0.0012;
   const det = opts.details || null;
   const pieces = per.map((P, c) => ({ tris: P.tris, uvs: P.uvs, group: c, alpha: (u, v) => alphaBilinear(charts[c].T, u, v), seam: seamFor(c),
-    raise: edgeBands(charts[c].T, c === 0 ? 'torso' : 'sleeve', det) })).filter((p) => p.tris.length);
+    raise: edgeBands(charts[c].T, c === 0 ? 'torso' : 'sleeve', det, plan) })).filter((p) => p.tris.length);
   if (!pieces.length) return null;
   // how it hangs (drape.js): the garment's own girths off the photos — its torso (front + back flat widths) and
   // each sleeve (front + back sleeve widths) — around the body's
@@ -668,7 +793,7 @@ export function layerGarment(human, photos, opts = {}) {
     }
     if (items.length) {
       const bg = buildAnchored(g, items, drape);
-      const bm = buttonMaterial(opts.buttons[0].color);
+      const bm = buttonMaterial(opts.buttonFace?.color || opts.buttons[0].color, opts.buttonFace?.canvas);
       buttons = new THREE.SkinnedMesh(bg, bm);
       buttons.name = 'garment-buttons';
       buttons.frustumCulled = false;
@@ -690,14 +815,8 @@ export function layerGarment(human, photos, opts = {}) {
   const nb = Array.from({ length: n }, () => []);
   for (let t = 0; t < skinEnd; t += 3) for (let e = 0; e < 3; e++) { const a = idx[t + e], b = idx[t + (e + 1) % 3]; nb[a].push(b); nb[b].push(a); }
   for (let i = 0; i < n; i++) if (part[i] < 0.5 && vAlpha[i] > 0.9 && nb[i].every((j) => vAlpha[j] > 0.6)) hide.add(i);
-  // the underwear under it: drawn deeper too (whole — a bra seen in an open front is a bra, not a cut-off piece of one)
-  for (let i = 0; i < n; i++) {
-    if (part[i] < 3.5 || part[i] > 4.5) continue;
-    const c = ownerOf(i);
-    if (c < 0 || !charts[c]) continue;
-    const [u, v] = charts[c].uv(i);
-    if (alphaAt(charts[c].T, u, v) > 0.5) hide.add(i);
-  }
+  // (the underwear stays as it is: 2.5 mm off the skin, under fabric that is ≥ 2.7 mm off it everywhere — drawn
+  // deeper it would fall behind the very skin it lies on, and the bra seen in an open front would break up)
 
   // the body re-weights its armpits as the arms move: the garment (and its buttons) with it
   const onWeights = () => { reskin(geo, g); if (buttons) reskin(buttons.geometry, g); };
@@ -831,9 +950,19 @@ function buttonItem(body, at, r, lift) {
 }
 
 /** a button's face: its colour from the photo, a raised rim, four holes and the thread through them */
-function buttonMaterial(color = [235, 235, 235]) {
+function buttonMaterial(color = [235, 235, 235], face = null) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const x = c.getContext('2d'), [r, g, b] = color.map((v) => Math.round(v));
+  if (face) {
+    // the real button (a close-up photo, details.js buttonFace): its face, and its colour round the rim
+    x.fillStyle = `rgb(${r},${g},${b})`; x.fillRect(0, 0, 128, 128);
+    x.save(); x.beginPath(); x.arc(64, 64, 62, 0, Math.PI * 2); x.clip(); x.drawImage(face, 0, 0, 128, 128); x.restore();
+    const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.MeshPhysicalMaterial({ map, roughness: 0.3, clearcoat: 0.6, clearcoatRoughness: 0.2 });
+    m.onBeforeCompile = offset;
+    m.customProgramCacheKey = () => 'garment-buttons';
+    return m;
+  }
   const col = (k) => `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
   x.fillStyle = col(1); x.fillRect(0, 0, 128, 128);
   const grd = x.createRadialGradient(64, 64, 10, 64, 64, 64); grd.addColorStop(0, col(0.92)); grd.addColorStop(0.72, col(0.88)); grd.addColorStop(0.86, col(1.06)); grd.addColorStop(1, col(0.85));

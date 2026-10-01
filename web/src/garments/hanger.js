@@ -13,7 +13,7 @@
 import { parsePhoto, cutGarment } from './parse.js';
 import { cleanGarment } from './clean.js';
 import { layerGarment } from './layer.js';
-import { findButtons } from './details.js';
+import { findButtons, buttonFace } from './details.js';
 
 const SKIN = [11, 12, 13, 14, 15];                     // face, legs, arms
 
@@ -55,14 +55,17 @@ export async function hangerGarment(human, images, { onStep = () => {}, describe
     if (details) detailed = details(jpeg).then((r) => r?.details || null).catch(() => null);
     await new Promise((r) => setTimeout(r, 0));
   }
-  const views = [];
+  const views = [], closeups = [];
   for (const [k, img] of images.entries()) {
-    if (views.length >= 2) break;
+    if (views.length >= 2) { closeups.push(img); continue; }
     const parsed = k === 0 && parsedFirst ? parsedFirst : await parsePhoto(img, 1024, 384);
     const cut = cutGarment(parsed, 'full');
-    if (!wholeView(parsed, cut)) continue;
+    if (!wholeView(parsed, cut)) { closeups.push(img); continue; }
     views.push({ parsed, cut });
   }
+  // the close-ups (a button, the collar, a cuff): a button's face is taken from the clearest one
+  let face = null;
+  for (const img of closeups) { const f = buttonFace(img); if (f && (!face || f.r > face.r)) face = f; }
   if (!alive()) return null;
   if (!views.length) return null;
   onStep('Taking the hanger and what hangs with it off the garment…');
@@ -94,7 +97,7 @@ export async function hangerGarment(human, images, { onStep = () => {}, describe
   const built = layerGarment(human, {
     front: { cut: cleaned[0].cut, geometry: cleaned[0].geometry },
     back: cleaned[1] ? { cut: cleaned[1].cut, geometry: cleaned[1].geometry } : null,
-  }, { details: det, buttons, thick: THICK[det?.fabric?.weight] ?? 0.0012, finish: det?.fabric?.finish });
+  }, { details: det, buttons, buttonFace: face, thick: THICK[det?.fabric?.weight] ?? 0.0012, finish: det?.fabric?.finish });
   if (built) built.details = det;
   if (!built) return [];
   const type = ngl?.garments?.[0]?.type || cleaned[0].geometry.guess;
