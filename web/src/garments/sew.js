@@ -84,10 +84,22 @@ function meshPanel(panel) {
 /**
  * @param pattern  { panels, stitches } from POST /api/ngl/pattern (cm, y up, facing +z)
  * @param photos   { front: Photo, back?: Photo }
+ * @param opts     { under, warm, detail, pace: true — the page is given a frame every ~50 ms of simulation (the body in
+ *                 the pose shown for it: sewing poses the visible body's own bones), so it stays responsive while a
+ *                 garment is sewn; false: one blocking run }
  */
-export function sewPattern(body, human, item, pattern, photos, { under = [], warm = null, detail = null } = {}) {
+export async function sewPattern(body, human, item, pattern, photos, { under = [], warm = null, detail = null, pace = true } = {}) {
   const bones = body.bones;
   const display = snapPose(bones);
+  let slice = performance.now();
+  const breathe = async () => {
+    if (!pace || performance.now() - slice < 50) return;
+    const now = snapPose(bones);
+    setPose(bones, display); human.object.updateMatrixWorld(true);
+    await new Promise((r) => setTimeout(r, 0));
+    setPose(bones, now); human.object.updateMatrixWorld(true);
+    slice = performance.now();
+  };
   const ctx = posedBody(body, human);
   const { n: nb, reg } = ctx;
   const fab = fabricOf(item.material || item.type, item.category);
@@ -259,11 +271,12 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       const k = Math.max(0, 1 - (t + 1) / (SEW * 0.7));
       for (let q = 0; q < rest0.length; q++) seam.rest[q] = rest0[q] * k;
       cloth.step(dt, SUB, G * smooth(SEW * 0.6, SEW, t), col, thick);
+      await breathe();
       if (globalThis.__sewLog) { let a = 0, b = 9, gap = 0; for (let k = 0; k < N; k++) { a = Math.max(a, cloth.x[k * 3 + 1]); b = Math.min(b, cloth.x[k * 3 + 1]); } for (let q = 0; q < seamPairs.length; q += 2) { const i = seamPairs[q] * 3, j = seamPairs[q + 1] * 3; gap = Math.max(gap, Math.hypot(cloth.x[i] - cloth.x[j], cloth.x[i + 1] - cloth.x[j + 1], cloth.x[i + 2] - cloth.x[j + 2])); } globalThis.__sewLog.push([t, a.toFixed(3), b.toFixed(3), gap.toFixed(3)]); }
     }
     cloth.stick = 1;
     if (!stopNow) {
-      for (let t = 0; t < 40; t++) cloth.step(dt, SUB, G, col, thick);
+      for (let t = 0; t < 40; t++) { cloth.step(dt, SUB, G, col, thick); await breathe(); }
     }
     sewn = Float32Array.from(cloth.x);
     if (globalThis.__sewStop === 'sewn' || stopNow) {                      // debug: the raw cloth as sewn
@@ -300,6 +313,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
         for (let q = 0; q < N * 3; q++) { const dd = cur[q] - prev[q]; cloth.x[q] += dd; cloth.p[q] += dd; }
         prev.set(cur);
         for (let r = 0; r < 3; r++) cloth.step(dt, SUB, G, col, thick);
+        await breathe();
       }
     }
   }
@@ -307,7 +321,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
   setPose(bones, display);
   human.object.updateMatrixWorld(true);
   sk = skinNow(); col = collider(sk); setAnchors(sk);
-  for (let t = 0; t < (warm ? 50 : 80); t++) cloth.step(dt, SUB, G, col, thick, t > 50 ? 0.97 : 0.995);
+  for (let t = 0; t < (warm ? 50 : 80); t++) { cloth.step(dt, SUB, G, col, thick, t > 50 ? 0.97 : 0.995); await breathe(); }
   /* ---- a fitted / tight garment hugs the body: knits (and stretch denim, a pencil skirt) are cut SMALLER than the
      body and stretched onto it — negative ease. GarmentCode's plain shirt is a straight box from the chest down (a man's
      waist is ~15 cm smaller than his chest: all of it hung loose). The crosswise rest lengths shrink (by how crosswise
@@ -327,7 +341,7 @@ export function sewPattern(body, human, item, pattern, photos, { under = [], war
       }
     }
     stretchG.limit = 1 / (1 - hug) + 0.04;
-    for (let t = 0; t < 70; t++) cloth.step(dt, SUB, G, col, thick, t > 40 ? 0.97 : 0.995);
+    for (let t = 0; t < 70; t++) { cloth.step(dt, SUB, G, col, thick, t > 40 ? 0.97 : 0.995); await breathe(); }
     globalThis.__hug = { fit: item.fit, hug };
   }
   const X = cloth.x;

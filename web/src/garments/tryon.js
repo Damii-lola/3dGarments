@@ -41,6 +41,7 @@ export function prepareTryOn() {
 export function createTryOn({ human, stage }) {
   let worn = [];        // sew.js results
   let busy = null;
+  let run = 0;          // the try-on in progress (a take-off during it cancels it: its results are dropped)
 
   const show = () => {
     const hide = new Set(), deep = new Set();
@@ -51,6 +52,7 @@ export function createTryOn({ human, stage }) {
   };
 
   const takeOff = () => {
+    run++;
     for (const w of worn) w.dispose();
     worn = [];
     for (const b of Object.values(human.bodies)) b.setHidden(new Set());
@@ -60,21 +62,40 @@ export function createTryOn({ human, stage }) {
   return {
     get wearing() { return worn.length > 0; },
     get busy() { return !!busy; },
-    /** @returns [{ zone, garment, sex, source }] what was made */
+    /** @returns [{ zone, garment, sex, source }] what was made, or null when it was taken off before it was done */
     async wear(image, onStep = () => {}, onSex = null) {
       if (busy) throw new Error('Already dressing the model — one photo at a time');
       busy = (async () => {
         takeOff();
+        const me = run;
+        const live = () => me === run;
+        let drafted = false;
         const res = await garmentsFromPhoto(human, image, {
           describe: (jpeg) => retry(() => api('/api/ngl/describe', { method: 'POST', body: { image: jpeg }, timeout: 120_000 })),
           pattern: (req) => retry(() => api('/api/ngl/pattern', { method: 'POST', body: req, timeout: 120_000 })),
-          onStep, onSex,
-          // the app's budget is ~30 s a photo: one re-cut to the photo when the first cut is clearly off, no CLIPSeg (139 MB) or LaMa (208 MB) —
-          // the clothes parser, the jewellery detector and fill.js do their jobs in a fraction of the time
-          fitRounds: 1, fitTolerance: 0.25, search: false, painter: 'patch', parseSize: 384,
-        });
+          onStep: (t) => onStep(drafted && /^Matching|^Trying/.test(t) ? `Dressed — fine-tuning the fit to the photo…` : t),
+          onSex: onSex && ((sex) => (live() ? onSex(sex) : undefined)),
+          // each garment is shown the moment its first drape is sewn; the re-cuts to the photo replace it after
+          // (two frames: the stage draws it before the next garment's sewing holds the page)
+          onDraft: async (builts) => {
+            if (!live()) return;
+            worn = builts; show(); drafted = true;
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          },
+          // the app's budget is ~30 s a photo: one re-cut to the photo when the first cut is off (after it's shown), no CLIPSeg
+          // (139 MB) or LaMa (208 MB) — the clothes parser, the jewellery detector and fill.js do their jobs in a
+          // fraction of the time
+          fitRounds: 1, fitTolerance: 0.15, search: false, painter: 'patch', parseSize: 384,
+          alive: live,
+        }).catch((e) => { if (e.cancelled || !live()) return null; takeOff(); throw e; });
+        if (!res || !live()) {                  // taken off meanwhile (another sex, another photo): dropped
+          for (const r of res || []) r.built.dispose();
+          for (const b of res?.retired || []) b.dispose();
+          return null;
+        }
         worn = res.map((r) => r.built);
         show();
+        for (const b of res.retired || []) b.dispose();
         return res.map(({ zone, garment, sex, source }) => ({ zone, garment, sex, source }));
       })();
       try { return await busy; } finally { busy = null; }

@@ -213,6 +213,7 @@ async function onWear(g) {
   try {
     const img = await photoBitmap(g.images[0]);           // the group's first photo: the garment from the front
     const made = await tryOn.wear(img, busy, (sex) => { if (sex !== M.sex) { useSex(sex); buildPanel(); } });
+    if (made === null) { wearing = null; return; }       // taken off before it was done
     wearing = made.length ? g.id : null;
     if (!made.length) toast(`No garment found in “${g.name}”'s photo`, 'error');
     else toast(`${made.map((m) => m.garment.type).join(' + ')} on the ${human.sex} model`, 'success');

@@ -29,6 +29,9 @@
  *   fitRounds?    re-cuts to match the photo (3), while the fit error is above fitTolerance (0.05)
  *   search?       CLIPSeg looks for what the vision model named on the garments (false: the app; see clean.js)
  *   painter?      'patch' (instant) | 'lama'
+ *   onDraft?(builts)  each garment's first drape, as soon as it's sewn (the app shows it; the re-cuts to the photo
+ *                 follow). Replaced drafts are then returned in result.retired for the caller to dispose
+ *   alive?()      false once the caller has given up: the pipeline stops (throws an Error with .cancelled)
  *   parseSize?    the clothes parser's input (512²; 384²: half the time, the cut-outs ~97 % the same)
  * }
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …), source }]  lower garments first
@@ -66,7 +69,9 @@ export function specFits(spec, zone, type) {
 }
 
 export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, onSex = null,
-  fitRounds = 3, fitTolerance = 0.05, search = false, painter = 'patch', parseSize = 512 }) {
+  fitRounds = 3, fitTolerance = 0.05, search = false, painter = 'patch', parseSize = 512, onDraft = null, alive = () => true }) {
+  // the caller gave up on this photo (the clothes taken off, the other model chosen): stop where we are
+  const check = () => { if (!alive()) { const e = new Error('cancelled'); e.cancelled = true; throw e; } };
   onStep('Finding the clothes in the photo…');
   // the vision model (a server round trip) reads the photo while the clothes parser and the pose model run here
   const c = document.createElement('canvas'), k = Math.min(1, 768 / Math.max(image.width, image.height));
@@ -84,6 +89,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   const posed = detectPose(parsed).catch(() => null);
   onStep('Reading what each garment is…');
   let { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await described;
+  check();
   // what the vision model named on the garments, plus what's always worth a look (its list varies from run to run)
   const onGarment = [...new Set([...named, 'necklace', 'chain', 'hand', 'long_hair', 'bag_strap'])];
   // whose clothes: menswear on the male model, womenswear on the female one (unisex: the one shown)
@@ -95,6 +101,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   if (sex !== human.sex) { onStep(`These are ${madeFor}'s clothes: dressing the ${sex} model…`); human.setSex(sex); }
   // the app puts that model's own body settings on before anything is cut for it
   if (onSex) await onSex(sex);
+  check();
   const B = human.active;
   const body = bodyMeasures(human);
   // the vision model named nothing (it happens): the clothes-parsing model's own classes stand in
@@ -125,12 +132,16 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     pat.catch(() => {});
     jobs.push({ g, zone, cut, garment, pat });
   }
-  for (const { g, zone, cut, garment, pat: patP } of jobs) {
+  /* ---- pass 1, drafts: every garment cleaned, sewn on the body (over the drafts under it) and shown at once ---- */
+  const drafts = [];
+  for (const job of jobs) {
+    const { g, zone, cut, garment, pat: patP } = job;
     // the other garments the vision model saw in this zone are worn under this one (it's the one that got cut)
     const underIt = garments.filter((o) => o !== g && zoneOf(o.type) === zone).map((o) => o.type);
     const clean = await cleanGarment(parsed, cut, { onGarment, under: underIt, onStep, search, painter });
     onStep(`Cutting the ${g.type}'s sewing pattern…`);
     const pat = await patP;
+    check();
     // how close it sits (sew.js hugs a fitted / tight garment onto the body: negative ease, as a knit is worn)
     const snug = zone === 'lower' ? (/skinny/.test(garment.lower?.leg) ? 'skinny' : /pencil|straight|bodycon/.test(garment.lower?.skirt_shape) && g.type === 'skirt' ? 'fitted' : null)
       : garment.upper?.fit;
@@ -143,21 +154,36 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       if (!src || !isVolumetric(src)) continue;
       onStep(`Fitting the ${g.type}'s 3D model…`);
       const fm = await fitMeshGarment(B, human, { ...item, length: zone === 'upper' ? garment.upper?.length : garment.lower?.length },
-        src, { under: worn.map((w) => w.posed) });
+        src, { under: drafts.map((d) => d.built.posed) });
       detail = fm.detail; fm.dispose();
       break;
     }
     onStep(`Sewing the ${g.type} on the model…`);
     const photo = { front: new Photo(clean.cut, clean.geometry) };
+    Object.assign(job, { item, detail, photo, pat, best: pat });
+    job.built = await sewPattern(B, human, item, pat, photo, { under: [...under, ...drafts.map((d) => d.built)].map((w) => w.posed), detail });
+    if (!alive()) { job.built.dispose(); check(); }
+    drafts.push(job);
+    await onDraft?.(drafts.map((d) => d.built));
+  }
+
+  /* ---- pass 2, the fit: measured on the photo and on our model, re-cut until they agree (each garment over the
+     final ones under it: one under it that changed means this one is sewn again) ---- */
+  const retired = [];
+  let changedUnder = false;
+  for (const job of drafts) {
+    check();
+    const { g, zone, cut, garment, item, photo, detail } = job;
     const sew = (p) => sewPattern(B, human, item, p, photo, { under: worn.map((w) => w.posed), detail });
-    let built = sew(pat);
-    // the fit: measured on the photo, measured on our model, re-cut until they agree
+    let built = job.built;
+    if (changedUnder) { retired.push(built); built = await sew(job.best); }
     const kp = await posed;                    // (the pose model ran while the server was busy)
     const measured = kp ? photoMeasures(parsed, cut.mask, kp, zone, { kind: /pants|jeans|trousers/.test(g.type) ? 'pants' : g.type }) : {};
     const lowerWorn = out.find((o) => o.zone === 'lower');
     const target = resolveTarget(human, measured, lowerWorn ? lowerWorn.built.posed.pts : null);
-    let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = pat.fit || {}, ov = {};
+    let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = job.pat.fit || {}, ov = {};
     const fitLog = [{ now, err }];
+    const keep = (b) => { if (built === job.built) retired.push(built); else built.dispose(); built = b; };
     for (let r = 0; r < fitRounds && Object.keys(target).length && err > fitTolerance; r++) {
       const o = nextOverrides(zone, target, now, fit, ov);
       if (JSON.stringify(o) === JSON.stringify(ov)) break;
@@ -165,9 +191,10 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       // a round that can't be had (the pattern service unreachable) keeps the garment as it is
       const p2 = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body, overrides: o }).catch((e) => { console.warn('fit round skipped:', e.message); return null; });
       if (!p2) break;
-      const b2 = sew(p2), n2 = modelMeasures(human, b2.posed.pts, zone), e2 = fitError(target, n2);
+      check();
+      const b2 = await sew(p2), n2 = modelMeasures(human, b2.posed.pts, zone), e2 = fitError(target, n2);
       fitLog.push({ overrides: o, now: n2, err: e2 });
-      if (e2 < err) { built.dispose(); built = b2; now = n2; err = e2; fit = p2.fit || fit; ov = o; } else { b2.dispose(); break; }
+      if (e2 < err) { keep(b2); now = n2; err = e2; fit = p2.fit || fit; ov = o; } else { b2.dispose(); break; }
     }
     // AIpparel's pattern for this zone (a whole sewing pattern from the photo): a candidate when its panels are the
     // right kind of garment (it reads nearly everything as a dress: no trouser legs for trousers → not used), sewn on
@@ -177,13 +204,16 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       onStep(`Trying AIpparel's pattern for the ${g.type}…`);
       const p3 = await pattern({ spec: specs[zone], zone, sex: human.sex, body }).catch(() => null);
       if (p3) {
-        const b3 = sew(p3), n3 = modelMeasures(human, b3.posed.pts, zone), e3 = Object.keys(target).length ? fitError(target, n3) : Infinity;
+        const b3 = await sew(p3), n3 = modelMeasures(human, b3.posed.pts, zone), e3 = Object.keys(target).length ? fitError(target, n3) : Infinity;
         fitLog.push({ source: 'aipparel', now: n3, err: e3 });
-        if (e3 < err) { built.dispose(); built = b3; now = n3; err = e3; source = 'aipparel'; } else b3.dispose();
+        if (e3 < err) { keep(b3); now = n3; err = e3; source = 'aipparel'; } else b3.dispose();
       }
     }
+    if (built !== job.built) changedUnder = true;
     worn.push(built);
     out.push({ zone, garment, built, target, fit: fitLog, sex, source });
   }
+  // drafts that were replaced: the caller that showed them takes them off once the final ones are on
+  if (onDraft) out.retired = retired; else for (const b of retired) b.dispose();
   return out;
 }
