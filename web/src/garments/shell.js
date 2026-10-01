@@ -54,7 +54,21 @@ export function buildShell(g, pieces, { thick = 0.0012, levels = 2 } = {}) {
         const pq = midOf(p, q), qr = midOf(q, r), rp = midOf(r, p);
         next.push([p, pq, rp], [pq, q, qr], [rp, qr, r], [pq, qr, rp]);
       }
-      tris = next;
+      // conforming: a triangle left whole beside a split one gets that edge's midpoint too (no T-junction: it would
+      // open a hairline crack once the faces are pushed out and skinned)
+      const has = (p, q) => mid.get(p < q ? `${p}_${q}` : `${q}_${p}`);
+      tris = [];
+      for (const [p, q, r] of next) {
+        const m = [has(p, q), has(q, r), has(r, p)], c = [p, q, r];
+        if (m.every((x) => x === undefined)) { tris.push([p, q, r]); continue; }
+        // the polygon round the triangle with its midpoints, fanned from a corner whose two edges aren't both split
+        const poly = [];
+        for (let e = 0; e < 3; e++) { poly.push(c[e]); if (m[e] !== undefined) poly.push(m[e]); }
+        let s0 = 0;
+        for (let e = 0; e < 3; e++) if (m[e] === undefined || m[(e + 2) % 3] === undefined) { s0 = poly.indexOf(c[e]); break; }
+        const rot = [...poly.slice(s0), ...poly.slice(0, s0)];
+        for (let k = 1; k + 1 < rot.length; k++) tris.push([rot[0], rot[k], rot[k + 1]]);
+      }
     }
     // cut on the outline (Sutherland–Hodgman against alpha ≥ ½; crossing points shared by both triangles of an edge)
     const cross = new Map();
