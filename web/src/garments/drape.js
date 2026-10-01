@@ -53,7 +53,7 @@ function rayOut(poly, cx, cz, dx, dz) {
  *            the torso's share is carried by the vertex's torso bones alone (a raised arm doesn't swing the hang of
  *            the shirt's side up with it: the armpit stays closed), the rest (the sleeves) by its skin weights }
  */
-export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: ease0 = 0.12, fall = 0.12, sleeveEase = 0.14, collarTop = 0.075, collarFlare = 0.32 }) {
+export function drapeField(body, { inTorso, girth, flat = null, sleeves = {}, used, ease: ease0 = 0.12, fall = 0.12, sleeveEase = 0.14, collarTop = 0.075, collarFlare = 0.32 }) {
   const { Q, n, B } = body, D = new Float32Array(n * 3), DT = new Float32Array(n * 3);
   const g = body.g, SI = g.attributes.skinIndex.array, SW = g.attributes.skinWeight.array;
   const names = B.bones.map((b) => b.name);
@@ -142,6 +142,22 @@ export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: eas
   // how much bigger than its photo (shoulder-scaled) the garment had to be cut: its sleeves come up the same
   const cut = bc >= 0 ? Math.max(1, (perim(TS, bc) * KX[bc]) / Gc) : 1;
   for (let b = 0; b < nb; b++) for (let a = 0; a < NA; a++) TS[b * NA + a] *= KX[b];
+  // seen from the front a garment is as wide as it lies flat (a boxy shirt hangs straight off the shoulders, its
+  // sides well out from the waist): where the fabric's sides are in from the photo's flat half-width, they're taken
+  // out to it — mostly at the sides (sin² of the angle), the front and back hardly moved
+  if (flat) {
+    const kSide = new Float64Array(nb);
+    for (let b = 0; b < nb; b++) {
+      if (!slices[b]) continue;
+      const want = flat(hAt(b)) / 2;
+      if (!(want > 0)) continue;
+      let ext = 0;
+      for (let a = 0; a < NA; a++) ext = Math.max(ext, Math.abs(TS[b * NA + a] * Math.sin((a / NA) * Math.PI * 2)));
+      if (want > ext) kSide[b] = Math.min(0.6, want / ext - 1);
+    }
+    const KS = sm(kSide, 6);
+    for (let b = 0; b < nb; b++) if (KS[b] > 0) for (let a = 0; a < NA; a++) TS[b * NA + a] *= 1 + KS[b] * Math.sin((a / NA) * Math.PI * 2) ** 2;
+  }
   // round the angle too (±3 bins): no facets from the hull's corners
   const TT = new Float64Array(nb * NA);
   for (let b = 0; b < nb; b++) for (let a = 0; a < NA; a++) { let s = 0; for (let d = -3; d <= 3; d++) s += TS[b * NA + (a + d + NA) % NA] * (4 - Math.abs(d)); TT[b * NA + a] = s / 16; }
@@ -175,7 +191,18 @@ export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: eas
     const up = [];
     for (let i = 0; i < n; i++) { if (armW(i, side) < 0.6) continue; const { along, r } = axis(i); if (along > 0.02 && along < seg[0].len * 0.7) up.push(Math.hypot(r[0], r[1], r[2])); }
     up.sort((a, b) => a - b);
-    arm[side] = { axis, rad, AB, NA, girth: sleeves[side], rmax: up.length ? up[Math.floor(up.length * 0.9)] : 0.05 };
+    // the sleeve's own profile along the arm: a straight-sided tube (its upper hull) over the arm's radius + 6 mm and
+    // its girth off the photo — it falls from the shoulder in a straight line to the cuff, no puff round the deltoid
+    const want = Float64Array.from(rad, (r0, k) => { const G = sleeves[side](k * AB); return G > 0 ? Math.max(r0 + 0.006, G / (2 * Math.PI)) : 0; });
+    const prof = new Float64Array(NA), H = [];
+    for (let k = 0; k < NA; k++) {
+      if (!(want[k] > 0)) continue;
+      while (H.length >= 2) { const o = H[H.length - 2], m = H[H.length - 1]; if ((m[0] - o[0]) * (want[k] - o[1]) - (m[1] - o[1]) * (k - o[0]) >= 0) H.pop(); else break; }
+      H.push([k, want[k]]);
+    }
+    for (let q = 0; q + 1 < H.length; q++) for (let k = H[q][0]; k <= H[q + 1][0]; k++) prof[k] = H[q][1] + ((H[q + 1][1] - H[q][1]) * (k - H[q][0])) / (H[q + 1][0] - H[q][0] || 1);
+    if (H.length === 1) prof[H[0][0]] = H[0][1];
+    arm[side] = { axis, rad, AB, NA, girth: sleeves[side], prof, rmax: up.length ? up[Math.floor(up.length * 0.9)] : 0.05 };
   }
 
   /* ---- the collar: its fall stands off the neck as a cone — tight round the roll at its top (the stand is under it),
@@ -192,6 +219,7 @@ export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: eas
   rMean = rN ? rMean / rN : 0.06;
   const rAt = (ang) => { const f = ((ang / (2 * Math.PI)) + 1) % 1 * NB, k = Math.floor(f) % NB; return rc[k] ? rTop[k] : rMean; };
   const collarOff = (x, y, z) => {
+    if (collarTop < 0) return null;                                   // no collar (a crew neck)
     const w = smooth(body.ys - 0.07, body.ys - 0.01, y);
     if (w <= 0) return null;
     const dx = x - NJ.x, dz = z - NJ.z, r = Math.hypot(dx, dz) || 1;
@@ -228,10 +256,10 @@ export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: eas
       const { along, r } = A.axis(i), k = Math.max(0, Math.min(A.NA - 1, Math.floor(along / A.AB)));
       // the sleeve's tube round the arm: its own girth (cut up as the body was), never closer than sleeveEase over the
       // arm's widest (the deltoid, the biceps: a woven sleeve falls from them), the arm's own bumps spanned
-      const ra = A.rad[k] || Math.hypot(r[0], r[1], r[2]), G = A.girth(Math.max(0, along)) * Math.sqrt(cut);
-      if (!(G > 0)) continue;
-      const rv = Math.hypot(r[0], r[1], r[2]) || 1, rt = Math.max(G / (2 * Math.PI), A.rmax * (1 + sleeveEase), rv);
-      const kk = Math.min(0.6, rt / rv - 1), ease = smooth(0.0, 0.1, along);       // the cap sits on the shoulder
+      const P = A.prof[k];
+      if (!(P > 0)) continue;
+      const rv = Math.hypot(r[0], r[1], r[2]) || 1, rt = Math.max(P * Math.sqrt(cut), rv + 0.004);
+      const kk = Math.min(0.9, rt / rv - 1), ease = smooth(0.0, 0.12, along);      // the cap sits on the shoulder
       tx += r[0] * kk * ease * w; ty += r[1] * kk * ease * w; tz += r[2] * kk * ease * w;
     }
     D[i * 3] = tx; D[i * 3 + 1] = ty; D[i * 3 + 2] = tz;

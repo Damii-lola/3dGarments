@@ -124,6 +124,17 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         patch hem fold, flap, welt slit, shadow) + raised in edgeBands. drawButtonholes: each button's mirror
                         on the other panel, 15 mm in from its edge. CLOSE-UPS (photos that aren't whole views): buttonFace
                         (details.js) cuts the real button out of one → the 3D buttons' face.
+                        INNER GARMENT (a tee in an open shirt): clean.js keeps underIn's pixels (`under`) and the outline with
+                        rows filled (`filled`); hanger.js builds it FIRST as its own layered garment (the shirt's shape closed
+                        up, its colour as an even knit, crew neck via crewLine, 3.5 cm shorter, no sleeves, glow 0.12 so white
+                        keeps its shading), clipped to what's seen past the shirt (torsoMask → clipUnder: openings + 5 cm);
+                        the shirt is then built with `over` = the tee's drape: ≥ 6 mm further out along the skin normal.
+                        BOXY: drape `flat` takes the sides out to the front photo's flat half-width. Sleeves: a straight
+                        tube (upper hull of arm radius + 6 mm and the photo's girth), no deltoid puff. torsoTexture also
+                        fills small holes (fillSmallHoles) and straightens an open front's edges (straightFront: smoothed,
+                        a line fitted below the lapels' break). COLLAR POINTS: flapQuads (from the opening's edges) →
+                        collarPoints: two-ply flaps anchored on the shirt (buildAnchored, per-vertex src), lit edges via
+                        vertex colours (also on the emission), shadow drawn on the shirt (flapShadow).
                         3D + DETAILS (the AI decides, the code builds): POST /api/ngl/details (shared/details.js: the vision
                         model fills a fixed vocabulary — collar style, closure + button count/colour, placket, pockets, cuffs,
                         hem, fabric material/finish/pattern/weight, colours, what's shown inside, accessories). shell.js makes

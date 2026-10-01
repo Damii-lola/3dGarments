@@ -263,10 +263,13 @@ export function buildAnchored(g, items, drape = null) {
   const A = g.attributes, P = A.position.array, SG = A.suitGap?.array, SN = (A.suitNrm || A.normal).array;
   const SI = A.skinIndex.array, SW = A.skinWeight.array, MP = g.morphAttributes.position || [], MN = g.morphAttributes.normal || [];
   const srcS = [0], srcI = [], srcW = [];
-  const pos = [], uv = [], si = [], sw = [], gap = [], sn = [], off = [], shN = [], dr = [], drT = [], drB = [], mpos = MP.map(() => []), mnrm = MN.map(() => []), index = [];
-  for (const it of items) {
+  const pos = [], uv = [], si = [], sw = [], gap = [], sn = [], off = [], shN = [], dr = [], drT = [], drB = [], col = [], mpos = MP.map(() => []), mnrm = MN.map(() => []), index = [];
+  // a vertex hangs on its item's anchor, or on its own (v.src: a flap lying on the garment, every vertex where it lies)
+  const cache = new Map();
+  const mixOf = (src) => {
+    let M = cache.get(src); if (M) return M;
     let x = 0, y = 0, z = 0, gp = 0, sx = 0, sy = 0, sz = 0, ddx = 0, ddy = 0, ddz = 0, tdx = 0, tdy = 0, tdz = 0; const bones = new Map();
-    for (const [i, w] of it.src) {
+    for (const [i, w] of src) {
       if (drape) {
         ddx += drape.all[i * 3] * w; ddy += drape.all[i * 3 + 1] * w; ddz += drape.all[i * 3 + 2] * w;
         tdx += drape.torso[i * 3] * w; tdy += drape.torso[i * 3 + 1] * w; tdz += drape.torso[i * 3 + 2] * w;
@@ -277,17 +280,23 @@ export function buildAnchored(g, items, drape = null) {
     }
     const top = [...bones].sort((p, q) => q[1] - p[1]).slice(0, 4), tw = top.reduce((s, [, w]) => s + w, 0) || 1;
     const sl = Math.hypot(sx, sy, sz) || 1;
-    const md = MP.map((m) => { let dx = 0, dy = 0, dz = 0; for (const [i, w] of it.src) { dx += m.array[i * 3] * w; dy += m.array[i * 3 + 1] * w; dz += m.array[i * 3 + 2] * w; } return [dx, dy, dz]; });
-    const mn = MN.map((m) => { let dx = 0, dy = 0, dz = 0; for (const [i, w] of it.src) { dx += m.array[i * 3] * w; dy += m.array[i * 3 + 1] * w; dz += m.array[i * 3 + 2] * w; } return [dx, dy, dz]; });
+    const md = MP.map((m) => { let dx = 0, dy = 0, dz = 0; for (const [i, w] of src) { dx += m.array[i * 3] * w; dy += m.array[i * 3 + 1] * w; dz += m.array[i * 3 + 2] * w; } return [dx, dy, dz]; });
+    const mn = MN.map((m) => { let dx = 0, dy = 0, dz = 0; for (const [i, w] of src) { dx += m.array[i * 3] * w; dy += m.array[i * 3 + 1] * w; dz += m.array[i * 3 + 2] * w; } return [dx, dy, dz]; });
+    M = { x, y, z, gp, n: [sx / sl, sy / sl, sz / sl], dr: [ddx, ddy, ddz], drT: [tdx, tdy, tdz], top, tw, md, mn };
+    cache.set(src, M);
+    return M;
+  };
+  for (const it of items) {
     const base = pos.length / 3;
     for (const v of it.verts) {
-      pos.push(x + v.d[0], y + v.d[1], z + v.d[2]); uv.push(v.uv[0], v.uv[1]); gap.push(gp); sn.push(sx / sl, sy / sl, sz / sl);
-      dr.push(ddx, ddy, ddz); drT.push(tdx, tdy, tdz);
-      off.push(v.off); shN.push(v.n[0], v.n[1], v.n[2]);
-      for (let k = 0; k < 4; k++) { si.push(top[k] ? top[k][0] : 0); sw.push(top[k] ? top[k][1] / tw : 0); }
-      torsoW(drB, top, drape);
-      for (const [i, w] of it.src) { srcI.push(i); srcW.push(w); } srcS.push(srcI.length);
-      md.forEach((d, t) => mpos[t].push(...d)); mn.forEach((d, t) => mnrm[t].push(...d));
+      const src = v.src || it.src, M = mixOf(src);
+      pos.push(M.x + v.d[0], M.y + v.d[1], M.z + v.d[2]); uv.push(v.uv[0], v.uv[1]); gap.push(M.gp); sn.push(...M.n);
+      dr.push(...M.dr); drT.push(...M.drT);
+      off.push(v.off); shN.push(...(v.n || M.n)); col.push(...(v.c || [1, 1, 1]));
+      for (let k = 0; k < 4; k++) { si.push(M.top[k] ? M.top[k][0] : 0); sw.push(M.top[k] ? M.top[k][1] / M.tw : 0); }
+      torsoW(drB, M.top, drape);
+      for (const [i, w] of src) { srcI.push(i); srcW.push(w); } srcS.push(srcI.length);
+      M.md.forEach((d, t) => mpos[t].push(...d)); M.mn.forEach((d, t) => mnrm[t].push(...d));
     }
     for (const t of it.tris) index.push(base + t[0], base + t[1], base + t[2]);
   }
@@ -295,6 +304,7 @@ export function buildAnchored(g, items, drape = null) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(shN, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   setDrape(geo, dr, drT, drB);
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));

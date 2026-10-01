@@ -286,7 +286,7 @@ function armFrame(body, side) {
 function canvasOf(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
 /** the torso chart: around (front half | back half) × down from the shoulder line */
-function torsoTexture(front, back) {
+function torsoTexture(front, back, opts = {}) {
   const { W, H, top, bottom } = TORSO, c = canvasOf(W, H), x = c.getContext('2d'), img = x.createImageData(W, H), d = img.data;
   for (let j = 0; j < H; j++) {
     const h = top + ((j + 0.5) / H) * (bottom - top);
@@ -324,10 +324,121 @@ function torsoTexture(front, back) {
       if (d[o + 3] < ba) { const g = (j * W + best) * 4; for (let c = 0; c < 4; c++) d[o + c] = d[g + c]; }
     }
   }
+  fillSmallHoles(d, W, H);
+  straightFront(d, W, H);
   smoothTopEdge(d, W, H);
-  collarLine(d, W, H, top, bottom);
+  if (opts.neckline === 'crew') crewLine(d, W, H, top, bottom, opts.hemUp || 0);
+  else collarLine(d, W, H, top, bottom);
   x.putImageData(img, 0, 0);
   return { canvas: c, data: d, W, H };
+}
+
+/** holes inside the fabric (left where the hanger's hook or a necklace was taken off): closed, with the colours
+ *  around them grown in — any transparent region not reaching the chart's top or bottom row, under 1.5 % of it */
+function fillSmallHoles(d, W, H) {
+  const seen = new Uint8Array(W * H), lim = W * H * 0.015;
+  for (let s0 = 0; s0 < W * H; s0++) {
+    if (seen[s0] || d[s0 * 4 + 3] > 127) continue;
+    const comp = [s0], st = [s0]; seen[s0] = 1; let edge = false;
+    while (st.length) {
+      const i = st.pop(), x = i % W, y = (i / W) | 0;
+      if (y === 0 || y === H - 1) edge = true;
+      for (const j of [i - 1 + (x === 0 ? W : 0), i + 1 - (x === W - 1 ? W : 0), y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (j < 0 || seen[j] || d[j * 4 + 3] > 127) continue;
+        seen[j] = 1; st.push(j); comp.push(j);
+      }
+      if (comp.length > lim) edge = true;
+    }
+    if (edge) continue;
+    // grown in from the rim, ring by ring
+    const inHole = new Uint8Array(W * H); for (const i of comp) inHole[i] = 1;
+    let left = comp.length, guard = 0;
+    while (left && guard++ < 200) {
+      const now = [];
+      for (const i of comp) {
+        if (!inHole[i]) continue;
+        const x = i % W, nb = [i - 1 + (x === 0 ? W : 0), i + 1 - (x === W - 1 ? W : 0), i - W, i + W].filter((j) => j >= 0 && j < W * H && !inHole[j] && d[j * 4 + 3] > 127);
+        if (!nb.length) continue;
+        const c = [0, 0, 0]; for (const j of nb) for (let q = 0; q < 3; q++) c[q] += d[j * 4 + q] / nb.length;
+        now.push([i, c]);
+      }
+      for (const [i, c] of now) { for (let q = 0; q < 3; q++) d[i * 4 + q] = c[q]; d[i * 4 + 3] = 255; inHole[i] = 0; left--; }
+      if (!now.length) break;
+    }
+  }
+}
+
+/** an open front's two edges as the straight sewn edges they are (the photo's outline wobbles along the garment shown
+ *  under it): each edge of the opening round the front centre, smoothed hard, and below the lapels' break a straight
+ *  line fitted through it; fabric filled out to the line (the colour beside it), cut back to it — at sub-pixel */
+function straightFront(d, W, H) {
+  const A = (i, j) => d[(j * W + i) * 4 + 3];
+  const c0 = Math.round(W / 4), L = new Float64Array(H).fill(NaN), R = new Float64Array(H).fill(NaN);
+  let rows = 0;
+  for (let j = 0; j < H; j++) {
+    if (A(c0, j) > 127) continue;
+    let l = c0, r = c0;
+    while (l > 0 && A(l - 1, j) <= 127) l--;
+    while (r < W / 2 - 1 && A(r + 1, j) <= 127) r++;
+    if (l <= 2 || r >= W / 2 - 3) continue;                   // the whole row is open (above the collar): no edges
+    L[j] = l; R[j] = r + 1; rows++;
+  }
+  if (rows < H * 0.1) return;
+  const js = []; for (let j = 0; j < H; j++) if (Number.isFinite(L[j])) js.push(j);
+  const j0 = js[0], j1 = js[js.length - 1];
+  const smoothE = (E) => {
+    const R0 = Math.round(H * 0.025), med = new Float64Array(H).fill(NaN), out = new Float64Array(H).fill(NaN);
+    for (const j of js) { const v = []; for (let q = -R0; q <= R0; q++) if (Number.isFinite(E[j + q])) v.push(E[j + q]); v.sort((a, b) => a - b); med[j] = v[v.length >> 1]; }
+    for (const j of js) { let s = 0, c = 0; for (let q = -R0; q <= R0; q++) if (Number.isFinite(med[j + q])) { s += med[j + q]; c++; } out[j] = s / c; }
+    // the straight part: the lower 65 % of the opening — a line, blended in over 6 % of its length
+    const a = j0 + Math.round(0.35 * (j1 - j0)), fitJ = js.filter((j) => j >= a);
+    if (fitJ.length > 8) {
+      let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (const j of fitJ) { n++; sx += j; sy += out[j]; sxx += j * j; sxy += j * out[j]; }
+      const b = (n * sxy - sx * sy) / (n * sxx - sx * sx || 1), c = (sy - b * sx) / n, bl = Math.max(1, Math.round(0.06 * (j1 - j0)));
+      for (const j of js) { const t = Math.max(0, Math.min(1, (j - a + bl) / bl)); out[j] = out[j] * (1 - t) + (c + b * j) * t; }
+    }
+    return out;
+  };
+  const SL = smoothE(L), SR = smoothE(R);
+  for (const j of js) {
+    const set = (edge, l, isLeftFabric) => {
+      // fabric on the outer side of the edge (left of l for the left edge, right of r for the right one)
+      const iE = Math.floor(edge), fr = edge - iE;
+      for (let i = Math.min(iE, Math.floor(l)) - 1; i <= Math.max(iE, Math.ceil(l)) + 1; i++) {
+        if (i < 1 || i >= W / 2 - 1) continue;
+        const o = (j * W + i) * 4, fabric = isLeftFabric ? i < iE : i > iE;
+        if (i === iE) {
+          // the edge pixel: partial
+          if (d[o + 3] <= 127) { const src = (j * W + (isLeftFabric ? i - 1 : i + 1)) * 4; for (let q = 0; q < 3; q++) d[o + q] = d[src + q]; }
+          d[o + 3] = Math.round(255 * (isLeftFabric ? fr : 1 - fr));
+        } else if (fabric && d[o + 3] <= 127) {
+          let k = i; while (k > 0 && k < W / 2 && d[(j * W + k) * 4 + 3] <= 127) k += isLeftFabric ? -1 : 1;
+          const src = (j * W + k) * 4; for (let q = 0; q < 3; q++) d[o + q] = d[src + q]; d[o + 3] = 255;
+        } else if (!fabric) d[o + 3] = 0;
+      }
+    };
+    set(SL[j], L[j], true);
+    set(SR[j], R[j], false);
+  }
+}
+
+/** a knit's crew neck (a tee under a shirt): nothing above the shoulder line, a round dip at the front (7 cm) and a
+ *  shallow one at the back; and its hem `hemUp` metres above the garment's own (worn under a shirt, it's shorter) */
+function crewLine(d, W, H, top, bottom, hemUp) {
+  const rowF = (h) => ((h - top) / (bottom - top)) * H;
+  for (let i = 0; i < W; i++) {
+    const back = i >= W / 2, uc = back ? 0.75 : 0.25, x = ((i + 0.5) / W - uc) / (back ? 0.1 : 0.125);
+    const dip = Math.abs(x) < 1 ? (back ? 0.02 : 0.075) * Math.sqrt(1 - x * x) : 0, T = rowF(dip), jT = Math.floor(T);
+    for (let j = 0; j < Math.min(jT, H); j++) d[(j * W + i) * 4 + 3] = 0;
+    if (jT >= 0 && jT < H) d[(jT * W + i) * 4 + 3] = Math.round(d[(jT * W + i) * 4 + 3] * (1 - (T - jT)));
+    if (hemUp > 0) {
+      let jb = -1; for (let j = H - 1; j >= 0; j--) if (d[(j * W + i) * 4 + 3] > 127) { jb = j; break; }
+      if (jb < 0) continue;
+      const cut = Math.round(jb - (hemUp / (bottom - top)) * H);
+      for (let j = Math.max(0, cut); j <= jb; j++) d[(j * W + i) * 4 + 3] = 0;
+    }
+  }
 }
 
 /** the collar as it's worn: in front it doesn't climb the neck (on the hanger its sides rise toward the hook; worn,
@@ -383,14 +494,14 @@ function smoothTopEdge(d, W, H) {
 }
 
 /** a sleeve chart: around (front half | back half) × along the arm from the shoulder joint */
-function sleeveTexture(front, back) {
+function sleeveTexture(front, back, lenK = 1) {
   const { W, L, len } = SLEEVE, c = canvasOf(W, L), x = c.getContext('2d'), img = x.createImageData(W, L), d = img.data;
   for (let j = 0; j < L; j++) {
     const m = ((j + 0.5) / L) * len;
     for (const [sl, i0, i1, s] of [[front.sl, 0, W / 2, front.s], [back.sl, W / 2, W, back.s]]) {
       if (!sl) continue;
       const a = m / s;
-      if (a > sl.span) continue;
+      if (a > sl.span * lenK) continue;
       const k = Math.min(sl.K - 1, Math.round((a / sl.span) * (sl.K - 1))), e = sl.ext[k];
       if (!e) continue;
       const P = sl.P, as = Math.max(a, sl.root || 0);
@@ -559,7 +670,7 @@ function edgeBands(T, kind, det, plan = []) {
   // a band: full height up to its width, easing off over its last quarter
   // a band: full height up to its width, then a short step down (a folded edge, not a slope)
   const band = (d, width, height, ease = 8) => (d >= width ? 0 : d <= width - ease ? height : height * (width - d) / ease);
-  const collar = det?.collar?.style && det.collar.style !== 'none', pockets = kind === 'torso' ? plan : [];
+  const rib = /rib|turtle/.test(det?.collar?.style || ''), collar = det?.collar?.style && det.collar.style !== 'none', pockets = kind === 'torso' ? plan : [];
   const buttoned = det?.closure && det.closure.type !== 'none' && det.closure.type !== 'pullover';
   const cuff = det?.sleeves?.cuff || 'hemmed';
   if (kind === 'sleeve') {
@@ -573,7 +684,8 @@ function edgeBands(T, kind, det, plan = []) {
     // the collar (and its lapels — wider toward its points, at the front)
     // (the collar's fall lies on the shirt: a clear step at its outer edge, and its top — the roll, where it folds
     // over the stand — rounds over rather than ending in a cut)
-    if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0055, 2) * Math.min(1, 0.4 + 0.6 * Math.sqrt(Math.max(0, d) / 6)));
+    if (rib && h < 0.1) r = Math.max(r, band(d, 16, 0.0012, 3));
+    else if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0055, 2) * Math.min(1, 0.4 + 0.6 * Math.sqrt(Math.max(0, d) / 6)));
     if (buttoned && frontC && h >= 0.1) r = Math.max(r, band(d, 24, 0.0012));                  // the placket
     if (h > 0.3 && !frontC) r = Math.max(r, band(d, 16, 0.0009));                              // the hem's fold
     if (h > 0.3 && frontC) r = Math.max(r, band(d, 16, 0.0009));
@@ -611,6 +723,39 @@ function textureOf(T, color = true) {
  * @param photos  { front: { cut, geometry }, back?: { cut, geometry } } — cleaned cut-outs of the garment on its
  *                hanger (no back photo: the front, mirrored, stands in for it)
  */
+/** the torso chart's texture another garment would have (its alpha: where it covers) — for one worn under it */
+export function torsoMask(human, photos, opts = {}) {
+  const body = bodyNow(human);
+  const F = photoOf(photos.front), Bk = photos.back ? photoOf(photos.back) : F;
+  const scale = (P) => body.shoulderW / (P.shoulderW || P.torsoW || 0.3);
+  return torsoTexture({ P: F, s: scale(F), mirror: false }, { P: Bk, s: scale(Bk), mirror: !photos.back }, opts);
+}
+
+/** keep only what can be seen past a garment worn over it (its openings + `reach` metres round them): the rest is
+ *  never seen, and can't show through */
+function clipUnder(T, over, reach = 0.05) {
+  const { W, H, data: d } = T, rx = Math.round((reach * 1000 * W) / U_MM), ry = Math.round((reach / (TORSO.bottom - TORSO.top)) * H);
+  const open = new Uint8Array(W * H), tmp = new Uint8Array(W * H), near = new Uint8Array(W * H);
+  // an opening: no fabric of the garment over it, with its fabric either side in the row (an open front) — not the
+  // space above its top or below its hem
+  const A = (i, j) => over.data[(j * W + i) * 4 + 3] >= 128;
+  for (let j = 0; j < H; j++) for (const [i0, i1] of [[0, W / 2], [W / 2, W]]) {
+    let l = -1, r = -1;
+    for (let i = i0; i < i1; i++) if (A(i, j)) { if (l < 0) l = i; r = i; }
+    if (l < 0) continue;
+    for (let i = l + 1; i < r; i++) if (!A(i, j)) open[j * W + i] = 1;
+  }
+  for (let j = 0; j < H; j++) { let last = -1e9; for (let i = 0; i < W; i++) { if (open[j * W + i]) last = i; tmp[j * W + i] = i - last <= rx ? 1 : 0; } last = 1e9; for (let i = W - 1; i >= 0; i--) { if (open[j * W + i]) last = i; if (last - i <= rx) tmp[j * W + i] = 1; } }
+  for (let i = 0; i < W; i++) { let last = -1e9; for (let j = 0; j < H; j++) { if (tmp[j * W + i]) last = j; near[j * W + i] = j - last <= ry ? 1 : 0; } last = 1e9; for (let j = H - 1; j >= 0; j--) { if (tmp[j * W + i]) last = j; if (last - j <= ry) near[j * W + i] = 1; } }
+  for (let i = 0; i < W * H; i++) if (!near[i]) d[i * 4 + 3] = 0;
+  // and on top of the shoulders (the over garment's neckline is wide open there) only the neckline's own band
+  const j1 = Math.round(((0.05 - TORSO.top) / (TORSO.bottom - TORSO.top)) * H);
+  for (let j = 0; j < Math.min(H, j1); j++) for (let i = 0; i < W; i++) {
+    const uc = i < W / 2 ? 0.25 : 0.75;
+    if (Math.abs((i + 0.5) / W - uc) > 0.15) d[(j * W + i) * 4 + 3] = 0;
+  }
+}
+
 export function layerGarment(human, photos, opts = {}) {
   const body = bodyNow(human);
   const { B, mesh, g, n, Q, region, part } = body;
@@ -619,15 +764,21 @@ export function layerGarment(human, photos, opts = {}) {
   // corners of its torso (lengths then keep the garment's own proportions; the torso is wrapped by arc length)
   const scale = (P) => body.shoulderW / (P.shoulderW || P.torsoW || 0.3);
   const front = { P: F, s: scale(F), mirror: false }, back = { P: Bk, s: scale(Bk), mirror: !photos.back };
+  if (globalThis.__hangerDebug) console.log("photo", JSON.stringify({ torsoW: F.torsoW, shoulderW: F.shoulderW, len: F.hem - F.shoulderY, top: F.top, sh: F.shoulderY, pit: F.armpitY, s: front.s, bodySh: body.shoulderW, ys: body.ys, crotch: body.crotchY }));
 
   const inTorso = (i) => part[i] < 0.5 && (region[i] === 'torso' || (region[i].startsWith('leg') && Q[i * 3 + 1] > body.crotchY));
   const ring = torsoRings(body, inTorso);
-  const torsoRaw = torsoTexture(front, back), plan = pocketPlan(opts.details, torsoRaw);
+  const torsoRaw = torsoTexture(front, back, opts);
+  if (opts.clip) clipUnder(torsoRaw, opts.clip);
+  const plan = pocketPlan(opts.details, torsoRaw);
   if (plan.length) drawPockets(torsoRaw, plan);
   if (opts.buttons?.length) drawButtonholes(torsoRaw, opts.buttons.map((b) => {
     const t = F.torsoAt(b.y); if (!t) return null;
     return { u: ((b.x - t[0]) / ((t[1] - t[0]) || 1)) * 0.5, h: (b.y - F.shoulderY) * front.s, r: b.r * front.s };
   }).filter(Boolean));
+  const pointed = /^(spread|point|button_down|cutaway|camp|club|notch_lapel|peak_lapel|shawl)$/.test(opts.details?.collar?.style || '');
+  const quads = pointed ? flapQuads(torsoRaw) : [];
+  if (quads.length) flapShadow(torsoRaw, quads);
   const torsoT = finishTexture(torsoRaw);
   const torsoUV = (i) => {
     const [half, f] = ring(Q[i * 3], Q[i * 3 + 1], Q[i * 3 + 2]);
@@ -639,7 +790,7 @@ export function layerGarment(human, photos, opts = {}) {
   for (const [side, fs, bs] of [['r', 'left', 'right'], ['l', 'right', 'left']]) {
     const fsl = F.sleeves[fs], bsl = photos.back ? Bk.sleeves[bs] : F.sleeves[fs === 'left' ? 'right' : 'left'];
     if (!fsl && !bsl) continue;
-    const T = finishTexture(sleeveTexture({ sl: fsl, s: front.s }, { sl: bsl, s: back.s }));
+    const T = finishTexture(sleeveTexture({ sl: fsl, s: front.s }, { sl: bsl, s: back.s }, opts.sleeveLen ?? 1));
     const frame = armFrame(body, side);
     arms['arm_' + side] = { T, uv: (i) => { const [al, ar] = frame(Q[i * 3], Q[i * 3 + 1], Q[i * 3 + 2]); return [ar, Math.max(0, al) / SLEEVE.len]; } };
   }
@@ -757,13 +908,31 @@ export function layerGarment(human, photos, opts = {}) {
     const fsl = F.sleeves[fs], bsl = photos.back ? Bk.sleeves[bs] : F.sleeves[fs === 'left' ? 'right' : 'left'];
     if (fsl || bsl) sleeveG[side] = (m) => { const a = sleeveFlat(fsl, front.s, m), b = sleeveFlat(bsl, back.s, m); return a && b ? a + b : 2 * (a || b); };
   }
-  const drape = opts.hug ? null : drapeField(body, { inTorso, girth, sleeves: sleeveG, used });
+  const drape = opts.hug ? null : drapeField(body, { inTorso, girth, flat: opts.boxy === false ? null : (h) => flat(front, h), sleeves: sleeveG, used, ...(opts.drape || {}) });
+  // worn over another garment (a shirt over its tee): everywhere at least 4 mm further out than that one, measured
+  // along the skin's normal (the two hangs needn't point the same way)
+  if (drape && opts.over) {
+    const U = opts.over, gap = 0.006, NQ = body.NQ;
+    for (const i of used) {
+      if (!U.covers?.has(i) && !(U.all[i * 3] || U.all[i * 3 + 1] || U.all[i * 3 + 2])) continue;
+      let nx = NQ[i * 3], ny = NQ[i * 3 + 1], nz = NQ[i * 3 + 2]; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const un = U.all[i * 3] * nx + U.all[i * 3 + 1] * ny + U.all[i * 3 + 2] * nz;
+      const sn = drape.all[i * 3] * nx + drape.all[i * 3 + 1] * ny + drape.all[i * 3 + 2] * nz;
+      const add = un + gap - sn;
+      if (add <= 0) continue;
+      drape.all[i * 3] += nx * add; drape.all[i * 3 + 1] += ny * add; drape.all[i * 3 + 2] += nz * add;
+      // (on the torso's bones where the torso's hang is most of it)
+      const tl = Math.hypot(drape.torso[i * 3], drape.torso[i * 3 + 2]), dl = Math.hypot(drape.all[i * 3], drape.all[i * 3 + 1], drape.all[i * 3 + 2]) || 1;
+      const k = Math.min(1, tl / dl + (U.covers?.has(i) ? 0.5 : 0));
+      drape.torso[i * 3] += nx * add * k; drape.torso[i * 3 + 2] += nz * add * k;
+    }
+  }
   const geo = buildShell(g, pieces, { thick, drape });
   if (!geo.index.count) return null;
   const mats = [];
   charts.forEach((ch) => {
     const map = textureOf(ch.T), normalMap = ch.T.normal ? textureOf({ canvas: ch.T.normal }, false) : null;
-    mats.push(materialFor(map, normalMap, opts.finish, 0.15, det?.colors?.main), materialFor(map, normalMap, opts.finish, 0, det?.colors?.main));
+    mats.push(materialFor(map, normalMap, opts.finish, 0.15, det?.colors?.main, opts.glow ?? 1), materialFor(map, normalMap, opts.finish, 0, det?.colors?.main, opts.glow ?? 1));
   });
   const garment = new THREE.SkinnedMesh(geo, mats);
   garment.name = 'layered-garment';
@@ -808,6 +977,48 @@ export function layerGarment(human, photos, opts = {}) {
     }
   }
 
+  /* ---- the collar's points (a shirt collar worn open): two layers of fabric lying on the chest either side of the
+     opening, from the neck down to their points — the fold over the shirt's front, as the photo shows it ---- */
+  let points = null;
+  if (quads.length) {
+    // the shirt's surface as it hangs: its normals (the flaps take the light as the shirt under them does)
+    const DN = new Float32Array(n * 3);
+    if (drape) {
+      const Dp = (i, c) => Q[i * 3 + c] + drape.all[i * 3 + c];
+      for (let t = 0; t < skinEnd; t += 3) {
+        const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+        const ux = Dp(b, 0) - Dp(a, 0), uy = Dp(b, 1) - Dp(a, 1), uz = Dp(b, 2) - Dp(a, 2), vx = Dp(c, 0) - Dp(a, 0), vy = Dp(c, 1) - Dp(a, 1), vz = Dp(c, 2) - Dp(a, 2);
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        for (const k of [a, b, c]) { DN[k * 3] += nx; DN[k * 3 + 1] += ny; DN[k * 3 + 2] += nz; }
+      }
+      // (oriented as the body's own normals)
+      for (let i = 0; i < n; i++) { const dot = DN[i * 3] * body.NQ[i * 3] + DN[i * 3 + 1] * body.NQ[i * 3 + 1] + DN[i * 3 + 2] * body.NQ[i * 3 + 2]; if (dot < 0) for (let c = 0; c < 3; c++) DN[i * 3 + c] *= -1; }
+    }
+    const items = collarPoints(torsoT, per[0], det, (u, v) => (pieces[0]?.raise?.(u, v) || 0), thick, g, drape ? { NQ: DN } : body, quads);
+    if (globalThis.__hangerDebug) console.log("collar points", items.length, items.map((it) => it.verts.length).join(","));
+    if (items.length) {
+      const pg = buildAnchored(g, items, drape);
+      // (its own outline is its shape: the chart's alpha under it — the opening it lies over — doesn't cut it)
+      const pm = materialFor(mats[0].map, mats[0].normalMap, opts.finish, 0, det?.colors?.main, (opts.glow ?? 1) * 1.45);
+      pm.transparent = false; pm.vertexColors = true;
+      const prev = pm.onBeforeCompile;
+      // (the vertex colours shade its own light too: the photo's glow on a black fabric is most of what's seen)
+      pm.onBeforeCompile = (sh) => { prev(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', 'diffuseColor.a = 1.0;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vColor;'); };
+      pm.customProgramCacheKey = () => 'garment-collar';
+      points = new THREE.SkinnedMesh(pg, pm);
+      points.name = 'garment-collar';
+      points.frustumCulled = false;
+      points.castShadow = points.receiveShadow = true;
+      points.morphTargetInfluences = mesh.morphTargetInfluences;
+      points.bind(mesh.skeleton, mesh.bindMatrix);
+      useCpuMorphs(points);
+      const pBlend = points.onBeforeRender;
+      points.onBeforeRender = function (...a) { points.morphTargetInfluences = mesh.morphTargetInfluences; return pBlend.apply(this, a); };
+      mesh.parent.add(points);
+      B.layers.add(points);
+    }
+  }
+
   /* ---- the body under it: skin fully inside the garment (and the underwear under that skin) sinks out of sight ---- */
   const hide = new Set();
   // (the skin under the fabric, all but its last triangle at an open edge — there the skin seen past the edge would
@@ -819,7 +1030,7 @@ export function layerGarment(human, photos, opts = {}) {
   // deeper it would fall behind the very skin it lies on, and the bra seen in an open front would break up)
 
   // the body re-weights its armpits as the arms move: the garment (and its buttons) with it
-  const onWeights = () => { reskin(geo, g); if (buttons) reskin(buttons.geometry, g); };
+  const onWeights = () => { reskin(geo, g); if (buttons) reskin(buttons.geometry, g); if (points) reskin(points.geometry, g); };
   B.weightListeners?.add(onWeights);
   onWeights();
   // in a pose the arms and hands push the loose fabric in (collide.js): the skin of the arms that the torso's hang
@@ -839,10 +1050,11 @@ export function layerGarment(human, photos, opts = {}) {
   }
 
   return {
-    mesh: garment, hide, deep: null,
+    mesh: garment, hide, deep: null, drape: drape && { ...drape, covers: hide },
     posed: { pts: new Float32Array(0) },
     follow() { /* the morphs are the body's own (onBeforeRender) */ },
     dispose() {
+      if (points) { B.layers.delete(points); points.removeFromParent(); points.geometry.dispose(); points.material.dispose(); }
       if (buttons) { B.layers.delete(buttons); buttons.removeFromParent(); buttons.geometry.dispose(); buttons.material.map?.dispose(); buttons.material.dispose(); }
       B.layers.delete(garment);
       B.weightListeners?.delete(onWeights);
@@ -877,7 +1089,7 @@ const FINISH = {
   metallic: { roughness: 0.35, metalness: 0.6 }, fuzzy: { roughness: 1, sheen: 0.9 },
 };
 
-function materialFor(map, normalMap, finish = 'matte', alphaTest = 0.15, tint = null) {
+function materialFor(map, normalMap, finish = 'matte', alphaTest = 0.15, tint = null, glow = 1) {
   const f = FINISH[finish] || FINISH.matte;
   // the sheen in the fabric's own colour (a black satin glints dark grey, not white)
   const sc = tint ? new THREE.Color(tint).multiplyScalar(0.8).addScalar(0.12) : new THREE.Color(0.3, 0.3, 0.3);
@@ -885,7 +1097,8 @@ function materialFor(map, normalMap, finish = 'matte', alphaTest = 0.15, tint = 
     map, normalMap, normalScale: new THREE.Vector2(0.14, 0.14), alphaTest, roughness: f.roughness, metalness: f.metalness || 0,
     // the photo already carries the light the garment was shot in: a little of it as its own glow keeps a dark
     // fabric's print as readable as in the photo (as fabric.js does for sewn garments)
-    emissiveMap: map, emissive: new THREE.Color(0.55, 0.55, 0.55),
+    // (a light fabric needs little: its own shading is what reads — a white tee lit by itself goes flat)
+    emissiveMap: map, emissive: new THREE.Color(0.55, 0.55, 0.55).multiplyScalar(glow),
     // (both sides: where a pose crumples the fabric — the shoulder under a lowered arm — a fold turns triangles over)
     sheen: f.sheen || 0, sheenRoughness: 0.55, sheenColor: sc, side: THREE.DoubleSide,
   });
@@ -900,6 +1113,118 @@ function depthFor(map) {
   d.customProgramCacheKey = () => 'layered-garment-depth';
   patchMaterial(d);
   return d;
+}
+
+/* ------------------------------------------------------------------ the collar's points */
+
+/**
+ * Each side of an open front: a flap (outer face, under face, rim) from the neck down to a point, lying over the
+ * shirt's front edge — a quad in the torso chart (inner top on the edge, outer top 7.5 cm out toward the shoulder,
+ * the point 11.5 cm down and 3.5 cm out, the inner edge down the opening for 7 cm), every vertex on the shirt's
+ * surface where it lies (anchorOn), a little over it, rolled up along its fold.
+ */
+function flapQuads(T) {
+  const { W, H, data: d } = T, span = TORSO.bottom - TORSO.top, rowOf = (h) => Math.round(((h - TORSO.top) / span) * H);
+  const A = (i, j) => d[(j * W + i) * 4 + 3];
+  const edgeAt = (h, side) => {                       // the opening's edge on this row, in u (side −1: the panel left of it)
+    const j = Math.max(0, Math.min(H - 1, rowOf(h))), c0 = Math.round(W / 4);
+    if (A(c0, j) > 127) return null;
+    let i = c0;
+    if (side < 0) { while (i > 0 && A(i - 1, j) <= 127) i--; if (i <= 2) return null; return i / W; }
+    while (i < W / 2 - 1 && A(i + 1, j) <= 127) i++; if (i >= W / 2 - 3) return null; return (i + 1) / W;
+  };
+  let hTop = null;
+  for (let h = -0.04; h < 0.2 && hTop == null; h += 0.002) {
+    let run = true; for (let q = 0; q < 6 && run; q++) run = edgeAt(h + q * 0.003, -1) != null && edgeAt(h + q * 0.003, 1) != null;
+    if (run) hTop = h;
+  }
+  if (hTop == null) return [];
+  const mu = (m) => (m * 1000) / U_MM, out = [];
+  for (const side of [-1, 1]) {
+    const e = (h) => { for (let q = 0; q < 40; q++) { const v = edgeAt(h + q * 0.003, side); if (v != null) return v; } return 0.25; };
+    // (the point: its outer edge runs down and in from the shoulder end of the fold to a sharp tip low on the chest)
+    const h0 = Math.max(hTop, -0.015), hTip = h0 + 0.155, hIn = h0 + 0.075, o = side;
+    out.push({ side, out: o, P: [[e(h0) - o * mu(0.006), h0], [e(h0) + o * mu(0.08), h0 + 0.006], [e(hTip) + o * mu(0.03), hTip], [e(hIn) - o * mu(0.008), hIn]] });
+  }
+  return out;
+}
+
+/** the collar points' shadow on the shirt: just outside their outer edges (the shoulder end, the slant to the tip) */
+function flapShadow(T, quads) {
+  const { W, H, data: d } = T, span = TORSO.bottom - TORSO.top;
+  const toPx = ([u, h]) => [u * U_MM, h * 1000];                    // mm
+  for (const q of quads) {
+    const pts = q.P.map(toPx), segs = [[pts[1], pts[2]], [pts[2], pts[3]], [pts[0], pts[1]]];
+    const us = q.P.map((p) => p[0]), hs = q.P.map((p) => p[1]);
+    const i0 = Math.floor((Math.min(...us) - 0.02) * W), i1 = Math.ceil((Math.max(...us) + 0.02) * W);
+    const j0 = Math.floor(((Math.min(...hs) - 0.02 - TORSO.top) / span) * H), j1 = Math.ceil(((Math.max(...hs) + 0.02 - TORSO.top) / span) * H);
+    const inside = (x, y) => { let c = false; for (let k = 0, m = 3; k < 4; m = k++) { const [ax, ay] = pts[k], [bx, by] = pts[m]; if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) c = !c; } return c; };
+    for (let j = Math.max(0, j0); j < Math.min(H, j1); j++) for (let i = Math.max(0, i0); i < Math.min(W, i1); i++) {
+      const o = (j * W + i) * 4; if (d[o + 3] < 128) continue;
+      const x = ((i + 0.5) / W) * U_MM, y = (TORSO.top + ((j + 0.5) / H) * span) * 1000;
+      if (inside(x, y)) continue;
+      let dm = 1e9;
+      for (const [[ax, ay], [bx, by]] of segs) { const vx = bx - ax, vy = by - ay, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy))); dm = Math.min(dm, Math.hypot(x - ax - vx * t, y - ay - vy * t)); }
+      if (dm < 7) { const k = 0.45 + 0.55 * (dm / 7); for (let c = 0; c < 3; c++) d[o + c] *= k; }
+    }
+  }
+}
+
+function collarPoints(T, P, det, raise, thick, g, body, quads) {
+  const span = TORSO.bottom - TORSO.top, mu = (m) => (m * 1000) / U_MM;
+  if (!quads.length) return [];
+  const NS = 8, NT = 12, items = [], vOf = (h) => (h - TORSO.top) / span, lift0 = thick + 0.0014, ply = Math.max(0.0012, thick);
+  const NQ = body.NQ;
+  for (const { side, out, P: [P0, P1, P2, P3] } of quads) {
+    const verts = [], tris = [], grid = [];
+    const at = (s, t) => {
+      const u = (1 - t) * ((1 - s) * P0[0] + s * P1[0]) + t * ((1 - s) * P3[0] + s * P2[0]);
+      const h = (1 - t) * ((1 - s) * P0[1] + s * P1[1]) + t * ((1 - s) * P3[1] + s * P2[1]);
+      return [u, h];
+    };
+    let ok = true;
+    for (let k = 0; k <= NT && ok; k++) for (let q = 0; q <= NS; q++) {
+      const s = q / NS, t = k / NT, [u, h] = at(s, t);
+      // on the shirt where it lies (a corner over the opening hangs on the nearest fabric outward)
+      let a = null;
+      for (let dh = 0; dh < 0.03 && !a; dh += 0.005) for (let du = 0; du < mu(0.03) && !a; du += mu(0.004)) a = anchorOn(P, u + out * du, vOf(h + dh));
+      if (!a) { if (globalThis.__hangerDebug) console.log("collar anchor fail", side, s, t, u.toFixed(3), h.toFixed(3), P.tris.length); ok = false; break; }
+      a = { src: a.src };
+      // a little over the shirt (its own edge bands included), rolled up along the fold (the inner edge, the top)
+      const roll = 0.0035 * Math.max(0, 1 - s * 2.2) + 0.004 * Math.max(0, 1 - t * 3);
+      const lift = lift0 + raise(u, vOf(h)) + roll;
+      let nx = 0, ny = 0, nz = 0; for (const [i, w] of a.src) { nx += NQ[i * 3] * w; ny += NQ[i * 3 + 1] * w; nz += NQ[i * 3 + 2] * w; }
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      // (its print: the shirt's own fabric beside it — the chart under the flap is partly the opening)
+      grid.push({ src: a.src, uv: [u + out * mu(0.1), vOf(h + 0.03)], lift, n: [nx / nl, ny / nl, nz / nl] });
+    }
+    if (!ok) continue;
+    const G = (q, k) => k * (NS + 1) + q, N = grid.length;
+    // (the face lighter toward its edge — a folded edge catches the light — the underside in its shade)
+    grid.forEach((v, n0) => {
+      const q = n0 % (NS + 1), k = (n0 / (NS + 1)) | 0, edge = Math.min(q, NS - q, k, NT - k), lt = edge === 0 ? 2.6 : edge === 1 ? 1.5 : 1.05;
+      verts.push({ src: v.src, d: [0, 0, 0], off: v.lift + ply, n: v.n, uv: v.uv, c: [lt, lt, lt] });               // the face
+    });
+    for (const v of grid) verts.push({ src: v.src, d: [0, 0, 0], off: v.lift, n: v.n.map((c) => -c), uv: v.uv, c: [0.6, 0.6, 0.6] });   // under it
+    for (let k = 0; k < NT; k++) for (let q = 0; q < NS; q++) {
+      const a = G(q, k), b = G(q + 1, k), c = G(q + 1, k + 1), dd = G(q, k + 1);
+      // (wound to face out: which way depends on the side's mirror)
+      if (side < 0) tris.push([a, c, b], [a, dd, c], [N + a, N + b, N + c], [N + a, N + c, N + dd]);
+      else tris.push([a, b, c], [a, c, dd], [N + a, N + c, N + b], [N + a, N + dd, N + c]);
+    }
+    // the rim round it
+    const ring = [];
+    for (let q = 0; q <= NS; q++) ring.push(G(q, 0));
+    for (let k = 1; k <= NT; k++) ring.push(G(NS, k));
+    for (let q = NS - 1; q >= 0; q--) ring.push(G(q, NT));
+    for (let k = NT - 1; k > 0; k--) ring.push(G(0, k));
+    for (let r = 0; r < ring.length; r++) {
+      const a = ring[r], b = ring[(r + 1) % ring.length];
+      if (side < 0) tris.push([a, N + b, b], [a, N + a, N + b]); else tris.push([a, b, N + b], [a, N + b, N + a]);
+    }
+    items.push({ src: grid[0].src, verts, tris });
+  }
+  return items;
 }
 
 /* ------------------------------------------------------------------ buttons */

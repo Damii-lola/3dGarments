@@ -462,7 +462,7 @@ export async function cleanGarment(parsed, cut, { onGarment = [], under = [], oc
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const s = ((y + by) * PW + (x + bx)) * 4, d = (y * W + x) * 4; for (let c = 0; c < 4; c++) cd.data[d + c] = c === 3 ? 255 : rgba[s + c]; }
   cx.putImageData(cd, 0, 0);
 
-  let hole = new Uint8Array(W * H), removed = 0;
+  let hole = new Uint8Array(W * H), removed = 0, underSeen = null;
   const opening = new Uint8Array(W * H);            // not garment at all (an open front): cut out, not painted
   const offGarment = new Uint8Array(W * H);         // an occluder's part outside the garment: painted over too, so the painter can't continue it
   if (occluders) {
@@ -494,8 +494,12 @@ export async function cleanGarment(parsed, cut, { onGarment = [], under = [], oc
     // another garment seen through this one (a tank top in an open shirt's front): the same — an opening where it
     // reaches the edge, painted over where fabric encloses it. Whatever is on it (a pendant) goes with it
     if (!search && under.length) {
-      const u = underIn(cx.getImageData(0, 0, W, H).data, sil, W, H);
-      if (u) openOrPaint(dilate(u, W, H, Math.max(2, Math.round(Math.max(W, H) / 150))));
+      const px0 = cx.getImageData(0, 0, W, H).data, u = underIn(px0, sil, W, H);
+      if (u) {
+        openOrPaint(dilate(u, W, H, Math.max(2, Math.round(Math.max(W, H) / 150))));
+        // what it looks like (the hanger flow builds it as a garment of its own under this one)
+        underSeen = { mask: u, px: new Uint8ClampedArray(px0), W, H };
+      }
     }
     if (search && under.length) {
       onStep(`Separating the ${under.join(', ')} underneath…`);
@@ -570,7 +574,21 @@ export async function cleanGarment(parsed, cut, { onGarment = [], under = [], oc
   const fullMask = new Uint8Array(PW * PH);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (sil[y * W + x]) fullMask[(y + by) * PW + (x + bx)] = 1;
   return { cut: out, geometry, mask: fullMask, bbox: { x: bx + comp.bbox.x, y: by + comp.bbox.y, w: comp.width, h: comp.height },
-    removed: removed / Math.max(1, sil.reduce((a, v) => a + v, 0)), hole, crop };
+    removed: removed / Math.max(1, sil.reduce((a, v) => a + v, 0)), hole, crop,
+    // the garment seen under this one: its mask and pixels in the crop, and where the cut-out sits in the crop
+    under: underSeen && { ...underSeen, at: { x: comp.bbox.x, y: comp.bbox.y } }, filled: fillRows(sil, W, H, comp.bbox) };
+}
+
+/** the garment's outline with every row filled from its leftmost to its rightmost pixel (an open front closed), in
+ *  the cut-out's own frame */
+function fillRows(sil, W, H, b) {
+  const out = new Uint8Array(b.w * b.h);
+  for (let y = 0; y < b.h; y++) {
+    let l = -1, r = -1;
+    for (let x = 0; x < b.w; x++) if (sil[(y + b.y) * W + x + b.x]) { if (l < 0) l = x; r = x; }
+    if (l >= 0) out.fill(1, y * b.w + l, y * b.w + r + 1);
+  }
+  return out;
 }
 
 
