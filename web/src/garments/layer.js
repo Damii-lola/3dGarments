@@ -313,9 +313,56 @@ function torsoTexture(front, back) {
       for (let j = 0; j < j1; j++) for (let i = a; i <= b; i++) d[(j * W + i) * 4 + 3] = 0;
     }
   }
+  // where the front photo meets the back one (the sides): a row covered on one side is covered on both — two photos'
+  // outlines never agree to the pixel, and the gap between them is a line of pinholes down the side
+  for (const k of [0, W / 2]) for (let j = 0; j < H; j++) {
+    let best = -1, ba = 0;
+    for (let q = -6; q < 6; q++) { const i = (k + q + W) % W, a = d[(j * W + i) * 4 + 3]; if (a > ba) { ba = a; best = i; } }
+    if (ba < 128) continue;
+    for (let q = -6; q < 6; q++) {
+      const i = (k + q + W) % W, o = (j * W + i) * 4;
+      if (d[o + 3] < ba) { const g = (j * W + best) * 4; for (let c = 0; c < 4; c++) d[o + c] = d[g + c]; }
+    }
+  }
   smoothTopEdge(d, W, H);
+  collarLine(d, W, H, top, bottom);
   x.putImageData(img, 0, 0);
   return { canvas: c, data: d, W, H };
+}
+
+/** the collar as it's worn: in front it doesn't climb the neck (on the hanger its sides rise toward the hook; worn,
+ *  they turn down round the neck onto the collarbones) — above the shoulder line the front half is allowed up the
+ *  neck only toward its sides; and its top edge (the roll) is one smooth line, not the photo's ragged outline */
+function collarLine(d, W, H, top, bottom) {
+  const rowF = (h) => ((h - top) / (bottom - top)) * H, j0 = Math.round(rowF(0));
+  // the photo's top row per column above the shoulder line, and a running mean of it (±2.5 % of the way round)
+  const t = new Float64Array(W).fill(-1);
+  for (let i = 0; i < W; i++) for (let j = 0; j < j0; j++) if (d[(j * W + i) * 4 + 3] > 127) { t[i] = j; break; }
+  const R = Math.round(W * 0.025);
+  for (let i = 0; i < W; i++) {
+    if (t[i] < 0) continue;
+    let s = 0, c = 0;
+    for (let q = -R; q <= R; q++) { const v = t[(i + q + W) % W]; if (v >= 0) { s += v; c++; } }
+    // (one line all round: highest at the nape, lower at the sides of the neck, down to nothing at the throat)
+    const back = i >= W / 2, f = Math.min(1, Math.abs(((i % (W / 2)) + 0.5) / (W / 2) - 0.5) / 0.5);
+    const T = Math.min(j0, Math.max(s / c, rowF(-COLLAR * (back ? 0.8 * (1 - 0.45 * f * f) : 0.44 * f * f))));
+    const jT = Math.floor(T), fr = T - jT;
+    // a notch under the line: filled with the fabric just below it
+    for (let j = jT; j < t[i]; j++) { const o = (j * W + i) * 4, g = (t[i] * W + i) * 4; for (let k = 0; k < 4; k++) d[o + k] = d[g + k]; }
+    for (let j = 0; j < jT; j++) d[(j * W + i) * 4 + 3] = 0;
+    // the line itself between two rows: a partial alpha there (the cut is found on it at sub-pixel: no stairs)
+    if (jT < j0) d[(jT * W + i) * 4 + 3] = Math.round(d[(jT * W + i) * 4 + 3] * (1 - fr));
+    // the fall's outer edge, 45 mm under the roll round the back and the sides (edgeBands steps it out there): the
+    // edge catches the light, the shirt just under it is in its shadow
+    if (back || f > 0.55) {
+      const mm = H / ((bottom - top) * 1000), E = T + 45 * mm, sh = back ? 1 : (f - 0.55) / 0.45;
+      for (let j = Math.floor(E - 2.5 * mm); j < E + 5 * mm && j < H; j++) {
+        const o = (j * W + i) * 4; if (d[o + 3] < 128) continue;
+        const x = (j + 0.5 - E) / mm, k = x < 0 ? 1 + 0.5 * sh * (1 + x / 2.5) : 1 - 0.5 * sh * Math.exp(-x / 2);
+        for (let c = 0; c < 3; c++) d[o + c] = Math.max(0, Math.min(255, d[o + c] * k + (x < 0 ? 26 * sh * (1 + x / 2.5) : 0)));
+      }
+    }
+  }
 }
 
 /** the garment's top edge (a collar's, a neckline's), smoothed column by column: small spikes (a hanger's leftovers
@@ -411,7 +458,9 @@ function edgeBands(T, kind, det) {
     const d = at(u, v), h = TORSO.top + v * (TORSO.bottom - TORSO.top), frontC = u > 0.17 && u < 0.33;
     let r = 0;
     // the collar (and its lapels — wider toward its points, at the front)
-    if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0024, 3));
+    // (the collar's fall lies on the shirt: a clear step at its outer edge, and its top — the roll, where it folds
+    // over the stand — rounds over rather than ending in a cut)
+    if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0055, 2) * Math.min(1, 0.4 + 0.6 * Math.sqrt(Math.max(0, d) / 6)));
     if (buttoned && frontC && h >= 0.1) r = Math.max(r, band(d, 24, 0.0012));                  // the placket
     if (h > 0.3 && !frontC) r = Math.max(r, band(d, 16, 0.0009));                              // the hem's fold
     if (h > 0.3 && frontC) r = Math.max(r, band(d, 16, 0.0009));

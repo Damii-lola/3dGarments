@@ -53,7 +53,7 @@ function rayOut(poly, cx, cz, dx, dz) {
  *            the torso's share is carried by the vertex's torso bones alone (a raised arm doesn't swing the hang of
  *            the shirt's side up with it: the armpit stays closed), the rest (the sleeves) by its skin weights }
  */
-export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: ease0 = 0.12, fall = 0.12, sleeveEase = 0.14 }) {
+export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: ease0 = 0.12, fall = 0.12, sleeveEase = 0.14, collarTop = 0.075, collarFlare = 0.32 }) {
   const { Q, n, B } = body, D = new Float32Array(n * 3), DT = new Float32Array(n * 3);
   const g = body.g, SI = g.attributes.skinIndex.array, SW = g.attributes.skinWeight.array;
   const names = B.bones.map((b) => b.name);
@@ -178,9 +178,36 @@ export function drapeField(body, { inTorso, girth, sleeves = {}, used, ease: eas
     arm[side] = { axis, rad, AB, NA, girth: sleeves[side], rmax: up.length ? up[Math.floor(up.length * 0.9)] : 0.05 };
   }
 
+  /* ---- the collar: its fall stands off the neck as a cone — tight round the roll at its top (the stand is under it),
+     flaring out as it comes down to lie on the shoulders — never on the neck's skin ---- */
+  const NJ = body.joint('neck_01'), yTop = body.ys + collarTop, NB = 32, rTop = new Float64Array(NB), rc = new Float64Array(NB);
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(Q[i * 3 + 1] - yTop) > 0.012) continue;
+    const dx = Q[i * 3] - NJ.x, dz = Q[i * 3 + 2] - NJ.z, r = Math.hypot(dx, dz);
+    if (r > 0.11) continue;
+    const k = Math.floor(((Math.atan2(dx, dz) / (2 * Math.PI)) + 1) % 1 * NB);
+    rTop[k] = Math.max(rTop[k], r); rc[k]++;
+  }
+  let rMean = 0, rN = 0; for (let k = 0; k < NB; k++) if (rc[k]) { rMean += rTop[k]; rN++; }
+  rMean = rN ? rMean / rN : 0.06;
+  const rAt = (ang) => { const f = ((ang / (2 * Math.PI)) + 1) % 1 * NB, k = Math.floor(f) % NB; return rc[k] ? rTop[k] : rMean; };
+  const collarOff = (x, y, z) => {
+    const w = smooth(body.ys - 0.07, body.ys - 0.01, y);
+    if (w <= 0) return null;
+    const dx = x - NJ.x, dz = z - NJ.z, r = Math.hypot(dx, dz) || 1;
+    if (r > 0.16) return null;
+    const want = rAt(Math.atan2(dx, dz)) + 0.005 + Math.max(0, yTop - y) * collarFlare;
+    const d = Math.max(0, want - r) * w;
+    return d > 0 ? [dx / r * d, dz / r * d] : null;
+  };
+
   for (const i of used) {
     const x = Q[i * 3], y = Q[i * 3 + 1], z = Q[i * 3 + 2];
     let tx = 0, ty = 0, tz = 0, wt = 0;
+    {
+      const c = collarOff(x, y, z), wa0 = Math.min(1, armW(i, 'l') + armW(i, 'r'));
+      if (c && wa0 < 0.5) { tx += c[0]; tz += c[1]; DT[i * 3] = tx; DT[i * 3 + 2] = tz; }
+    }
     // the torso's hang
     const b = Math.max(0, Math.min(nb - 1, Math.floor((y - y0) / BIN))), s = slices[b];
     const wl = armW(i, 'l'), wr = armW(i, 'r'), wa = Math.min(1, wl + wr);
