@@ -13,6 +13,7 @@
 import { parsePhoto, cutGarment } from './parse.js';
 import { cleanGarment } from './clean.js';
 import { layerGarment } from './layer.js';
+import { findButtons } from './details.js';
 
 const SKIN = [11, 12, 13, 14, 15];                     // face, legs, arms
 
@@ -39,17 +40,19 @@ function wholeView(parsed, cut) {
  * @returns [{ zone, garment, built, sex, source: 'hanger' }] (like pipeline.js), or null when no photo shows the
  *          whole garment
  */
-export async function hangerGarment(human, images, { onStep = () => {}, describe = null, onSex = null, alive = () => true, parsedFirst = null } = {}) {
+export async function hangerGarment(human, images, { onStep = () => {}, describe = null, details = null, onSex = null, alive = () => true, parsedFirst = null } = {}) {
   onStep('Finding the garment in the photos…');
   // whose garment it is (menswear → the male model): the vision model reads the first photo meanwhile
-  let described = null;
-  if (describe) {
+  let described = null, detailed = null;
+  if (describe || details) {
     const c = document.createElement('canvas'), k = Math.min(1, 768 / Math.max(images[0].width, images[0].height));
     c.width = Math.round(images[0].width * k); c.height = Math.round(images[0].height * k);
     c.getContext('2d', { willReadFrequently: true }).drawImage(images[0], 0, 0, c.width, c.height);
     const jpeg = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.88))
       .then((b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); }));
-    described = describe(jpeg).catch(() => null);
+    described = describe ? describe(jpeg).catch(() => null) : null;
+    // the garment's construction details (collar, buttons, cuffs, fabric: shared/details.js) from the same photo
+    if (details) detailed = details(jpeg).then((r) => r?.details || null).catch(() => null);
     await new Promise((r) => setTimeout(r, 0));
   }
   const views = [];
@@ -80,12 +83,19 @@ export async function hangerGarment(human, images, { onStep = () => {}, describe
   if (sex !== human.sex) { onStep(`Menswear and womenswear differ: dressing the ${sex} model…`); human.setSex(sex); }
   if (onSex) await onSex(sex);
   if (!alive()) return null;
+  const det = detailed ? await detailed : null;
+  // the buttons the detail sheet counts, found on the front photo (in the cleaned cut-out's garment units)
+  const c0 = cleaned[0], scale = c0.cut.height;
+  const buttons = det?.closure?.buttons ? findButtons(views[0].parsed, views[0].cut.mask, det.closure.buttons, { buttonColor: det.closure.buttonColor, mainColor: det.colors?.main })
+    .map((b) => ({ x: (b.x - c0.bbox.x) / scale, y: (b.y - c0.bbox.y) / scale, r: b.r / scale, color: b.color })) : [];
+  const THICK = { sheer: 0.0005, light: 0.0008, medium: 0.0012, heavy: 0.002 };
   onStep('Putting it on…');
   await new Promise((r) => setTimeout(r, 0));
   const built = layerGarment(human, {
     front: { cut: cleaned[0].cut, geometry: cleaned[0].geometry },
     back: cleaned[1] ? { cut: cleaned[1].cut, geometry: cleaned[1].geometry } : null,
-  });
+  }, { details: det, buttons, thick: THICK[det?.fabric?.weight] ?? 0.0012, finish: det?.fabric?.finish });
+  if (built) built.details = det;
   if (!built) return [];
   const type = ngl?.garments?.[0]?.type || cleaned[0].geometry.guess;
   return [{ zone: 'upper', garment: { type }, built, sex, source: 'hanger' }];

@@ -103,6 +103,18 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         alpha-tested (the photo's outline = the garment's edges), 1.2 mm over the suit; Body.layers re-binds it.
                         Skin fully inside sinks; underwear covered with 2 cm to spare is not drawn (materials.js discards
                         hidden fabric: its normals can face either way, sinking pushed it OUT). Tops only so far.
+                        3D + DETAILS (the AI decides, the code builds): POST /api/ngl/details (shared/details.js: the vision
+                        model fills a fixed vocabulary — collar style, closure + button count/colour, placket, pockets, cuffs,
+                        hem, fabric material/finish/pattern/weight, colours, what's shown inside, accessories). shell.js makes
+                        the garment a real piece of fabric: triangles refined along the outline and where the edge bands step,
+                        cut on the alpha (marching triangles, shared crossing points), outer + inner faces + a rim on every
+                        edge (vertex = mix of body vertices: weights, morphs, suit offset). layer.js edgeBands: a chamfer
+                        distance-to-edge field per chart raises folded edges by the sheet (collar + lapels, placket, hem,
+                        rolled/hemmed cuffs). details.js findButtons: the sheet's count, measured on the photo (contrast vs
+                        the fabric around, top-hat so a tee beside them doesn't swallow them, round, in a vertical line);
+                        buildAnchored rides 3D domed 4-hole buttons on the shirt. Material: photo de-lit lightly + relief
+                        normal map (fabric.js), finish → roughness/sheen tinted by the fabric's colour, the photo's own light
+                        as emission (0.55) so a dark print reads as in the shot. Thickness from the sheet's fabric weight.
   src/services/         api/auth/local/wardrobe: garment-pipeline client
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket

@@ -21,6 +21,8 @@
  */
 import * as THREE from 'three';
 import { useCpuMorphs, patchMaterial } from '../human/cpumorph.js';
+import { buildShell, buildAnchored } from './shell.js';
+import { prepareFabric } from './fabric.js';
 
 const TORSO = { W: 1024, H: 1024, top: -0.32, bottom: 1.3 };     // h: metres below the shoulder line
 const COLLAR = 0.09;                                             // the most a collar rises above the shoulder line (m)
@@ -347,9 +349,70 @@ const alphaAt = (T, u, v) => {
   return T.data[(j * T.W + i) * 4 + 3] / 255;
 };
 
-function textureOf(T) {
+/** the chart's photo de-lit (the studio's light gradient out, the design kept), its colours bled past its edges (the
+ *  rim and the cut edge sample there) and a relief normal map from its fine shading (fabric.js) */
+function finishTexture(T) {
+  T.normal = prepareFabric(T.canvas, [{ x: 0, w: T.W, h: T.H }], { delight: 0.35, bleed: 16 });
+  return T;
+}
+
+/**
+ * How a garment's edges are finished (from its detail sheet): along every edge a band of doubled fabric stands out a
+ * little — a collar along the neckline and lapels, the placket along a buttoned front, a folded hem, a rolled or
+ * hemmed cuff. A distance-to-the-edge field on the chart (chamfer, millimetres) → raise(u, v) in metres.
+ */
+function edgeBands(T, kind, det) {
+  const { W, H, data } = T, D = new Float32Array(W * H);
+  // millimetres per texel across / down the chart (around: ~ a chest's or an arm's girth over its width)
+  const du = kind === 'torso' ? 1.0 : 0.65, dv = kind === 'torso' ? ((TORSO.bottom - TORSO.top) * 1000) / H : (SLEEVE.len * 1000) / H, dd = Math.hypot(du, dv);
+  for (let i = 0; i < W * H; i++) D[i] = data[i * 4 + 3] > 127 ? 1e9 : 0;
+  const relax = (i, j, c) => { if (D[j] + c < D[i]) D[i] = D[j] + c; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, l = y * W + ((x - 1 + W) % W);
+    relax(i, l, du);
+    if (y) { relax(i, i - W, dv); relax(i, (y - 1) * W + ((x - 1 + W) % W), dd); relax(i, (y - 1) * W + ((x + 1) % W), dd); }
+  }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+    const i = y * W + x, r = y * W + ((x + 1) % W);
+    relax(i, r, du);
+    if (y < H - 1) { relax(i, i + W, dv); relax(i, (y + 1) * W + ((x + 1) % W), dd); relax(i, (y + 1) * W + ((x - 1 + W) % W), dd); }
+  }
+  const at = (u, v) => {
+    const x = ((Math.floor(u * W) % W) + W) % W, y = Math.max(0, Math.min(H - 1, Math.floor(v * H)));
+    return D[y * W + x];
+  };
+  // a band: full height up to its width, easing off over its last quarter
+  // a band: full height up to its width, then a short step down (a folded edge, not a slope)
+  const band = (d, width, height) => (d >= width ? 0 : d <= width - 3 ? height : height * (width - d) / 3);
+  const collar = det?.collar?.style && det.collar.style !== 'none';
+  const buttoned = det?.closure && det.closure.type !== 'none' && det.closure.type !== 'pullover';
+  const cuff = det?.sleeves?.cuff || 'hemmed';
+  if (kind === 'sleeve') {
+    const [w, h] = cuff === 'rolled' ? [35, 0.0032] : cuff === 'buttoned' ? [45, 0.0014] : cuff === 'ribbed' ? [40, 0.001] : cuff === 'none' ? [0, 0] : [14, 0.0009];
+    return (u, v) => band(at(u, v), w, h);
+  }
+  return (u, v) => {
+    const d = at(u, v), h = TORSO.top + v * (TORSO.bottom - TORSO.top), frontC = u > 0.17 && u < 0.33;
+    let r = 0;
+    // the collar (and its lapels — wider toward its points, at the front)
+    if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0024));
+    if (buttoned && frontC && h >= 0.1) r = Math.max(r, band(d, 24, 0.0012));                  // the placket
+    if (h > 0.3 && !frontC) r = Math.max(r, band(d, 16, 0.0009));                              // the hem's fold
+    if (h > 0.3 && frontC) r = Math.max(r, band(d, 16, 0.0009));
+    return r;
+  };
+}
+
+const alphaBilinear = (T, u, v) => {
+  const x = (((u % 1) + 1) % 1) * T.W - 0.5, y = Math.max(0, Math.min(T.H - 1.001, v * T.H - 0.5));
+  const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0;
+  const at = (X, Y) => T.data[(Math.max(0, Math.min(T.H - 1, Y)) * T.W + ((X % T.W) + T.W) % T.W) * 4 + 3] / 255;
+  return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+};
+
+function textureOf(T, color = true) {
   const t = new THREE.CanvasTexture(T.canvas);
-  t.colorSpace = THREE.SRGBColorSpace;
+  t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.flipY = false;
   t.wrapS = THREE.RepeatWrapping;
   t.anisotropy = 8;
@@ -363,7 +426,7 @@ function textureOf(T) {
  * @param photos  { front: { cut, geometry }, back?: { cut, geometry } } — cleaned cut-outs of the garment on its
  *                hanger (no back photo: the front, mirrored, stands in for it)
  */
-export function layerGarment(human, photos) {
+export function layerGarment(human, photos, opts = {}) {
   const body = bodyNow(human);
   const { B, mesh, g, n, Q, region, part } = body;
   const F = photoOf(photos.front), Bk = photos.back ? photoOf(photos.back) : F;
@@ -374,7 +437,7 @@ export function layerGarment(human, photos) {
 
   const inTorso = (i) => part[i] < 0.5 && (region[i] === 'torso' || (region[i].startsWith('leg') && Q[i * 3 + 1] > body.crotchY));
   const ring = torsoRings(body, inTorso);
-  const torsoT = torsoTexture(front, back);
+  const torsoT = finishTexture(torsoTexture(front, back));
   const torsoUV = (i) => {
     const [half, f] = ring(Q[i * 3], Q[i * 3 + 1], Q[i * 3 + 2]);
     const h = body.ys - Q[i * 3 + 1];
@@ -385,7 +448,7 @@ export function layerGarment(human, photos) {
   for (const [side, fs, bs] of [['r', 'left', 'right'], ['l', 'right', 'left']]) {
     const fsl = F.sleeves[fs], bsl = photos.back ? Bk.sleeves[bs] : F.sleeves[fs === 'left' ? 'right' : 'left'];
     if (!fsl && !bsl) continue;
-    const T = sleeveTexture({ sl: fsl, s: front.s }, { sl: bsl, s: back.s });
+    const T = finishTexture(sleeveTexture({ sl: fsl, s: front.s }, { sl: bsl, s: back.s }));
     const frame = armFrame(body, side);
     arms['arm_' + side] = { T, uv: (i) => { const [al, ar] = frame(Q[i * 3], Q[i * 3 + 1], Q[i * 3 + 2]); return [ar, Math.max(0, al) / SLEEVE.len]; } };
   }
@@ -396,7 +459,7 @@ export function layerGarment(human, photos) {
   const chartOf = (r) => (arms[r] ? charts.findIndex((c) => c.key === r) : r === 'torso' || r === 'head' || r.startsWith('leg') ? 0 : -1);
   const skinEnd = g.groups[0] ? g.groups[0].start + g.groups[0].count : g.index.count;
   const idx = g.index.array;
-  const per = charts.map(() => ({ map: new Map(), verts: [], uv: [], tris: [] }));
+  const per = charts.map(() => ({ tris: [], uvs: [] }));
   const vAlpha = new Float32Array(n);                       // each body vertex: how covered it is on its own chart
   for (let t = 0; t < skinEnd; t += 3) {
     const v = [idx[t], idx[t + 1], idx[t + 2]];
@@ -414,40 +477,23 @@ export function layerGarment(human, photos) {
     const al = uvs.map((q) => alphaAt(ch.T, q[0], q[1]));
     for (let k = 0; k < 3; k++) if (chartOf(region[v[k]]) === c) vAlpha[v[k]] = Math.max(vAlpha[v[k]], al[k]);
     if (Math.max(...al) < 0.02) continue;
-    const P = per[c];
-    const tri = v.map((i, k) => {
-      const key = `${i}:${uvs[k][0] >= 1 ? 1 : 0}`;
-      let o = P.map.get(key);
-      if (o === undefined) { o = P.verts.length; P.map.set(key, o); P.verts.push(i); P.uv.push(uvs[k][0], uvs[k][1]); }
-      return o;
-    });
-    P.tris.push(...tri);
+    per[c].tris.push(v); per[c].uvs.push(uvs);
   }
 
-  /* ---- one skinned mesh: every chart a group with its own texture, on the body's bones and morphs ---- */
-  const verts = [], uv = [], index = [], groups = [];
-  for (let c = 0; c < charts.length; c++) {
-    const P = per[c], base = verts.length;
-    if (!P.tris.length) continue;
-    groups.push({ start: index.length, count: P.tris.length, c });
-    for (const t of P.tris) index.push(base + t);
-    verts.push(...P.verts); uv.push(...P.uv);
-  }
-  if (!index.length) return null;
-  const geo = new THREE.BufferGeometry();
-  const pick = (attr) => {
-    const a = attr.array, k = attr.itemSize, out = new a.constructor(verts.length * k);
-    verts.forEach((v, j) => { for (let q = 0; q < k; q++) out[j * k + q] = a[v * k + q]; });
-    return new THREE.BufferAttribute(out, k, attr.normalized);
-  };
-  for (const name of ['position', 'normal', 'skinIndex', 'skinWeight', 'suitGap', 'suitNrm']) if (g.attributes[name]) geo.setAttribute(name, pick(g.attributes[name]));
-  geo.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(uv), 2));
-  geo.morphTargetsRelative = g.morphTargetsRelative;
-  for (const name of ['position', 'normal']) if (g.morphAttributes[name]) geo.morphAttributes[name] = g.morphAttributes[name].map(pick);
-  geo.setIndex(index);
+  /* ---- one skinned mesh: the fabric as a real 3D piece (shell.js: cut on the photo's outline, with thickness) —
+     every chart its own texture, on the body's bones and morphs ---- */
+  const thick = opts.thick ?? 0.0012;
+  const det = opts.details || null;
+  const pieces = per.map((P, c) => ({ tris: P.tris, uvs: P.uvs, group: c, alpha: (u, v) => alphaBilinear(charts[c].T, u, v),
+    raise: edgeBands(charts[c].T, c === 0 ? 'torso' : 'sleeve', det) })).filter((p) => p.tris.length);
+  if (!pieces.length) return null;
+  const geo = buildShell(g, pieces, { thick });
+  if (!geo.index.count) return null;
   const mats = [];
-  groups.forEach((gr, k) => { geo.addGroup(gr.start, gr.count, k); mats.push(materialFor(charts[gr.c].T)); });
-
+  charts.forEach((ch) => {
+    const map = textureOf(ch.T), normalMap = ch.T.normal ? textureOf({ canvas: ch.T.normal }, false) : null;
+    mats.push(materialFor(map, normalMap, opts.finish, 0.15, det?.colors?.main), materialFor(map, normalMap, opts.finish, 0, det?.colors?.main));
+  });
   const garment = new THREE.SkinnedMesh(geo, mats);
   garment.name = 'layered-garment';
   garment.frustumCulled = false;
@@ -460,6 +506,36 @@ export function layerGarment(human, photos) {
   garment.onBeforeRender = function (...a) { garment.morphTargetInfluences = mesh.morphTargetInfluences; return blend.apply(this, a); };
   mesh.parent.add(garment);
   B.layers.add(garment);
+
+  /* ---- buttons (detail sheet + photo: details.js): each where it is on the front photo, riding on the garment ---- */
+  let buttons = null;
+  if (opts.buttons?.length) {
+    const items = [];
+    for (const b of opts.buttons) {
+      const t = F.torsoAt(b.y);
+      if (!t) continue;
+      const u = ((b.x - t[0]) / ((t[1] - t[0]) || 1)) * 0.5, h = (b.y - F.shoulderY) * front.s, v = (h - TORSO.top) / (TORSO.bottom - TORSO.top);
+      const at = anchorOn(per[0], u, v);
+      if (!at) continue;
+      const lift = thick + (pieces[0]?.raise?.(u, v) || 0) + 0.0002;
+      items.push(buttonItem(body, at, Math.max(0.004, Math.min(0.01, b.r * front.s)), lift));
+    }
+    if (items.length) {
+      const bg = buildAnchored(g, items);
+      const bm = buttonMaterial(opts.buttons[0].color);
+      buttons = new THREE.SkinnedMesh(bg, bm);
+      buttons.name = 'garment-buttons';
+      buttons.frustumCulled = false;
+      buttons.castShadow = true;
+      buttons.morphTargetInfluences = mesh.morphTargetInfluences;
+      buttons.bind(mesh.skeleton, mesh.bindMatrix);
+      useCpuMorphs(buttons);
+      const bBlend = buttons.onBeforeRender;
+      buttons.onBeforeRender = function (...a) { buttons.morphTargetInfluences = mesh.morphTargetInfluences; return bBlend.apply(this, a); };
+      mesh.parent.add(buttons);
+      B.layers.add(buttons);
+    }
+  }
 
   /* ---- the body under it: skin fully inside the garment (and the underwear under that skin) sinks out of sight ---- */
   const nb = Array.from({ length: n }, () => []);
@@ -482,10 +558,11 @@ export function layerGarment(human, photos) {
     posed: { pts: new Float32Array(0) },
     follow() { /* the morphs are the body's own (onBeforeRender) */ },
     dispose() {
+      if (buttons) { B.layers.delete(buttons); buttons.removeFromParent(); buttons.geometry.dispose(); buttons.material.map?.dispose(); buttons.material.dispose(); }
       B.layers.delete(garment);
       garment.removeFromParent();
       geo.dispose();
-      for (const m of mats) { m.map?.dispose(); m.dispose(); }
+      for (const m of mats) { m.map?.dispose(); m.normalMap?.dispose(); m.dispose(); }
       garment.customDepthMaterial?.dispose();
     },
   };
@@ -495,22 +572,103 @@ export function layerGarment(human, photos) {
 
 const offset = (shader) => {
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', `#include <common>\nattribute float suitGap;\nattribute vec3 suitNrm;`)
-    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = suitNrm;')
-    .replace('#include <skinning_vertex>', `transformed += normalize(suitNrm + morphNrm) * (suitGap + ${LIFT.toFixed(5)});\n#include <skinning_vertex>`);
+    .replace('#include <common>', `#include <common>\nattribute float suitGap;\nattribute vec3 suitNrm;\nattribute float shellOff;\nattribute vec3 shellN;`)
+    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = shellN;')
+    .replace('#include <skinning_vertex>', `transformed += normalize(suitNrm + morphNrm) * (suitGap + ${LIFT.toFixed(5)} + shellOff);\n#include <skinning_vertex>`);
 };
 
-function materialFor(T) {
-  const m = new THREE.MeshStandardMaterial({ map: textureOf(T), alphaTest: 0.5, roughness: 0.82, metalness: 0, side: THREE.FrontSide });
+/** the fabric's finish (the detail sheet's word) → how it takes the light */
+const FINISH = {
+  matte: { roughness: 0.92, sheen: 0.12 }, soft_sheen: { roughness: 0.78, sheen: 0.25 }, glossy: { roughness: 0.4, sheen: 0.2 },
+  metallic: { roughness: 0.35, metalness: 0.6 }, fuzzy: { roughness: 1, sheen: 0.9 },
+};
+
+function materialFor(map, normalMap, finish = 'matte', alphaTest = 0.15, tint = null) {
+  const f = FINISH[finish] || FINISH.matte;
+  // the sheen in the fabric's own colour (a black satin glints dark grey, not white)
+  const sc = tint ? new THREE.Color(tint).multiplyScalar(0.8).addScalar(0.12) : new THREE.Color(0.3, 0.3, 0.3);
+  const m = new THREE.MeshPhysicalMaterial({
+    map, normalMap, normalScale: new THREE.Vector2(0.14, 0.14), alphaTest, roughness: f.roughness, metalness: f.metalness || 0,
+    // the photo already carries the light the garment was shot in: a little of it as its own glow keeps a dark
+    // fabric's print as readable as in the photo (as fabric.js does for sewn garments)
+    emissiveMap: map, emissive: new THREE.Color(0.55, 0.55, 0.55),
+    sheen: f.sheen || 0, sheenRoughness: 0.55, sheenColor: sc, side: THREE.FrontSide,
+  });
   m.onBeforeCompile = offset;
   m.customProgramCacheKey = () => 'layered-garment';
   return m;
 }
 
 function depthFor(map) {
-  const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
+  const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.15 });
   d.onBeforeCompile = offset;
   d.customProgramCacheKey = () => 'layered-garment-depth';
   patchMaterial(d);
   return d;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+/** the body-surface point under a chart position: the triangle holding it, its corners' weights */
+function anchorOn(P, u, v) {
+  for (let k = 0; k < P.tris.length; k++) {
+    const [a, b, c] = P.uvs[k];
+    for (const du of [0, 1, -1]) {
+      const x = u + du, y = v;
+      const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+      if (Math.abs(d) < 1e-12) continue;
+      const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d, l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d, l3 = 1 - l1 - l2;
+      if (l1 >= -1e-4 && l2 >= -1e-4 && l3 >= -1e-4) { const t = P.tris[k]; return { src: [[t[0], l1], [t[1], l2], [t[2], l3]], uv: [u, v] }; }
+    }
+  }
+  return null;
+}
+
+/** a sewn button: a slightly domed disc in the anchor's tangent plane (its face from buttonMaterial's texture) */
+function buttonItem(body, at, r, lift) {
+  const { Q, NQ } = body;
+  let nx = 0, ny = 0, nz = 0;
+  for (const [i, w] of at.src) { nx += NQ[i * 3] * w; ny += NQ[i * 3 + 1] * w; nz += NQ[i * 3 + 2] * w; }
+  const n = new THREE.Vector3(nx, ny, nz).normalize();
+  const t1 = new THREE.Vector3().crossVectors(n, new THREE.Vector3(0, 1, 0)); if (t1.lengthSq() < 1e-6) t1.set(1, 0, 0); t1.normalize();
+  const t2 = new THREE.Vector3().crossVectors(n, t1).normalize();
+  const S = 28, hb = 0.0016, verts = [], tris = [];
+  const ring = (rad, off, nrm, uvk) => {
+    const base = verts.length;
+    for (let k = 0; k < S; k++) {
+      const a = (k / S) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      const d = [t1.x * c * rad + t2.x * s * rad, t1.y * c * rad + t2.y * s * rad, t1.z * c * rad + t2.z * s * rad];
+      const nn = nrm === 'side' ? [t1.x * c + t2.x * s, t1.y * c + t2.y * s, t1.z * c + t2.z * s] : [n.x, n.y, n.z];
+      verts.push({ d, off, n: nn, uv: [0.5 + 0.5 * c * uvk, 0.5 + 0.5 * s * uvk] });
+    }
+    return base;
+  };
+  const center = verts.length; verts.push({ d: [0, 0, 0], off: lift + hb + 0.0003, n: [n.x, n.y, n.z], uv: [0.5, 0.5] });
+  const top = ring(r * 0.94, lift + hb, 'top', 0.94), edgeTop = ring(r, lift + hb * 0.8, 'side', 1), edgeBot = ring(r, lift, 'side', 1);
+  for (let k = 0; k < S; k++) {
+    const k1 = (k + 1) % S;
+    tris.push([center, top + k, top + k1]);
+    tris.push([top + k, edgeTop + k, edgeTop + k1], [top + k, edgeTop + k1, top + k1]);
+    tris.push([edgeTop + k, edgeBot + k, edgeBot + k1], [edgeTop + k, edgeBot + k1, edgeTop + k1]);
+  }
+  return { src: at.src, verts, tris };
+}
+
+/** a button's face: its colour from the photo, a raised rim, four holes and the thread through them */
+function buttonMaterial(color = [235, 235, 235]) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d'), [r, g, b] = color.map((v) => Math.round(v));
+  const col = (k) => `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
+  x.fillStyle = col(1); x.fillRect(0, 0, 128, 128);
+  const grd = x.createRadialGradient(64, 64, 10, 64, 64, 64); grd.addColorStop(0, col(0.92)); grd.addColorStop(0.72, col(0.88)); grd.addColorStop(0.86, col(1.06)); grd.addColorStop(1, col(0.85));
+  x.fillStyle = grd; x.beginPath(); x.arc(64, 64, 64, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = 'rgba(40,40,40,0.55)'; x.lineWidth = 3;
+  x.beginPath(); x.moveTo(52, 52); x.lineTo(76, 76); x.moveTo(76, 52); x.lineTo(52, 76); x.stroke();             // the thread
+  x.fillStyle = 'rgba(20,20,20,0.9)';
+  for (const [hx, hy] of [[52, 52], [76, 52], [52, 76], [76, 76]]) { x.beginPath(); x.arc(hx, hy, 5.5, 0, Math.PI * 2); x.fill(); }
+  const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshPhysicalMaterial({ map, roughness: 0.32, clearcoat: 0.7, clearcoatRoughness: 0.25 });
+  m.onBeforeCompile = offset;
+  m.customProgramCacheKey = () => 'garment-buttons';
+  return m;
 }

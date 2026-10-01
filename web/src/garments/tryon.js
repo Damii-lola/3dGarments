@@ -81,7 +81,8 @@ export function createTryOn({ human, stage }) {
         onStep('Looking at the photos…');
         const first = await parsePhoto(image, 1024, 384);
         if (isHangerPhoto(first)) {
-          const res = await hangerGarment(human, images, { onStep, describe, onSex: sexHook, alive: live, parsedFirst: first })
+          const details = (jpeg) => retry(() => api('/api/ngl/details', { method: 'POST', body: { image: jpeg }, timeout: 120_000 }));
+          const res = await hangerGarment(human, images, { onStep, describe, details, onSex: sexHook, alive: live, parsedFirst: first })
             .catch((e) => { if (!live()) return null; throw e; });
           if (!res || !live()) { for (const r of res || []) r.built.dispose(); return res && live() ? [] : null; }
           worn = res.map((r) => r.built);
