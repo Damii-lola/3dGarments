@@ -70,7 +70,9 @@ export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {}, 
       .replace('#include <project_vertex>', '#include <project_vertex>\nif (_hide > 0.5) gl_Position = projectionMatrix * vec4(mvPosition.xyz + normalize(mvPosition.xyz) * 0.03 * min(_hide, 1.5), 1.0);');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nuniform vec3 uSSS; uniform float uClay; uniform vec3 uEyeL; uniform vec3 uEyeR;\nvarying vec3 vRest; varying float vPart; varying float vEdge; varying float vBand; varying float vHide;\n${NOISE}\n${KNIT}`)
-
+      // skin fully under a worn garment isn't drawn at all (a closed garment hides it; at a bulge the fabric may lie a
+      // hair inside the skin's silhouette and a deeper-drawn skin would still show there)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vHide > 0.9 && vPart < 0.5) discard;')
       .replace('#include <map_fragment>', `#include <map_fragment>
 float isFabric = step(3.5, vPart) * step(vPart, 4.5);
 Knit kf = Knit(0.5, 0.0, 0.0, 0.0, 0.0, 0.0); // evaluated once, reused by the bump below
