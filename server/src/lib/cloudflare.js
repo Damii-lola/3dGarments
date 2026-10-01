@@ -1,3 +1,4 @@
+import { DETAILS_PROMPT, parseDetails } from '../shared/details.js';
 import { NGL_PROMPT, parseNGL, parseOnGarment, parseMadeFor, parseWornBy } from '../shared/ngl.js';
 import { TYPES as WARDROBE_TYPES, ZONES as WARDROBE_ZONES, VIEWS as WARDROBE_VIEWS } from '../shared/wardrobe.js';
 import { config } from '../config.js';
@@ -243,6 +244,15 @@ Reply with ONLY JSON: {"garments":[{"photos":[indices],"name":"short product nam
  * NGL (shared/ngl.js): the vision model describes a garment photo's cut in the fixed garment vocabulary.
  * Returns { raw (model text), garments (validated) }.
  */
+/** a garment's construction details (collar, buttons, cuffs, fabric …): shared/details.js */
+export async function describeDetails(jpeg) {
+  const model = config.cloudflare.visionModel;
+  const result = await runLicensed(model, visionInput(model, DETAILS_PROMPT, jpeg, 600), { timeoutMs: 60_000 });
+  const raw = result?.response ?? result?.description ?? result;
+  const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  return { model, raw: text.slice(0, 4000), details: parseDetails(text) };
+}
+
 export async function describeNGL(jpeg) {
   const model = config.cloudflare.visionModel;
   const result = await runLicensed(model, visionInput(model, NGL_PROMPT, jpeg, 700), { timeoutMs: 60_000 });
