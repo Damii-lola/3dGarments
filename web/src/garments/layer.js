@@ -452,7 +452,8 @@ function edgeBands(T, kind, det) {
   const cuff = det?.sleeves?.cuff || 'hemmed';
   if (kind === 'sleeve') {
     const [w, h] = cuff === 'rolled' ? [35, 0.0032] : cuff === 'buttoned' ? [45, 0.0014] : cuff === 'ribbed' ? [40, 0.001] : cuff === 'none' ? [0, 0] : [14, 0.0009];
-    return (u, v) => band(at(u, v), w, h);
+    // (+0.4 mm: the sleeve lies over the torso's edge under it at the armhole)
+    return (u, v) => band(at(u, v), w, h) + 0.0004;
   }
   return (u, v) => {
     const d = at(u, v), h = TORSO.top + v * (TORSO.bottom - TORSO.top), frontC = u > 0.17 && u < 0.33;
@@ -601,7 +602,8 @@ export function layerGarment(human, photos, opts = {}) {
       for (let i = 0; i < n; i++) {
         if (S[i] < -0.45) continue;
         const [u, v] = ch.uv(i), out = 0.5 - alphaBilinear(ch.T, u, v);
-        f[i] = Math.min(f[i], Math.max(-S[i], out * 0.25));
+        // (+0.03: the torso runs a few mm on under the sleeve — the two cuts never leave a pinhole between them)
+        f[i] = Math.min(f[i], Math.max(-S[i] + 0.03, out * 0.25));
       }
     }
     return f;
