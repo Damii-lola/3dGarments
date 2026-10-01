@@ -28,7 +28,7 @@ def run():
     # its own pins where they matter (diffusers / transformers APIs); no Blender, no gradio, no open3d, no deepspeed
     sh('pip install -q "diffusers==0.30.0" "transformers==4.46.0" "huggingface_hub==0.30.2" "accelerate>=1.1.1" '
        'trimesh pymeshlab pygltflib xatlas omegaconf einops opencv-python-headless scikit-image timm torchdiffeq '
-       'realesrgan basicsr pybind11 ninja pytorch-lightning safetensors',
+       'realesrgan basicsr pybind11 ninja pytorch-lightning safetensors fast_simplification',
        'Python dependencies', 'pip')
     # Blender is only used to write the textured GLB (we write it with trimesh): a stub keeps its imports working
     STUB = f'{TMP}/stubs'; os.makedirs(f'{STUB}/bpy', exist_ok=True)
@@ -129,13 +129,18 @@ def run():
             if c not in src: raise RuntimeError('multiview_utils: dino call not found')
             src = src.replace(c, '            dino_hidden_states = self.dino_v2(input_images[0]).to(self.pipeline.device)')
             open(f'{HY}/hy3dpaint/utils/multiview_utils.py', 'w').write(src)
+            # its remesher passes a face count positionally: today's trimesh reads that as a reduction fraction
+            sm = f'{HY}/hy3dpaint/utils/simplify_mesh_utils.py'
+            t = open(sm).read()
+            if '.simplify_quadric_decimation(target_count)' not in t: raise RuntimeError('simplify_mesh_utils: call not found')
+            open(sm, 'w').write(t.replace('.simplify_quadric_decimation(target_count)', '.simplify_quadric_decimation(face_count=int(target_count))'))
             os.chdir(HY)
             from textureGenPipeline import Hunyuan3DPaintPipeline, Hunyuan3DPaintConfig
             conf = Hunyuan3DPaintConfig(6, 512)
             conf.realesrgan_ckpt_path = f'{HY}/hy3dpaint/ckpt/RealESRGAN_x4plus.pth'
             conf.multiview_cfg_path = f'{HY}/hy3dpaint/cfgs/hunyuan-paint-pbr.yaml'
             conf.custom_pipeline = f'{HY}/hy3dpaint/hunyuanpaintpbr'
-            conf.multiview_pretrained_path = f'{MP}/hunyuan3d-paintpbr-v2-1'
+            conf.multiview_pretrained_path = MP                     # its loader appends hunyuan3d-paintpbr-v2-1
             conf.dino_ckpt_path = f'{W}/dinov2-giant'
             conf.render_size, conf.texture_size = 1024, 2048
             paint = Hunyuan3DPaintPipeline(conf)
