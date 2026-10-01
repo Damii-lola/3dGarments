@@ -18,6 +18,17 @@ const bytes = new Map();      // url → Promise<Uint8Array>
 const sessions = new Map();   // url → Promise<InferenceSession>
 
 let backend = null;           // Promise<'webgpu' | 'wasm'>
+
+/** a dynamic import, tried again on a dropped connection (a failed chunk load must not break every later try-on) */
+async function load(importer, tries = 3) {
+  for (let k = 1; ; k++) {
+    try { return await importer(); } catch (e) {
+      if (k >= tries) throw e;
+      await new Promise((r) => setTimeout(r, 800 * k));
+    }
+  }
+}
+
 /** wasm (the CPU) by default; WebGPU with ?gpu=1 (or globalThis.__webgpu) where there's an adapter with f16 shaders
  *  — not yet the default: not yet verified on real phones (a crashed GPU process would take the 3D view with it) */
 export function runtime() {
@@ -29,19 +40,21 @@ export function runtime() {
     // (the GPU models are fp16: an adapter without f16 shaders — many phones — stays on the CPU)
     if (adapter && (adapter.features?.has('shader-f16') || globalThis.__anyWebGPU)) {   // (__anyWebGPU: tests, with fp32 models)
       try {
-        const m = await import('onnxruntime-web/webgpu');
+        const m = await load(() => import('onnxruntime-web/webgpu'));
         m.env.wasm.wasmPaths = { wasm: gpuWasmUrl };
         m.env.wasm.numThreads = threads;
         ort = m;
         return 'webgpu';
       } catch (e) { console.warn('WebGPU runtime unavailable:', e.message); }
     }
-    const m = await import('onnxruntime-web/wasm');
+    const m = await load(() => import('onnxruntime-web/wasm'));
     m.env.wasm.wasmPaths = { wasm: wasmUrl };
     m.env.wasm.numThreads = threads;
     ort = m;
     return 'wasm';
   })();
+  // a runtime that couldn't load is asked for again next time (not remembered as failed)
+  backend.catch(() => { backend = null; });
   return backend;
 }
 
@@ -53,7 +66,11 @@ export function modelBytes(url) {
       try { cache = await caches.open(CACHE); } catch { /* no Cache Storage (insecure origin, private mode) */ }
       let res = cache && (await cache.match(url).catch(() => null));
       if (!res) {
-        res = await fetch(url);
+        for (let k = 1; ; k++) {                       // (a dropped connection is tried again)
+          try { res = await fetch(url); if (res.ok || res.status < 500) break; } catch (e) { if (k >= 3) throw e; }
+          if (k >= 3) break;
+          await new Promise((r) => setTimeout(r, 1000 * k));
+        }
         if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
         if (cache) await cache.put(url, res.clone()).catch(() => {});
       }
