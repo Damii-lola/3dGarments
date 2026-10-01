@@ -12,7 +12,10 @@ server/                 Express API (Render). ESM, Node 22.
   src/config.js         all env vars (only place that reads process.env)
   src/lib/              supabase (service-role client), cloudflare (Workers AI REST), errors
   src/middleware/auth.js  verifies Supabase JWT → req.user
-  src/routes/           garments (upload/list/patch/reprocess/delete), me (body, outfits), health (+ /health/deep)
+  src/routes/           garments (upload/list/patch/reprocess/delete), me (body, outfits), ngl (describe, pattern), health (+ /health/deep)
+  src/services/patterns.js  py/pattern.py inside ONE long-lived Python worker (py/worker.py, JSON lines; imports once; one-shot fallback;
+                        /health shows its state + last timings). Render's free CPU is ~15x slower than a laptop: keep pattern.py
+                        cheap — py/fastpaths.py (svgpathtools lengths in closed form), operators.py's armhole fit batched + memoised
   src/services/pipeline.js  sharp decode → silhouette → texture PNG → Cloudflare vision → Supabase
   src/shared/           ⚠ imported by BOTH server and web (Vite alias @shared). Keep dependency-free.
     silhouette.js       segmentation, cut-out, silhouette measurements, categories
@@ -69,7 +72,15 @@ web/                    Vite + three.js SPA (GitHub Pages)
   src/garments/tryon.js IN THE APP: a group card's "Try on" → the group's first photo through garments/pipeline.js (photo models in
                         the browser; words + patterns from the live API, retried twice) → worn on the model; it may switch the
                         model's sex first (onSex → main.js useSex: that sex's own settings) and follows body-shape changes.
-                        Progress steps over the preview (.stage-busy); a manual sex switch takes the clothes off
+                        Progress steps over the preview (.stage-busy); a manual sex switch takes the clothes off.
+                        BUDGET ≤ 30 s a photo (users leave): app options fitRounds 1 + fitTolerance 0.25, search false (no CLIPSeg,
+                        139 MB), painter 'patch' (fill.js PatchMatch, not LaMa 208 MB), parseSize 384. prepareTryOn (boot + 2.5 s) wakes
+                        the API and creates the parser/pose sessions in idle time (models.js: files in Cache Storage '3dg-models').
+                        pipeline.js overlaps every wait: describe is SENT before the parser runs (a sync wasm run holds the page and
+                        the request), every garment's first pattern is requested up front, the pose is awaited only at photofit.
+                        Canvases that are read back must be CPU-backed (willReadFrequently at their first getContext: a GPU readback
+                        costs seconds). WebGPU (fp16 SegFormer) is opt-in ?gpu=1: unverified on real phones (no f16 → CPU).
+                        Time it with a stage-by-stage harness (describe stubbed, patterns from the local py worker) before and after
   src/services/         api/auth/local/wardrobe: garment-pipeline client
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket
@@ -127,7 +138,8 @@ lengths, sleeves/neckline voted with NGL, every value validated against GarmentC
 → sew.js (sewn + draped, textured from the photo; bake.js) + TRELLIS.2's fitted 3D model when there is one (mesh3d.js: its look
 on the unseen sides and its relief).
 Before sewing: clean.js takes off what isn't the garment (NGL `on_garment` + always necklace/chain/hand/hair/bag strap: CLIPSeg,
-a thin-jewellery detector, skin openings) and LaMa paints the fabric back; the wearer's sex (NGL made_for/worn_by, CLIPSeg
+a thin-jewellery detector, skin openings; in the app CLIPSeg is off and underIn() finds a garment worn underneath by colour down the
+centre front) and fill.js (or LaMa, `painter: 'lama'`) paints the fabric back; the wearer's sex (NGL made_for/worn_by, CLIPSeg
 fallback) picks the model. After sewing, photofit.js measures hem / sleeve / leg on the photo against ViTPose keypoints (a top's hem
 against the widest-hip level, which is where COCO hips sit — our rig's hip joints are ~10 cm higher) and re-cuts the pattern until
 the model matches. AIpparel's pattern (`specs`, py/pattern.py `spec`) is a per-zone candidate: used only if its panels are the right
