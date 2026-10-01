@@ -62,7 +62,11 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         (iOS rotation); a lost WebGL context rebuilds the PMREM environments. No preserveDrawingBuffer (capture
                         calls toBlob in the same task as the draw). N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget.
                         Mobile CSS has no backdrop-filter, and the crop dim is a clip-path hole (not a 100vmax box-shadow)
-  src/services/         api/auth/local/wardrobe: garment-pipeline client, waiting for the clothing phase (not wired in main.js)
+  src/garments/tryon.js IN THE APP: a group card's "Try on" → the group's first photo through garments/pipeline.js (photo models in
+                        the browser; words + patterns from the live API, retried twice) → worn on the model; it may switch the
+                        model's sex first (onSex → main.js useSex: that sex's own settings) and follows body-shape changes.
+                        Progress steps over the preview (.stage-busy); a manual sex switch takes the clothes off
+  src/services/         api/auth/local/wardrobe: garment-pipeline client
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket
 render.yaml             Render blueprint

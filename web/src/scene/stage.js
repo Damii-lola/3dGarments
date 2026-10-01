@@ -419,7 +419,13 @@ export function createStage(container) {
     setView, setEnvironment, setLighting, capture, cropRect, onResize(fn) { resizeSubs.add(fn); },
     get environment() { return { ...state.env }; },
     get lighting() { return { ...state.light }; },
-    setSubjectHeight(h) { subjectHeight = h; },
+    /** the model's height (m): the view is framed again for it (a 183 cm man in a 173 cm woman's framing lost his
+     *  head) — glided for a big change (a sex switch), followed instantly for a slider's small steps */
+    setSubjectHeight(h) {
+      const d = Math.abs(h - subjectHeight);
+      subjectHeight = h;
+      if (d > 0.002 && currentView && !userMoved) { setView(currentView, { instant: d < 0.03 }); invalidate(d < 0.03 ? 3 : 60); }
+    },
     setExposure(v) { renderer.toneMappingExposure = v; invalidate(); },
     setAO(v) { aoEnabled = !!v; invalidate(); },
     /** ask for a redraw after changing anything in the scene (pose, shape, skin …) */

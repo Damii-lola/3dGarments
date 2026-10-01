@@ -212,9 +212,20 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .gg-thumbs span { background: #232631 center / cover no-repeat; position: relative; }
 .gg-thumbs span:only-child { grid-column: span 2; grid-row: span 2; }
 .gg-thumbs b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); font-size: 10px; color: #fff; }
-.gg-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.gg-meta { display: flex; flex-direction: column; min-width: 56px; flex: 1; }
 .gg-meta b { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gg-meta small { font-size: 11.5px; color: var(--muted); }
+.wear-btn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px; border-radius: 9px; border: 1px solid rgba(255,91,58,.45);
+  background: rgba(255,91,58,.12); color: var(--text); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none; white-space: nowrap; }
+.wear-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.wear-btn:hover { background: rgba(255,91,58,.22); }
+.wear-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wear-btn.busy { opacity: .7; cursor: progress; }
+/* the dressing progress, over the preview */
+.stage-busy { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px);
+  padding: 10px 16px; border-radius: 12px; background: rgba(20,22,28,.86); color: #fff; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.25); pointer-events: none; }
+.stage-busy[hidden] { display: none; }
+.stage-busy i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spin .8s linear infinite; flex: none; }
 .icon-btn { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
 .icon-btn:hover { background: rgba(255,255,255,.08); color: var(--text); }
 .icon-btn.danger:hover { background: rgba(255,84,112,.14); color: var(--bad); }

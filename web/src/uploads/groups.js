@@ -17,6 +17,7 @@ const ICON = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>',
+  shirt: '<svg viewBox="0 0 24 24"><path d="M8 3l-5 3 2 5 2-1v11h10V10l2 1 2-5-5-3c-.5 1.7-2 3-4 3s-3.5-1.3-4-3z"/></svg>',
 };
 
 /** object URLs for blobs, released when their image leaves the screen */
@@ -44,10 +45,11 @@ async function readFiles(files) {
 
 /**
  * @param toast (msg, type) — the app's toast
- * @returns the section element (build once, keep it across panel rebuilds)
+ * @param onWear (group) — "Try on" on a card: dress the model in it (the app does the work; setWearing marks the card)
+ * @returns the section element (build once, keep it across panel rebuilds), with .setWearing(id | null)
  */
-export function createUploads({ toast }) {
-  let groups = [];
+export function createUploads({ toast, onWear = null }) {
+  let groups = [], wearing = null, working = null;
   const el = document.createElement('section');
   el.className = 'group uploads';
   el.innerHTML = `
@@ -77,6 +79,9 @@ export function createUploads({ toast }) {
   for (const t of ['dragleave', 'drop']) zone.addEventListener(t, () => zone.classList.remove('over'));
   zone.addEventListener('drop', (e) => { e.preventDefault(); take(e.dataTransfer.files); });
 
+  /** the card being worn / being dressed (the app tells us) */
+  el.setWearing = (id, busyId = null) => { wearing = id; working = busyId; render(); };
+
   /* ---------------- group cards ---------------- */
   function render() {
     list.innerHTML = '';
@@ -90,10 +95,13 @@ export function createUploads({ toast }) {
       card.innerHTML = `
         <div class="gg-thumbs">${shown.map((img, i) => `<span style="background-image:url('${urlOf(img)}')">${i === 3 && more > 0 ? `<b>+${more}</b>` : ''}</span>`).join('')}</div>
         <div class="gg-meta"><b>${esc(g.name)}</b><small>${g.images.length} image${g.images.length === 1 ? '' : 's'}</small></div>
-        <button type="button" class="icon-btn" data-act="edit" title="Edit group" aria-label="Edit ${esc(g.name)}">${ICON.edit}</button>
+        ${onWear ? `<button type="button" class="wear-btn${wearing === g.id ? ' on' : ''}${working === g.id ? ' busy' : ''}" data-act="wear"
+          aria-label="${wearing === g.id ? 'Take off' : 'Try on'} ${esc(g.name)}">${ICON.shirt}<span>${working === g.id ? 'Dressing…' : wearing === g.id ? 'Take off' : 'Try on'}</span></button>` : ''}
+        ${onWear ? '' : `<button type="button" class="icon-btn" data-act="edit" title="Edit group" aria-label="Edit ${esc(g.name)}">${ICON.edit}</button>`}
         <button type="button" class="icon-btn danger" data-act="delete" title="Delete group" aria-label="Delete ${esc(g.name)}">${ICON.trash}</button>`;
       card.addEventListener('click', (e) => {
         if (e.target.closest('[data-act="delete"]')) { askDelete(g); return; }
+        if (e.target.closest('[data-act="wear"]')) { if (!working) onWear(g); return; }
         openEditor(g);
       });
       card.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === card) { e.preventDefault(); openEditor(g); } });

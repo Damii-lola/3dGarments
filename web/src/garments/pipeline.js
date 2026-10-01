@@ -25,6 +25,7 @@
  *   specs?:   { upper?, lower?, full? }  AIpparel patterns for this photo (tools/garment_ml/aipparel)
  *   models?:  { upper?, lower?, full? }  3D model GLB url(s) for this photo, best first (TRELLIS.2, Hunyuan3D 2.1)
  *   onStep?(text)
+ *   onSex?(sex)   the model being dressed (the clothes' sex), before anything is made for it
  * }
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …), source }]  lower garments first
  */
@@ -60,7 +61,7 @@ export function specFits(spec, zone, type) {
   return has(/torso/) && has(/skirt/);
 }
 
-export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, fitRounds = 3 }) {
+export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, onSex = null, fitRounds = 3 }) {
   onStep('Finding the clothes in the photo…');
   const parsed = await parsePhoto(image);
   const c = document.createElement('canvas'), k = Math.min(1, 1024 / Math.max(image.width, image.height));
@@ -76,6 +77,8 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   // the vision model can't tell (a torso without a face): the photo itself decides (CLIPSeg over the person)
   if (!sex) sex = (await wearerSex(parsed).catch(() => null)) || human.sex;
   if (sex !== human.sex) { onStep(`These are ${madeFor}'s clothes: dressing the ${sex} model…`); human.setSex(sex); }
+  // the app puts that model's own body settings on before anything is cut for it
+  if (onSex) await onSex(sex);
   const B = human.active;
   const body = bodyMeasures(human);
   onStep('Finding the body in the photo…');
@@ -136,7 +139,9 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       const o = nextOverrides(zone, target, now, fit, ov);
       if (JSON.stringify(o) === JSON.stringify(ov)) break;
       onStep(`Matching the ${g.type} to the photo (${r + 1}/${fitRounds})…`);
-      const p2 = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body, overrides: o });
+      // a round that can't be had (the pattern service unreachable) keeps the garment as it is
+      const p2 = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body, overrides: o }).catch((e) => { console.warn('fit round skipped:', e.message); return null; });
+      if (!p2) break;
       const b2 = sew(p2), n2 = modelMeasures(human, b2.posed.pts, zone), e2 = fitError(target, n2);
       fitLog.push({ overrides: o, now: n2, err: e2 });
       if (e2 < err) { built.dispose(); built = b2; now = n2; err = e2; fit = p2.fit || fit; ov = o; } else { b2.dispose(); break; }
@@ -147,10 +152,12 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     let source = designs[zone] ? 'chatgarment' : 'ngl';
     if (specs[zone] && specFits(specs[zone], zone, g.type)) {
       onStep(`Trying AIpparel's pattern for the ${g.type}…`);
-      const p3 = await pattern({ spec: specs[zone], zone, sex: human.sex, body });
-      const b3 = sew(p3), n3 = modelMeasures(human, b3.posed.pts, zone), e3 = Object.keys(target).length ? fitError(target, n3) : Infinity;
-      fitLog.push({ source: 'aipparel', now: n3, err: e3 });
-      if (e3 < err) { built.dispose(); built = b3; now = n3; err = e3; source = 'aipparel'; } else b3.dispose();
+      const p3 = await pattern({ spec: specs[zone], zone, sex: human.sex, body }).catch(() => null);
+      if (p3) {
+        const b3 = sew(p3), n3 = modelMeasures(human, b3.posed.pts, zone), e3 = Object.keys(target).length ? fitError(target, n3) : Infinity;
+        fitLog.push({ source: 'aipparel', now: n3, err: e3 });
+        if (e3 < err) { built.dispose(); built = b3; now = n3; err = e3; source = 'aipparel'; } else b3.dispose();
+      }
     }
     worn.push(built);
     out.push({ zone, garment, built, target, fit: fitLog, sex, source });

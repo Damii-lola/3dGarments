@@ -10,6 +10,7 @@ import {
 } from './human/body.js';
 import { DEFAULT_POSE, composePose } from './human/poses.js';
 import { createUploads } from './uploads/groups.js';
+import { createTryOn, photoBitmap } from './garments/tryon.js';
 import { loadProfile, saveProfile } from './services/profile.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -128,6 +129,7 @@ let ui = {};     // live controls + readouts
 function applyShape() {
   if (!human) return;
   model.applyShape();
+  tryOn?.follow();
   stage.invalidate(3, true);
   stage.setSubjectHeight(human.heightM);
   queueReadouts();
@@ -183,19 +185,62 @@ const breadth = (v) => {
 
 let uploads = null; // the garment photo section: built once, kept across panel rebuilds
 
+/* ================================================================ try-on: a group's photo → its clothes on the model */
+
+let tryOn = null, wearing = null;
+const busyEl = document.createElement('div');
+busyEl.className = 'stage-busy'; busyEl.hidden = true; busyEl.setAttribute('role', 'status');
+busyEl.innerHTML = '<i></i><span></span>';
+const busy = (text) => { busyEl.hidden = !text; if (text) busyEl.querySelector('span').textContent = text; };
+
+/** the model's sex chosen in the panel (or by the clothes): that model with its own settings */
+function useSex(sex) {
+  profile.sex = sex;
+  M = profile.models[sex];
+  model.model = M;
+  model.applyShape();
+  model.applyLook();
+  stage.setSubjectHeight(human.heightM);
+  save();
+}
+
+async function onWear(g) {
+  if (!tryOn || tryOn.busy) return;
+  if (wearing === g.id) { tryOn.takeOff(); wearing = null; uploads.setWearing(null); return; }
+  if (!g.images.length) return;
+  uploads.setWearing(wearing, g.id);
+  busy('Reading the photo…');
+  try {
+    const img = await photoBitmap(g.images[0]);           // the group's first photo: the garment from the front
+    const made = await tryOn.wear(img, busy, (sex) => { if (sex !== M.sex) { useSex(sex); buildPanel(); } });
+    wearing = made.length ? g.id : null;
+    if (!made.length) toast(`No garment found in “${g.name}”'s photo`, 'error');
+    else toast(`${made.map((m) => m.garment.type).join(' + ')} on the ${human.sex} model`, 'success');
+  } catch (err) {
+    console.error(err);
+    tryOn.takeOff(); wearing = null;
+    toast(`Couldn't dress the model: ${err.message || err}`, 'error', 7000);
+  } finally {
+    busy(null);
+    uploads.setWearing(wearing);
+    stage.invalidate(4);
+  }
+}
+
 function buildPanel() {
   const host = $('#panel');
-  uploads ||= createUploads({ toast });
+  uploads ||= createUploads({ toast, onWear });
   host.innerHTML = '';
   ui = {};
 
   const sex = chips([['female', 'Female'], ['male', 'Male']], M.sex, (v) => {
     if (v === M.sex) return;
-    profile.sex = v;
-    M = profile.models[v];          // that model's own settings, exactly as they were left
-    model.model = M;
-    applyShape();
-    applyLook();
+    if (tryOn?.busy) return;
+    // the clothes were made for the other body
+    if (wearing) { tryOn.takeOff(); wearing = null; uploads.setWearing(null); }
+    useSex(v);                      // that model's own settings, exactly as they were left
+    stage.invalidate(3, true);
+    queueReadouts();
     buildPanel();
   }, { cls: 'seg big' });
 
@@ -293,13 +338,15 @@ async function boot() {
   stage.root.add(human.object);
   stage.setSubjectHeight(human.heightM);
   stage.setView('front', { instant: true });
+  tryOn = createTryOn({ human, stage });
+  $('#stage-canvas').parentElement.append(busyEl);
   buildPanel();
   stage.invalidate(4);
   $('#loader').classList.add('done');
   // build the other body's shape targets while idle, so switching sex is instant
   const other = human.bodies[M.sex === 'female' ? 'male' : 'female'];
   (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(() => other.ensureShape(), { timeout: 4000 });
-  window.__3dg = { stage, human, model, get state() { return M; }, get profile() { return profile; }, applyShape, buildPanel, ready: true };
+  window.__3dg = { stage, human, model, get state() { return M; }, get profile() { return profile; }, applyShape, buildPanel, tryOn, ready: true };
 
   // this device's copy in the cloud: take it if it is newer (e.g. local data was cleared),
   // otherwise make sure the cloud has ours
