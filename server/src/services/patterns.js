@@ -74,8 +74,22 @@ export function warmPatterns() {
   return worker?.ready;
 }
 
+// the same request again (a retry, the same photo worn again): the same pattern, from memory
+const memo = new Map();
+const MEMO_MAX = 200;
+
 /** @returns pattern { panels, stitches, body } — see py/pattern.py */
-export async function buildPattern({ garment, design, spec, zone, overrides, sex = 'female', body = {} }) {
+export async function buildPattern(args) {
+  const key = JSON.stringify(args);
+  if (memo.has(key)) { const v = memo.get(key); memo.delete(key); memo.set(key, v); return v; }
+  const p = build(args);
+  memo.set(key, p);
+  if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+  p.catch(() => memo.delete(key));
+  return p;
+}
+
+async function build({ garment, design, spec, zone, overrides, sex = 'female', body = {} }) {
   const req = { garment, design, spec, zone, overrides, sex, body };
   warmPatterns();
   const w = worker, t0 = Date.now();
