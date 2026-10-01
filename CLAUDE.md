@@ -101,8 +101,20 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         line, collar capped 9 cm) and one per sleeve (along the arm from the shoulder joint × around it). One
                         SkinnedMesh of the body's skin triangles (subset geometry: its bones, morph targets, suitGap/suitNrm),
                         alpha-tested (the photo's outline = the garment's edges), 1.2 mm over the suit; Body.layers re-binds it.
-                        Skin fully inside sinks; underwear covered with 2 cm to spare is not drawn (materials.js discards
-                        hidden fabric: its normals can face either way, sinking pushed it OUT). Tops only so far.
+                        Hidden skin + underwear (materials.js _hide) sink only 4 mm and are DRAWN 3 cm DEEPER (pushed along the
+                        line of sight in project_vertex: same pixels, only depth) — a point sunk deep near a bending joint
+                        comes out through the skin, and a depth step at an open edge reads as a crease to the AO: so the
+                        hide set skips the skin's last triangle at an open edge. Tops only so far.
+                        LOOSE, NOT A BODYSUIT (drape.js, a rest-space offset per body vertex): torso = per 1 cm slice the hull
+                        radius by angle, upper-enveloped over ±6 cm, spanned vertically (profile's upper hull: collarbone →
+                        chest, shoulder blades → small of the back), + ease (front/back > sides), then GRAVITY (below the chest
+                        it never comes in faster than 12 cm/m), widened where the photo's hem flares; sleeves = a tube ≥ the
+                        arm's 90th-pct radius +14 % (cap sits on the shoulder). The torso share rides the TORSO bones only
+                        (drapeT/drapeW: a raised arm doesn't swing the shirt's side open), the sleeve share the skin weights.
+                        Armholes = the 50 % level of each arm's surface-smoothed weight: triangles near it go on both charts,
+                        each cut on its side (shell.js `seam`), so the seam is a smooth line. shell.reskin re-mixes the
+                        garment's bones when the body re-weights its armpits (weightListeners). collide.js: after every pose
+                        the arms/hands push the torso's hang in (drapeK), the dent smoothed.
                         3D + DETAILS (the AI decides, the code builds): POST /api/ngl/details (shared/details.js: the vision
                         model fills a fixed vocabulary — collar style, closure + button count/colour, placket, pockets, cuffs,
                         hem, fabric material/finish/pattern/weight, colours, what's shown inside, accessories). shell.js makes

@@ -64,10 +64,13 @@ export function createBodyMaterial({ tone = '#bb8b64', clay = false, eyes = {}, 
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vRest;\nattribute float _part;\nvarying float vPart;\nattribute float _edge;\nattribute float _band;\nvarying float vEdge;\nvarying float vBand;\nattribute float _hide;\nvarying float vHide;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvPart = _part;\nvEdge = _edge;\nvBand = _band;\nvHide = _hide;\n// skin inside a worn garment sinks under it (never pokes through; no hole past the garment edge)\ntransformed -= objectNormal * _hide * 0.012 * (1.0 - step(3.5, _part) * step(_part, 4.5));\n// (underwear inside a worn garment is not sunk, its normals can face either way: it is not drawn, see the fragment)\n// clothing sits a hair off the skin so it never z-fights or sinks in\nif (_part > 3.5 && _part < 4.5) transformed += objectNormal * 0.0025;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;\nvPart = _part;\nvEdge = _edge;\nvBand = _band;\nvHide = _hide;\n// skin inside a worn garment sinks a little under it (no hole past the garment edge) — only a little: a point sunk\n// deep inside, near a joint that bends, can come out through the skin elsewhere; what keeps it under the garment is\n// its depth (project_vertex below)\ntransformed -= objectNormal * _hide * 0.004 * (1.0 - step(3.5, _part) * step(_part, 4.5));\n// (underwear inside a worn garment is not sunk, its normals can face either way: only drawn deeper, below)\n// clothing sits a hair off the skin so it never z-fights or sinks in\nif (_part > 3.5 && _part < 4.5) transformed += objectNormal * 0.0025;')
+      // skin under a garment drawn 3 cm further from the eye than it is (along the line of sight: the same pixels,
+      // only its depth) — the garment over it always wins, whatever a pose does to either
+      .replace('#include <project_vertex>', '#include <project_vertex>\nif (_hide > 0.5) gl_Position = projectionMatrix * vec4(mvPosition.xyz + normalize(mvPosition.xyz) * 0.03 * min(_hide, 1.5), 1.0);');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nuniform vec3 uSSS; uniform float uClay; uniform vec3 uEyeL; uniform vec3 uEyeR;\nvarying vec3 vRest; varying float vPart; varying float vEdge; varying float vBand; varying float vHide;\n${NOISE}\n${KNIT}`)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vHide > 0.9 && vPart > 3.5 && vPart < 4.5) discard;')
+
       .replace('#include <map_fragment>', `#include <map_fragment>
 float isFabric = step(3.5, vPart) * step(vPart, 4.5);
 Knit kf = Knit(0.5, 0.0, 0.0, 0.0, 0.0, 0.0); // evaluated once, reused by the bump below

@@ -21,8 +21,10 @@
  */
 import * as THREE from 'three';
 import { useCpuMorphs, patchMaterial } from '../human/cpumorph.js';
-import { buildShell, buildAnchored } from './shell.js';
+import { buildShell, buildAnchored, reskin } from './shell.js';
 import { prepareFabric } from './fabric.js';
+import { drapeField } from './drape.js';
+import { limbCollider } from './collide.js';
 
 const TORSO = { W: 1024, H: 1024, top: -0.32, bottom: 1.3 };     // h: metres below the shoulder line
 const COLLAR = 0.09;                                             // the most a collar rises above the shoulder line (m)
@@ -137,7 +139,9 @@ function photoOf({ cut }) {
     const first = ext.findIndex((e) => e && e[1] - e[0] > 0.6 * widest);
     if (first < 0) continue;
     for (let k = 0; k < first; k++) ext[k] = ext[first];
-    P.sleeves[side] = { rx: U(rx), ry: U(ry), dx, dy, nx, ny, span: U(span), K, ext, P };
+    // (and its fabric: up there the slice crosses the shoulder's slope into the background — the sleeve's root is
+    // sampled where it's whole, so the sleeve reaches the armhole all round)
+    P.sleeves[side] = { rx: U(rx), ry: U(ry), dx, dy, nx, ny, span: U(span), K, ext, P, root: U((first / (K - 1)) * span) };
   }
   return P;
 }
@@ -342,13 +346,13 @@ function sleeveTexture(front, back) {
       if (a > sl.span) continue;
       const k = Math.min(sl.K - 1, Math.round((a / sl.span) * (sl.K - 1))), e = sl.ext[k];
       if (!e) continue;
-      const P = sl.P;
+      const P = sl.P, as = Math.max(a, sl.root || 0);
       for (let i = i0; i < i1; i++) {
         // 0 … 1 across this half: front from the top edge down to the underarm, back from the underarm back up
         let f = (i + 0.5 - i0) / (i1 - i0);
         if (i0) f = 1 - f;
         const p = e[1] - f * (e[1] - e[0]);
-        P.sample(sl.rx + sl.dx * a + sl.nx * p, sl.ry + sl.dy * a + sl.ny * p, d, (j * W + i) * 4);
+        P.sample(sl.rx + sl.dx * as + sl.nx * p, sl.ry + sl.dy * as + sl.ny * p, d, (j * W + i) * 4);
       }
     }
   }
@@ -472,34 +476,113 @@ export function layerGarment(human, photos, opts = {}) {
   const skinEnd = g.groups[0] ? g.groups[0].start + g.groups[0].count : g.index.count;
   const idx = g.index.array;
   const per = charts.map(() => ({ tris: [], uvs: [] }));
+  const armSide = B.bones.map((b) => { const r = REGION(b.name); return r.startsWith('arm') ? r.slice(4) : null; });
+  const armBone = armSide.map(Boolean), SKI = g.attributes.skinIndex.array, SKW = g.attributes.skinWeight.array;
+  const torsoShare = (i) => { let w = 0; for (let k = 0; k < 4; k++) if (!armBone[SKI[i * 4 + k]]) w += SKW[i * 4 + k]; return w; };
   const vAlpha = new Float32Array(n);                       // each body vertex: how covered it is on its own chart
-  for (let t = 0; t < skinEnd; t += 3) {
-    const v = [idx[t], idx[t + 1], idx[t + 2]];
-    if (v.some((i) => part[i] > 0.5)) continue;
-    const cs = v.map((i) => chartOf(region[i]));
-    // the triangle's chart: the one most of its corners are on (a torso / sleeve boundary goes to the sleeve)
-    let c = cs[0] === cs[1] || cs[0] === cs[2] ? cs[0] : cs[1] === cs[2] ? cs[1] : Math.max(...cs);
-    if (c < 0) continue;
-    const ch = charts[c];
-    if (c > 0 && cs.every((x) => x !== c)) continue;
-    const uvs = v.map((i) => ch.uv(i));
+  // the armholes: where a sleeve meets the torso is a smooth line round the arm's root — the 50 % level of each arm's
+  // skin weight, smoothed over the surface (the bones' own boundary zigzags along the triangles' edges); triangles
+  // near it go on both charts, each cut on its own side (shell.js `seam`)
+  const sideOf = { arm_l: 'l', arm_r: 'r' }, seam = {};
+  {
+    const nbr = Array.from({ length: n }, () => []);
+    for (let t = 0; t < skinEnd; t += 3) for (let e = 0; e < 3; e++) { const p = idx[t + e], q = idx[t + (e + 1) % 3]; nbr[p].push(q); nbr[q].push(p); }
+    for (const side of ['l', 'r']) {
+      if (!arms['arm_' + side]) continue;
+      let f = new Float32Array(n);
+      for (let i = 0; i < n; i++) { let w = 0; for (let k = 0; k < 4; k++) if (armSide[SKI[i * 4 + k]] === side) w += SKW[i * 4 + k]; f[i] = w; }
+      for (let it = 0; it < 40; it++) {
+        const o = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const N = nbr[i]; if (!N.length) { o[i] = f[i]; continue; } let m = 0; for (const j of N) m += f[j]; o[i] = 0.5 * f[i] + 0.5 * m / N.length; }
+        f = o;
+      }
+      for (let i = 0; i < n; i++) f[i] -= 0.5;
+      seam[side] = f;
+    }
+  }
+  const NEAR = 0.2, ci = { l: charts.findIndex((c) => c.key === 'arm_l'), r: charts.findIndex((c) => c.key === 'arm_r') };
+  const look = (c, v) => {
+    const ch = charts[c], uvs = v.map((i) => ch.uv(i));
     // around the body / the arm the texture wraps: a triangle across the wrap is drawn on one side of it
     const us = uvs.map((q) => q[0]);
     if (Math.max(...us) - Math.min(...us) > 0.5) for (const q of uvs) if (q[0] < 0.5) q[0] += 1;
-    const al = uvs.map((q) => alphaAt(ch.T, q[0], q[1]));
-    for (let k = 0; k < 3; k++) if (chartOf(region[v[k]]) === c) vAlpha[v[k]] = Math.max(vAlpha[v[k]], al[k]);
-    if (Math.max(...al) < 0.02) continue;
-    per[c].tris.push(v); per[c].uvs.push(uvs);
+    return { uvs, al: uvs.map((q) => alphaAt(ch.T, q[0], q[1])) };
+  };
+  // each body vertex: which chart it's on (its side of an armhole, else its region)
+  const ownerOf = (i) => {
+    for (const side of ['l', 'r']) {
+      if (!seam[side] || ci[side] <= 0 || !(region[i] === 'arm_' + side || region[i] === 'torso') || seam[side][i] < -0.45) continue;
+      return seam[side][i] > 0 ? ci[side] : 0;
+    }
+    return chartOf(region[i]);
+  };
+  for (let t = 0; t < skinEnd; t += 3) {
+    const v = [idx[t], idx[t + 1], idx[t + 2]];
+    if (v.some((i) => part[i] > 0.5)) continue;
+    const cs = v.map(ownerOf);
+    // the triangle's chart: the one most of its corners are on (a torso / sleeve boundary goes to the sleeve)
+    let c = cs[0] === cs[1] || cs[0] === cs[2] ? cs[0] : cs[1] === cs[2] ? cs[1] : Math.max(...cs);
+    if (c < 0) continue;
+    if (c > 0 && cs.every((x) => x !== c)) continue;
+    const cands = new Set([c]);
+    for (const side of ['l', 'r']) if (seam[side] && ci[side] > 0 && v.some((i) => Math.abs(seam[side][i]) < NEAR)) { cands.add(0); cands.add(ci[side]); }
+    for (let cc of cands) {
+      let { uvs, al } = look(cc, v), fell = false;
+      // the armpit's skin is weighted to the arm but lies on the torso's side, past a short sleeve's hem along the
+      // arm: the sleeve doesn't cover it — the torso's side panel does (in a pose with the arm out it shows)
+      if (cc > 0 && Math.max(...al) < 0.02 && !cands.has(0) && v.some((i) => torsoShare(i) > 0.08)) {
+        const o = look(0, v);
+        if (Math.max(...o.al) >= 0.02) { cc = 0; fell = true; ({ uvs, al } = o); }
+      }
+      for (let k = 0; k < 3; k++) if (fell || ownerOf(v[k]) === cc) vAlpha[v[k]] = Math.max(vAlpha[v[k]], al[k]);
+      if (Math.max(...al) < 0.02) continue;
+      per[cc].tris.push(v); per[cc].uvs.push(uvs);
+    }
   }
+  // the pieces' seams: a sleeve on its side of its armhole; the torso on its side of every armhole — and past the
+  // sleeve's own edge (its hem, along the arm: the armpit below a short sleeve) on both sides: the torso's line is
+  // max(its side of the seam, how far out of the sleeve's cut-out), so the two pieces' cuts meet edge to edge
+  const seamFor = (c) => {
+    if (c > 0) return seam[sideOf[charts[c].key]] || null;
+    if (!seam.l && !seam.r) return null;
+    const f = new Float32Array(n).fill(0.5);
+    for (const side of ['l', 'r']) {
+      if (!seam[side] || ci[side] <= 0) continue;
+      const ch = charts[ci[side]], S = seam[side];
+      for (let i = 0; i < n; i++) {
+        if (S[i] < -0.45) continue;
+        const [u, v] = ch.uv(i), out = 0.5 - alphaBilinear(ch.T, u, v);
+        f[i] = Math.min(f[i], Math.max(-S[i], out * 0.25));
+      }
+    }
+    return f;
+  };
 
   /* ---- one skinned mesh: the fabric as a real 3D piece (shell.js: cut on the photo's outline, with thickness) —
      every chart its own texture, on the body's bones and morphs ---- */
   const thick = opts.thick ?? 0.0012;
   const det = opts.details || null;
-  const pieces = per.map((P, c) => ({ tris: P.tris, uvs: P.uvs, group: c, alpha: (u, v) => alphaBilinear(charts[c].T, u, v),
+  const pieces = per.map((P, c) => ({ tris: P.tris, uvs: P.uvs, group: c, alpha: (u, v) => alphaBilinear(charts[c].T, u, v), seam: seamFor(c),
     raise: edgeBands(charts[c].T, c === 0 ? 'torso' : 'sleeve', det) })).filter((p) => p.tris.length);
   if (!pieces.length) return null;
-  const geo = buildShell(g, pieces, { thick });
+  // how it hangs (drape.js): the garment's own girths off the photos — its torso (front + back flat widths) and
+  // each sleeve (front + back sleeve widths) — around the body's
+  const used = new Set(); for (const P of per) for (const t of P.tris) for (const i of t) used.add(i);
+  const flat = (ph, h) => { const t = ph.P.torsoAt(ph.P.shoulderY + h / ph.s); return t ? (t[1] - t[0]) * ph.s : 0; };
+  const girth = (h) => { const a = flat(front, h), b = photos.back ? flat(back, h) : a; return a && b ? a + b : 0; };
+  const sleeveFlat = (sl, s, m) => {
+    if (!sl) return 0;
+    const a = m / s, k = Math.round((a / sl.span) * (sl.K - 1));
+    const e = sl.ext[Math.max(0, Math.min(sl.K - 1, k))];
+    return k < sl.K && a <= sl.span && e ? (e[1] - e[0]) * s : 0;
+  };
+  const sleeveG = {};
+  for (const [side, fs, bs] of [['r', 'left', 'right'], ['l', 'right', 'left']]) {
+    const fsl = F.sleeves[fs], bsl = photos.back ? Bk.sleeves[bs] : F.sleeves[fs === 'left' ? 'right' : 'left'];
+    if (fsl || bsl) sleeveG[side] = (m) => { const a = sleeveFlat(fsl, front.s, m), b = sleeveFlat(bsl, back.s, m); return a && b ? a + b : 2 * (a || b); };
+  }
+  const drape = opts.hug ? null : drapeField(body, { inTorso, girth, sleeves: sleeveG, used });
+  const geo = buildShell(g, pieces, { thick, drape });
   if (!geo.index.count) return null;
   const mats = [];
   charts.forEach((ch) => {
@@ -533,7 +616,7 @@ export function layerGarment(human, photos, opts = {}) {
       items.push(buttonItem(body, at, Math.max(0.004, Math.min(0.01, b.r * front.s)), lift));
     }
     if (items.length) {
-      const bg = buildAnchored(g, items);
+      const bg = buildAnchored(g, items, drape);
       const bm = buttonMaterial(opts.buttons[0].color);
       buttons = new THREE.SkinnedMesh(bg, bm);
       buttons.name = 'garment-buttons';
@@ -550,19 +633,39 @@ export function layerGarment(human, photos, opts = {}) {
   }
 
   /* ---- the body under it: skin fully inside the garment (and the underwear under that skin) sinks out of sight ---- */
+  const hide = new Set();
+  // (the skin under the fabric, all but its last triangle at an open edge — there the skin seen past the edge would
+  // meet skin drawn deeper (materials.js) and the ambient occlusion would read the step as a crease)
   const nb = Array.from({ length: n }, () => []);
   for (let t = 0; t < skinEnd; t += 3) for (let e = 0; e < 3; e++) { const a = idx[t + e], b = idx[t + (e + 1) % 3]; nb[a].push(b); nb[b].push(a); }
-  const hide = new Set();
-  for (let i = 0; i < n; i++) if (part[i] < 0.5 && vAlpha[i] > 0.9 && nb[i].every((j) => vAlpha[j] > 0.9)) hide.add(i);
-  // the underwear wherever the garment covers it (its spot on the garment's chart is opaque): not drawn (materials.js)
+  for (let i = 0; i < n; i++) if (part[i] < 0.5 && vAlpha[i] > 0.9 && nb[i].every((j) => vAlpha[j] > 0.6)) hide.add(i);
+  // the underwear under it: drawn deeper too (whole — a bra seen in an open front is a bra, not a cut-off piece of one)
   for (let i = 0; i < n; i++) {
     if (part[i] < 3.5 || part[i] > 4.5) continue;
-    const c = chartOf(region[i]);
+    const c = ownerOf(i);
     if (c < 0 || !charts[c]) continue;
-    // covered with room to spare (2 cm on: up, down, round it): at the garment's edge the underwear stays (under it,
-    // see LIFT) — hidden there, half its triangles would sink and tear it
-    const [u, v] = charts[c].uv(i), T = charts[c].T, dv = 0.02 / (c === 0 ? TORSO.bottom - TORSO.top : SLEEVE.len), du = 0.02 / 1.0;
-    if ([[0, 0], [0, dv], [0, -dv], [du, 0], [-du, 0]].every(([a, b]) => alphaAt(T, u + a, v + b) > 0.5)) hide.add(i);
+    const [u, v] = charts[c].uv(i);
+    if (alphaAt(charts[c].T, u, v) > 0.5) hide.add(i);
+  }
+
+  // the body re-weights its armpits as the arms move: the garment (and its buttons) with it
+  const onWeights = () => { reskin(geo, g); if (buttons) reskin(buttons.geometry, g); };
+  B.weightListeners?.add(onWeights);
+  onWeights();
+  // in a pose the arms and hands push the loose fabric in (collide.js): the skin of the arms that the torso's hang
+  // could reach, padded by a sleeve's own hang where one is over it
+  let collide = null;
+  if (drape) {
+    const limbs = [], pad = {};
+    for (let i = 0; i < n; i++) {
+      if (part[i] > 0.5 || !region[i].startsWith('arm')) continue;
+      limbs.push(i);
+      if (vAlpha[i] > 0.5) pad[i] = 0.006 + Math.hypot(drape.all[i * 3] - drape.torso[i * 3], drape.all[i * 3 + 1] - drape.torso[i * 3 + 1], drape.all[i * 3 + 2] - drape.torso[i * 3 + 2]) + thick;
+    }
+    const cg = limbCollider(garment, mesh, limbs, pad), cb = buttons ? limbCollider(buttons, mesh, limbs, pad) : null;
+    collide = () => { cg.update(); cb?.update(); };
+    human.listeners?.add(collide);
+    collide();
   }
 
   return {
@@ -572,6 +675,8 @@ export function layerGarment(human, photos, opts = {}) {
     dispose() {
       if (buttons) { B.layers.delete(buttons); buttons.removeFromParent(); buttons.geometry.dispose(); buttons.material.map?.dispose(); buttons.material.dispose(); }
       B.layers.delete(garment);
+      B.weightListeners?.delete(onWeights);
+      if (collide) human.listeners?.delete(collide);
       garment.removeFromParent();
       geo.dispose();
       for (const m of mats) { m.map?.dispose(); m.normalMap?.dispose(); m.dispose(); }
@@ -584,9 +689,16 @@ export function layerGarment(human, photos, opts = {}) {
 
 const offset = (shader) => {
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', `#include <common>\nattribute float suitGap;\nattribute vec3 suitNrm;\nattribute float shellOff;\nattribute vec3 shellN;`)
+    .replace('#include <common>', `#include <common>\nattribute float suitGap;\nattribute vec3 suitNrm;\nattribute float shellOff;\nattribute vec3 shellN;\nattribute vec3 drape;\nattribute vec3 drapeT;\nattribute vec4 drapeW;\nattribute float drapeK;`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = shellN;')
-    .replace('#include <skinning_vertex>', `transformed += normalize(suitNrm + morphNrm) * (suitGap + ${LIFT.toFixed(5)} + shellOff);\n#include <skinning_vertex>`);
+    .replace('#include <skinning_vertex>', `transformed += drape * drapeK + normalize(suitNrm + morphNrm) * (suitGap + ${LIFT.toFixed(5)} + shellOff);
+#include <skinning_vertex>
+#ifdef USE_SKINNING
+mat4 dM = drapeW.x * getBoneMatrix(skinIndex.x) + drapeW.y * getBoneMatrix(skinIndex.y) + drapeW.z * getBoneMatrix(skinIndex.z) + drapeW.w * getBoneMatrix(skinIndex.w);
+transformed += (bindMatrixInverse * dM * bindMatrix * vec4(drapeT * drapeK, 0.0)).xyz;
+#else
+transformed += drapeT * drapeK;
+#endif`);
 };
 
 /** the fabric's finish (the detail sheet's word) → how it takes the light */
@@ -604,7 +716,8 @@ function materialFor(map, normalMap, finish = 'matte', alphaTest = 0.15, tint = 
     // the photo already carries the light the garment was shot in: a little of it as its own glow keeps a dark
     // fabric's print as readable as in the photo (as fabric.js does for sewn garments)
     emissiveMap: map, emissive: new THREE.Color(0.55, 0.55, 0.55),
-    sheen: f.sheen || 0, sheenRoughness: 0.55, sheenColor: sc, side: THREE.FrontSide,
+    // (both sides: where a pose crumples the fabric — the shoulder under a lowered arm — a fold turns triangles over)
+    sheen: f.sheen || 0, sheenRoughness: 0.55, sheenColor: sc, side: THREE.DoubleSide,
   });
   m.onBeforeCompile = offset;
   m.customProgramCacheKey = () => 'layered-garment';
