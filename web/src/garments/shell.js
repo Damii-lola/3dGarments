@@ -62,8 +62,15 @@ export function buildShell(g, pieces, { thick = 0.0012, levels = 2 } = {}) {
       const k = p < q ? `${p}x${q}` : `${q}x${p}`;
       let o = cross.get(k);
       if (o === undefined) {
-        const [lo, hi] = p < q ? [p, q] : [q, p], t = (ISO - V[lo].a) / ((V[hi].a - V[lo].a) || 1e-6);
-        o = V.length; cross.set(k, o); const r = mix(V[lo], V[hi], Math.max(0, Math.min(1, t))); r.a = ISO; V.push(r);
+        // where along the edge the photo's outline really is: bisection on the texture's alpha (a straight
+        // interpolation of the ends' alphas puts it mid-edge across a sharp outline: a saw-tooth edge)
+        const [lo, hi] = p < q ? [p, q] : [q, p], A0 = V[lo], A1 = V[hi], inLo = A0.a >= ISO;
+        let t0 = 0, t1 = 1;
+        for (let it = 0; it < 8; it++) {
+          const tm = (t0 + t1) / 2, u = A0.uv[0] + (A1.uv[0] - A0.uv[0]) * tm, v = A0.uv[1] + (A1.uv[1] - A0.uv[1]) * tm;
+          if ((piece.alpha(u, v) >= ISO) === inLo) t0 = tm; else t1 = tm;
+        }
+        o = V.length; cross.set(k, o); const r = mix(A0, A1, (t0 + t1) / 2); r.a = ISO; V.push(r);
       }
       return o;
     };

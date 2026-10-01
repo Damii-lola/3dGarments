@@ -297,6 +297,18 @@ function torsoTexture(front, back) {
       }
     }
   }
+  // the front photo shows the inside of the back collar across its open neck: that's the back's (and the back photo
+  // has it) — above the shoulder line, within the neck opening's span just below it, the front is cleared
+  {
+    const j0 = Math.round(((0.03 - top) / (bottom - top)) * H);
+    let a = W / 4, b = W / 4;
+    if (d[(j0 * W + W / 4) * 4 + 3] < 128) {
+      while (a > 0 && d[(j0 * W + a - 1) * 4 + 3] < 128) a--;
+      while (b < W / 2 - 1 && d[(j0 * W + b + 1) * 4 + 3] < 128) b++;
+      const j1 = Math.round(((0 - top) / (bottom - top)) * H);
+      for (let j = 0; j < j1; j++) for (let i = a; i <= b; i++) d[(j * W + i) * 4 + 3] = 0;
+    }
+  }
   smoothTopEdge(d, W, H);
   x.putImageData(img, 0, 0);
   return { canvas: c, data: d, W, H };
@@ -383,7 +395,7 @@ function edgeBands(T, kind, det) {
   };
   // a band: full height up to its width, easing off over its last quarter
   // a band: full height up to its width, then a short step down (a folded edge, not a slope)
-  const band = (d, width, height) => (d >= width ? 0 : d <= width - 3 ? height : height * (width - d) / 3);
+  const band = (d, width, height, ease = 8) => (d >= width ? 0 : d <= width - ease ? height : height * (width - d) / ease);
   const collar = det?.collar?.style && det.collar.style !== 'none';
   const buttoned = det?.closure && det.closure.type !== 'none' && det.closure.type !== 'pullover';
   const cuff = det?.sleeves?.cuff || 'hemmed';
@@ -395,7 +407,7 @@ function edgeBands(T, kind, det) {
     const d = at(u, v), h = TORSO.top + v * (TORSO.bottom - TORSO.top), frontC = u > 0.17 && u < 0.33;
     let r = 0;
     // the collar (and its lapels — wider toward its points, at the front)
-    if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0024));
+    if (collar && h < 0.14) r = Math.max(r, band(d, u < 0.5 ? 58 : 45, 0.0024, 3));
     if (buttoned && frontC && h >= 0.1) r = Math.max(r, band(d, 24, 0.0012));                  // the placket
     if (h > 0.3 && !frontC) r = Math.max(r, band(d, 16, 0.0009));                              // the hem's fold
     if (h > 0.3 && frontC) r = Math.max(r, band(d, 16, 0.0009));
