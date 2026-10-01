@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const PYDEPS = fileURLToPath(new URL('../../.pydeps', import.meta.url));
 import { config, missingConfig } from '../config.js';
+import { patternStats } from '../services/patterns.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, verifyCloudflare } from '../lib/cloudflare.js';
 
@@ -19,6 +20,7 @@ health.get('/', (_req, res) => {
     uptime_s: Math.round((Date.now() - started) / 1000),
     integrations: { supabase: supabaseConfigured(), cloudflare_ai: cloudflareConfigured() },
     missing_env: missing,
+    patterns: patternStats,
   });
 });
 

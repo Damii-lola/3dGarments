@@ -42,16 +42,18 @@ function startWorker() {
     const lines = createInterface({ input: child.stdout });
     lines.on('line', (line) => {
       let msg; try { msg = JSON.parse(line); } catch { return; }
-      if (msg.ready) { failures = 0; if (!w.pending.length) w.hold(false); return resolve(); }
+      if (msg.ready) { failures = 0; patternStats.worker = 'ready'; if (!w.pending.length) w.hold(false); return resolve(); }
       const p = w.pending.shift();
       if (!w.pending.length) w.hold(false);
       if (!p) return;
       clearTimeout(p.timer);
+      note(Date.now() - p.t0, 'worker');
       if (msg.error) p.reject(new Error(`pattern builder: ${msg.error}`)); else p.resolve(msg.ok);
     });
     child.on('error', reject);
     child.on('exit', (code) => {
       if (worker === w) worker = null;
+      patternStats.worker = `exited ${code}`;
       failures++;
       const err = new Error(`pattern builder stopped (${code}): ${stderr.trim().split('\n').pop()?.slice(0, 300) || ''}`);
       reject(err);
@@ -62,9 +64,13 @@ function startWorker() {
   return w;
 }
 
+/** for /health: is the worker up, and how long the last patterns took (ms) */
+export const patternStats = { worker: 'off', last: [] };
+const note = (ms, how) => { patternStats.last = [...patternStats.last.slice(-9), `${how}:${ms}`]; };
+
 /** start the worker now (the first pattern then doesn't wait for Python to start) */
 export function warmPatterns() {
-  if (!worker && failures < 3) worker = startWorker();
+  if (!worker && failures < 3) { worker = startWorker(); patternStats.worker = 'starting'; }
   return worker?.ready;
 }
 
@@ -72,12 +78,13 @@ export function warmPatterns() {
 export async function buildPattern({ garment, design, spec, zone, overrides, sex = 'female', body = {} }) {
   const req = { garment, design, spec, zone, overrides, sex, body };
   warmPatterns();
-  const w = worker;
-  if (!w) return oneShot(req);
-  try { await w.ready; } catch { return oneShot(req); }
+  const w = worker, t0 = Date.now();
+  const shot = () => oneShot(req).finally(() => note(Date.now() - t0, 'oneshot'));
+  if (!w) return shot();
+  try { await w.ready; } catch { return shot(); }
   return new Promise((resolve, reject) => {
     const p = {
-      resolve, reject,
+      resolve, reject, t0: Date.now(),
       // a hung build: the worker is replaced (the next request starts a fresh one)
       timer: setTimeout(() => { reject(new Error('pattern builder: timed out')); w.child.kill('SIGKILL'); }, TIMEOUT),
     };

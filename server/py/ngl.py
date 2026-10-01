@@ -50,9 +50,15 @@ def parse(answer):
 
 
 # ------------------------------------------------------------------ words → GarmentCode design parameters
+_DEFAULT = None
+
+
 def _default_design():
-    import yaml
-    return yaml.safe_load(open(os.path.join(GC, 'assets/design_params/default.yaml')))['design']
+    global _DEFAULT
+    if _DEFAULT is None:                      # parsed once per process (callers deep-copy it)
+        import yaml
+        _DEFAULT = yaml.safe_load(open(os.path.join(GC, 'assets/design_params/default.yaml')))['design']
+    return _DEFAULT
 
 
 def design(g):

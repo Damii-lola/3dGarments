@@ -543,7 +543,25 @@ def _bend_extend_2_tangent(
     return length_diff + tan_0_diff + tan_1_diff + curvature_reg + end_expantion_reg
 
 
+_CMT_CACHE = {}
+
+
 def curve_match_tangents(curve, target_tan0, target_tan1, target_len=None,
+                         return_as_edge=False, verbose: bool = False):
+    """(3dGarments) _curve_match_tangents, memoised on its rounded inputs: both sleeves of a garment, and every
+    re-cut of it that keeps the armhole, ask for the same curve"""
+    key = (tuple(np.round(c_to_np(curve.bpoints()), 6).ravel()), tuple(np.round(np.asarray(target_tan0, float), 9)),
+           tuple(np.round(np.asarray(target_tan1, float), 9)), None if target_len is None else round(float(target_len), 6),
+           return_as_edge)
+    hit = _CMT_CACHE.get(key)
+    if hit is not None: return deepcopy(hit)
+    res = _curve_match_tangents(curve, target_tan0, target_tan1, target_len, return_as_edge, verbose)
+    if len(_CMT_CACHE) > 2000: _CMT_CACHE.clear()
+    _CMT_CACHE[key] = deepcopy(res)
+    return res
+
+
+def _curve_match_tangents(curve, target_tan0, target_tan1, target_len=None,
                          return_as_edge=False, verbose: bool = False):
     """Update the curve to have the desired tangent directions at endpoints 
         while preserving curve length or desired target length ('target_len') and overall direction

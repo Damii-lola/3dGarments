@@ -10,12 +10,13 @@ Sewing pattern for one garment, sized to a body — the API runs this (services/
 Edges are sampled every ~1.5 cm exactly as GarmentCode's own mesher reads them (pygarment/meshgen/boxmeshgen.py:
 control points un-flipped, arcs swept by `right`). World frame: y up, the body faces +z, cm.
 """
-import json, math, os, sys
+import copy, json, math, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [p for p in [os.environ.get('PYDEPS'), HERE, os.path.join(HERE, 'garmentcode')] if p]
 
 import numpy as np
 import svgpathtools as svgpath
+import fastpaths  # noqa: F401  (fast curve lengths for svgpathtools)
 import yaml
 import ngl
 
@@ -25,9 +26,18 @@ LENGTHS = ['arm_length', 'armscye_depth', 'back_width', 'bum_points', 'bust_line
 GIRTHS = ['bust', 'underbust', 'waist', 'hips', 'leg_circ', 'wrist']
 
 
+_MEAN = {}
+
+
+def _mean_body(sex):
+    key = 'male' if sex == 'male' else 'female'
+    if key not in _MEAN: _MEAN[key] = yaml.safe_load(open(os.path.join(HERE, 'garmentcode/assets/bodies', f'mean_{key}.yaml')))
+    return _MEAN[key]
+
+
 def body_file(sex, given, out):
     """GarmentCode's average body for the sex, scaled to the given height and girths (cm)"""
-    base = yaml.safe_load(open(os.path.join(HERE, 'garmentcode/assets/bodies', f'mean_{"male" if sex == "male" else "female"}.yaml')))
+    base = copy.deepcopy(_mean_body(sex))
     b = dict(base['body'])
     k = float(given.get('height') or b['height']) / b['height']
     for key in LENGTHS: b[key] = b[key] * k
