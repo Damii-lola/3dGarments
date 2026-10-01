@@ -22,6 +22,7 @@
  * Skin right under the cloth is hidden (Body#setHidden), so it can never poke through.
  */
 import * as THREE from 'three';
+import { useCpuMorphs } from '../human/cpumorph.js';
 import { prepareFabric, createFabricMaterial, blur } from './fabric.js';
 import { buildPattern } from './pattern.js';
 import { Cloth, makeCollider } from './cloth.js';
@@ -924,6 +925,7 @@ function finish(ctx, item, atlas, r) {
   mesh.bindMatrix = bodyMesh.bindMatrix;                         // shared: a width rebind moves both
   mesh.bindMatrixInverse = bodyMesh.bindMatrixInverse;
   mesh.morphTargetInfluences = new Array(morphs.length).fill(0);
+  useCpuMorphs(mesh);                                            // as the body's (human/cpumorph.js)
 
   const hideAll = new Set(hide);
   for (const [f, skn] of ctx.S.fabricSkin) if (covered(skn)) hideAll.add(f);

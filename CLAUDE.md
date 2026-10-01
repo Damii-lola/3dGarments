@@ -51,6 +51,10 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         joint gets up to 55 % upper-arm weight so it tucks in, blended per side by arm elevation (full ≤ 25°, none ≥ 70°:
                         Body.applyArmpit, called from #applyPose) so raised/overhead arms keep the model's own armpit (clearance numbers lie, check the render). Check arms with an
                         orthographic silhouette of the skinned arm, not bone angles)
+  src/human/cpumorph.js MORPHS ARE BLENDED ON THE CPU (useCpuMorphs, on the body and every garment): some Android GPU drivers
+                        break three's morph-texture loop (the body came apart on a phone once a shape slider moved). The
+                        morph data and weights stay (CPU code reads them); the shaders add two attributes morphPos/morphNrm,
+                        re-summed only when the weights change, in the materials and the shadow (customDepthMaterial)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()

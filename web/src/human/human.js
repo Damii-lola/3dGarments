@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ZERO_DIRS, ZERO_PALM } from './rig.js';
 import { createBodyMaterial } from './materials.js';
+import { useCpuMorphs } from './cpumorph.js';
 import { assetUrl } from './assets.js';
 import { buildShape, SHAPE_TARGETS } from './shape.js';
 
@@ -83,6 +84,8 @@ class Body {
       if (clothT.length) g.addGroup(skinT.length * 3, clothT.length * 3, 1);
     }
     mesh.castShadow = mesh.receiveShadow = true;
+    // morphs blended on the CPU (some Android GPUs break three's morph-texture loop: the body came apart)
+    useCpuMorphs(mesh);
     mesh.frustumCulled = false;
     const extras = mesh.userData || {};
     this.bones = mesh.skeleton.bones;
