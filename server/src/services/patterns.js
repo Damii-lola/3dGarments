@@ -1,22 +1,88 @@
 /**
  * Sewing patterns: an NGL garment description (shared/ngl.js) → a GarmentCode pattern sized to a body,
  * built by py/pattern.py (Python, libraries in server/.pydeps — installed by scripts/pydeps.sh at npm install).
+ *
+ * pattern.py runs inside one long-lived Python process (py/worker.py: a JSON line in, a JSON line out), started
+ * with the server, so Python + numpy + GarmentCode are imported once instead of for every pattern. Requests queue
+ * (one at a time: the instance is small). A worker that dies or hangs is replaced; while it can't start, the
+ * one-shot process (pattern.py itself) is used.
  */
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const PY = fileURLToPath(new URL('../../py/pattern.py', import.meta.url));
+const WORKER = fileURLToPath(new URL('../../py/worker.py', import.meta.url));
 const PYDEPS = fileURLToPath(new URL('../../.pydeps', import.meta.url));
+const TIMEOUT = 60_000;
 
-/** @returns pattern { panels, stitches, body } — see py/pattern.py */
-export function buildPattern({ garment, design, spec, zone, overrides, sex = 'female', body = {} }) {
+function oneShot(req) {
   return new Promise((resolve, reject) => {
     const child = execFile('python3', ['-W', 'ignore', PY], {
-      timeout: 60_000, maxBuffer: 8 << 20, env: { ...process.env, PYDEPS },
+      timeout: TIMEOUT, maxBuffer: 8 << 20, env: { ...process.env, PYDEPS },
     }, (err, stdout, stderr) => {
       if (err) return reject(new Error(`pattern builder: ${String(stderr || err.message).trim().split('\n').pop().slice(0, 300)}`));
       try { resolve(JSON.parse(stdout)); } catch { reject(new Error('pattern builder: unreadable output')); }
     });
-    child.stdin.end(JSON.stringify({ garment, design, spec, zone, overrides, sex, body }));
+    child.stdin.end(JSON.stringify(req));
+  });
+}
+
+let worker = null;          // { child, ready: Promise, pending: [{ resolve, reject, timer }] }
+let failures = 0;
+
+function startWorker() {
+  const child = spawn('python3', ['-W', 'ignore', WORKER], { env: { ...process.env, PYDEPS }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const w = { child, pending: [] };
+  // an idle worker doesn't keep Node running (tests, scripts); one starting or with a request waiting does
+  w.hold = (on) => { for (const s of [child, child.stdin, child.stdout, child.stderr]) on ? s.ref?.() : s.unref?.(); };
+  let stderr = '';
+  child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
+  w.ready = new Promise((resolve, reject) => {
+    const lines = createInterface({ input: child.stdout });
+    lines.on('line', (line) => {
+      let msg; try { msg = JSON.parse(line); } catch { return; }
+      if (msg.ready) { failures = 0; if (!w.pending.length) w.hold(false); return resolve(); }
+      const p = w.pending.shift();
+      if (!w.pending.length) w.hold(false);
+      if (!p) return;
+      clearTimeout(p.timer);
+      if (msg.error) p.reject(new Error(`pattern builder: ${msg.error}`)); else p.resolve(msg.ok);
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (worker === w) worker = null;
+      failures++;
+      const err = new Error(`pattern builder stopped (${code}): ${stderr.trim().split('\n').pop()?.slice(0, 300) || ''}`);
+      reject(err);
+      for (const p of w.pending.splice(0)) { clearTimeout(p.timer); p.reject(err); }
+    });
+  });
+  w.ready.catch(() => {});
+  return w;
+}
+
+/** start the worker now (the first pattern then doesn't wait for Python to start) */
+export function warmPatterns() {
+  if (!worker && failures < 3) worker = startWorker();
+  return worker?.ready;
+}
+
+/** @returns pattern { panels, stitches, body } — see py/pattern.py */
+export async function buildPattern({ garment, design, spec, zone, overrides, sex = 'female', body = {} }) {
+  const req = { garment, design, spec, zone, overrides, sex, body };
+  warmPatterns();
+  const w = worker;
+  if (!w) return oneShot(req);
+  try { await w.ready; } catch { return oneShot(req); }
+  return new Promise((resolve, reject) => {
+    const p = {
+      resolve, reject,
+      // a hung build: the worker is replaced (the next request starts a fresh one)
+      timer: setTimeout(() => { reject(new Error('pattern builder: timed out')); w.child.kill('SIGKILL'); }, TIMEOUT),
+    };
+    w.pending.push(p);
+    w.hold(true);
+    w.child.stdin.write(`${JSON.stringify(req)}\n`);
   });
 }

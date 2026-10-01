@@ -4,23 +4,14 @@
  * (every pixel the clothes-parsing model didn't call background). Points it can't see (out of the frame,
  * hidden) come back null.
  */
-import * as ort from 'onnxruntime-web/wasm';
-import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
+import { ort, modelSession } from './models.js';
 
 export const VITPOSE_URL = 'https://huggingface.co/onnx-community/vitpose-base-simple/resolve/main/onnx/model_quantized.onnx';
 export const KP = ['nose', 'eye_l', 'eye_r', 'ear_l', 'ear_r', 'shoulder_l', 'shoulder_r', 'elbow_l', 'elbow_r', 'wrist_l', 'wrist_r',
   'hip_l', 'hip_r', 'knee_l', 'knee_r', 'ankle_l', 'ankle_r'];
 const IW = 192, IH = 256, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 
-let session = null;
-function load() {
-  if (!session) {
-    ort.env.wasm.wasmPaths = { wasm: wasmUrl };
-    ort.env.wasm.numThreads = globalThis.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-    session = ort.InferenceSession.create(globalThis.__vitposeUrl || VITPOSE_URL, { executionProviders: ['wasm'] }).catch((e) => { session = null; throw e; });
-  }
-  return session;
-}
+const load = () => modelSession(globalThis.__vitposeUrl || VITPOSE_URL);
 
 /** parsed (parse.js parsePhoto) → { [name]: { x, y, score } | null } in photo pixels */
 export async function detectPose(parsed, minScore = 0.3) {

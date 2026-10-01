@@ -10,7 +10,7 @@ import {
 } from './human/body.js';
 import { DEFAULT_POSE, composePose } from './human/poses.js';
 import { createUploads } from './uploads/groups.js';
-import { createTryOn, photoBitmap } from './garments/tryon.js';
+import { createTryOn, photoBitmap, prepareTryOn } from './garments/tryon.js';
 import { loadProfile, saveProfile } from './services/profile.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -346,6 +346,8 @@ async function boot() {
   // build the other body's shape targets while idle, so switching sex is instant
   const other = human.bodies[M.sex === 'female' ? 'male' : 'female'];
   (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(() => other.ensureShape(), { timeout: 4000 });
+  // the try-on's photo models and the API, readied while the user is still choosing photos
+  setTimeout(prepareTryOn, 2500);
   window.__3dg = { stage, human, model, get state() { return M; }, get profile() { return profile; }, applyShape, buildPanel, tryOn, ready: true };
 
   // this device's copy in the cloud: take it if it is newer (e.g. local data was cleared),

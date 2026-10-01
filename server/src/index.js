@@ -6,6 +6,7 @@ import { config, missingConfig } from './config.js';
 import { HttpError } from './lib/errors.js';
 import { supabaseConfigured } from './lib/supabase.js';
 import { health } from './routes/health.js';
+import { warmPatterns } from './services/patterns.js';
 import { garments } from './routes/garments.js';
 import { me } from './routes/me.js';
 import { ngl } from './routes/ngl.js';
@@ -63,6 +64,7 @@ app.use((err, req, res, _next) => {
 const server = app.listen(config.port, () => {
   const missing = missingConfig();
   console.log(`3dGarments API listening on :${config.port} (${config.env})`);
+  warmPatterns()?.catch((e) => console.warn('pattern worker:', e.message));
   if (missing.length) console.warn(`⚠ missing env: ${missing.join(', ')} — related endpoints return 503`);
   if (supabaseConfigured()) {
     ensureBucket().catch((e) => console.warn('bucket check failed:', e.message));

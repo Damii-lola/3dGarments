@@ -7,8 +7,7 @@
  * to the photo and argmax'd, then each garment's region is snapped to the photo's own edges (a colour
  * test against the region's own fabric along the uncertain band), so the cut-out follows the fabric.
  */
-import * as ort from 'onnxruntime-web/wasm';
-import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
+import { ort, modelSession } from './models.js';
 import { composeCutout, analyzeSilhouette } from '@shared/silhouette.js';
 import { colorSignature } from '@shared/wardrobe.js';
 
@@ -19,16 +18,7 @@ export const MODEL_URL = 'https://huggingface.co/Xenova/segformer_b2_clothes/res
 const S = 512, O = 128, NC = 18;
 const MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 
-let session = null;
-async function getSession() {
-  if (!session) {
-    ort.env.wasm.wasmPaths = { wasm: wasmUrl };
-    ort.env.wasm.numThreads = globalThis.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-    session = ort.InferenceSession.create(globalThis.__parseModelUrl || MODEL_URL, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
-      .catch((e) => { session = null; throw e; });
-  }
-  return session;
-}
+const getSession = () => modelSession(globalThis.__parseModelUrl || MODEL_URL);
 
 /**
  * @param img  drawable (canvas / ImageBitmap / <img>)

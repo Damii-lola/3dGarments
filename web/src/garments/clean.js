@@ -14,9 +14,9 @@
  * @returns { cut: canvas (RGBA, the clean garment), geometry, mask, bbox, removed: share of the garment repainted }
  */
 import { AutoTokenizer, AutoProcessor, RawImage } from '@huggingface/transformers';
-import * as ort from 'onnxruntime-web/wasm';
-import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 import { composeCutout, analyzeSilhouette } from '@shared/silhouette.js';
+import { ort, modelSession } from './models.js';
+import { fillFabric } from './fill.js';
 
 const CLIPSEG = 'Xenova/clipseg-rd64-refined';
 export const LAMA_URL = 'https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx';
@@ -33,26 +33,15 @@ const FABRIC = ['clothing fabric', 'a printed t-shirt', 'trousers'];
 const UNDER = { tank: ['a white tank top', 'a tank top', 'an undershirt'], top: ['a top worn underneath'], shirt: ['a shirt worn underneath'],
   sweater: ['a sweater worn underneath'], hoodie: ['a hoodie worn underneath'] };
 
-let clip = null, lama = null;
+let clip = null;
 // transformers.js prepares the text and the image; the model itself runs on our onnxruntime-web (the stable
 // build parse.js uses — transformers.js's own bundled runtime crashes some browsers)
-function ortSetup() {
-  ort.env.wasm.wasmPaths = { wasm: wasmUrl };
-  ort.env.wasm.numThreads = globalThis.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-}
 function loadClip() {
-  ortSetup();
   clip ||= Promise.all([AutoTokenizer.from_pretrained(CLIPSEG), AutoProcessor.from_pretrained(CLIPSEG),
-    ort.InferenceSession.create(globalThis.__clipsegUrl || CLIPSEG_URL, { executionProviders: ['wasm'] })]).catch((e) => { clip = null; throw e; });
+    modelSession(globalThis.__clipsegUrl || CLIPSEG_URL)]).catch((e) => { clip = null; throw e; });
   return clip;
 }
-function loadLama() {
-  if (!lama) {
-    ortSetup();
-    lama = ort.InferenceSession.create(globalThis.__lamaUrl || LAMA_URL, { executionProviders: ['wasm'] }).catch((e) => { lama = null; throw e; });
-  }
-  return lama;
-}
+const loadLama = () => modelSession(globalThis.__lamaUrl || LAMA_URL);
 
 const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
@@ -333,14 +322,76 @@ export function thinJewellery(px, sil, W, H) {
   return out;
 }
 
+/** a garment worn under this one, seen through its open front (a tank in an open shirt), without CLIPSeg: the
+ *  garment's colours clustered (k-means, Lab), thin lines opened away (a plaid's white lines aren't a tank), and a
+ *  solid region of one colour that runs down the centre front from the neckline — where an open front shows what's
+ *  under it — taken (a print's letters sit beside the centre, not down it from the neck) */
+export function underIn(px, sil, W, H) {
+  const lab = (i) => {
+    const f = (v) => { v /= 255; v = v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; return v; };
+    const r = f(px[i * 4]), g = f(px[i * 4 + 1]), b = f(px[i * 4 + 2]);
+    const X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.9505, Y = 0.2126 * r + 0.7152 * g + 0.0722 * b, Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.089;
+    const t = (v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116);
+    return [116 * t(Y) - 16, 500 * (t(X) - t(Y)), 200 * (t(Y) - t(Z))];
+  };
+  const idx = []; for (let i = 0; i < W * H; i++) if (sil[i]) idx.push(i);
+  if (idx.length < 500) return null;
+  const L = new Float32Array(W * H * 3);
+  for (const i of idx) { const c = lab(i); L[i * 3] = c[0]; L[i * 3 + 1] = c[1]; L[i * 3 + 2] = c[2]; }
+  // k-means, k = 5, on a sample
+  const K = 5, smp = idx.filter((_, n) => n % Math.max(1, Math.floor(idx.length / 6000)) === 0);
+  const C = []; for (let k = 0; k < K; k++) { const i = smp[Math.floor((k + 0.5) / K * smp.length)]; C.push([L[i * 3], L[i * 3 + 1], L[i * 3 + 2]]); }
+  const near = (i) => { let b = 0, bd = Infinity; for (let k = 0; k < K; k++) { const d = (L[i * 3] - C[k][0]) ** 2 + (L[i * 3 + 1] - C[k][1]) ** 2 + (L[i * 3 + 2] - C[k][2]) ** 2; if (d < bd) { bd = d; b = k; } } return b; };
+  for (let it = 0; it < 8; it++) {
+    const acc = Array.from({ length: K }, () => [0, 0, 0, 0]);
+    for (const i of smp) { const k = near(i), a = acc[k]; a[0] += L[i * 3]; a[1] += L[i * 3 + 1]; a[2] += L[i * 3 + 2]; a[3]++; }
+    for (let k = 0; k < K; k++) if (acc[k][3]) C[k] = [acc[k][0] / acc[k][3], acc[k][1] / acc[k][3], acc[k][2] / acc[k][3]];
+  }
+  const lab8 = new Int8Array(W * H).fill(-1); for (const i of idx) lab8[i] = near(i);
+  let top = H, bot = 0, x0 = W, x1 = 0;
+  for (const i of idx) { const x = i % W, y = (i / W) | 0; if (y < top) top = y; if (y > bot) bot = y; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+  const gh = bot - top, cxm = (x0 + x1) / 2, r = Math.max(3, Math.round(gh / 60));
+  let best = null;
+  for (let k = 0; k < K; k++) {
+    let m = new Uint8Array(W * H); for (const i of idx) if (lab8[i] === k) m[i] = 1;
+    // opening: erode then dilate by r (thin lines gone, solid regions back to their size)
+    const er = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let ok = m[y * W + x]; for (let d = -r; d <= r && ok; d++) { const X = x + d, Y = y + d; if (X < 0 || X >= W || !m[y * W + X] || Y < 0 || Y >= H || !m[Y * W + x]) ok = 0; }
+      er[y * W + x] = ok;
+    }
+    m = dilate(er, W, H, r);
+    // the component on the centre front, just under the neckline
+    let seed = -1;
+    for (let y = top; y < top + 0.3 * gh && seed < 0; y++) for (let dx = -Math.round(0.04 * W); dx <= Math.round(0.04 * W); dx++) { const i = y * W + Math.round(cxm + dx); if (m[i] && sil[i]) { seed = i; break; } }
+    if (seed < 0) continue;
+    const comp = [seed], seen = new Uint8Array(W * H), st = [seed]; seen[seed] = 1;
+    while (st.length) { const i = st.pop(), x = i % W, y = (i / W) | 0; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && m[j] && sil[j] && !seen[j]) { seen[j] = 1; st.push(j); comp.push(j); } }
+    // tall down the centre (≥ 30 % of the garment's height), a modest share (3–35 %), and narrower than the garment
+    let cy0 = H, cy1 = 0, cxa = W, cxb = 0; for (const i of comp) { const x = i % W, y = (i / W) | 0; if (y < cy0) cy0 = y; if (y > cy1) cy1 = y; if (x < cxa) cxa = x; if (x > cxb) cxb = x; }
+    const share = comp.length / idx.length;
+    if (cy1 - cy0 < 0.3 * gh || share < 0.03 || share > 0.35 || cxb - cxa > 0.6 * (x1 - x0)) continue;
+    // and not the garment's own main colour
+    let own = 0; for (const i of idx) if (lab8[i] === k) own++;
+    if (own > 0.45 * idx.length) continue;
+    if (!best || comp.length > best.length) best = comp;
+  }
+  if (!best) return null;
+  const out = new Uint8Array(W * H); for (const i of best) out[i] = 1;
+  return out;
+}
+
 /**
  * @param parsed  parsePhoto() result (the whole photo)
  * @param cut     cutGarment() result for this garment
  * @param opts    { onGarment: NGL on_garment words (what the vision model saw on the garments), under: the other garments
  *                  the vision model saw in this zone (a tank under an open shirt: an opening, never this garment's fabric),
- *                  wrinkles: true, onStep }
+ *                  wrinkles: true, onStep,
+ *                  search: CLIPSeg looks for what the vision model named (139 MB model, seconds per prompt) — off in the app:
+ *                    the clothes parser already finds hands / arms / hair / bags, the jewellery detector chains,
+ *                  painter: 'patch' (fill.js, PatchMatch: instant) | 'lama' (LaMa: 208 MB, ~10× slower) }
  */
-export async function cleanGarment(parsed, cut, { onGarment = [], under = [], occluders = true, wrinkles = true, onStep = () => {} } = {}) {
+export async function cleanGarment(parsed, cut, { onGarment = [], under = [], occluders = true, wrinkles = true, search = false, painter = 'patch', onStep = () => {} } = {}) {
   const { w: PW, h: PH, rgba, label } = parsed;
   const { x: bx, y: by, w: W, h: H } = cut.bbox;
   // the garment's full silhouette (its holes are things on it) and the photo crop around it
@@ -383,7 +434,11 @@ export async function cleanGarment(parsed, cut, { onGarment = [], under = [], oc
     if (sk) openOrPaint(sk);
     // another garment seen through this one (a tank top in an open shirt's front): the same — an opening where it
     // reaches the edge, painted over where fabric encloses it. Whatever is on it (a pendant) goes with it
-    if (under.length) {
+    if (!search && under.length) {
+      const u = underIn(cx.getImageData(0, 0, W, H).data, sil, W, H);
+      if (u) openOrPaint(dilate(u, W, H, Math.max(2, Math.round(Math.max(W, H) / 150))));
+    }
+    if (search && under.length) {
       onStep(`Separating the ${under.join(', ')} underneath…`);
       try {
         const u = await findOccluders(crop, under.flatMap((t) => UNDER[t] || [`a ${t.replace(/_/g, ' ')}`]));
@@ -397,7 +452,7 @@ export async function cleanGarment(parsed, cut, { onGarment = [], under = [], oc
       const j = dilate(thinJewellery(cx.getImageData(0, 0, W, H).data, sil, W, H), W, H, Math.max(4, Math.round(H / 60)));
       for (let i = 0; i < W * H; i++) if (j[i]) { hole[i] = 1; }
     }
-    const prompts = [...new Set(onGarment.flatMap((w) => PROMPTS[w] || []))];
+    const prompts = search ? [...new Set(onGarment.flatMap((w) => PROMPTS[w] || []))] : [];
     if (prompts.length) {
       onStep(`Looking for the ${onGarment.join(', ').replace(/_/g, ' ')} on the garment…`);
       try {
@@ -433,9 +488,11 @@ export async function cleanGarment(parsed, cut, { onGarment = [], under = [], oc
           front = next;
         }
         const context = canvasOf(W, H); context.getContext('2d').putImageData(ctxImg, 0, 0);
-        const painted = await inpaint(context, hole);
+        let P;
+        if (painter === 'lama') P = (await inpaint(context, hole)).getContext('2d').getImageData(0, 0, W, H).data;
+        else P = fillFabric(ctxImg.data, W, H, hole, sil);
         // only the garment's painted pixels are taken back
-        const P = painted.getContext('2d').getImageData(0, 0, W, H).data, C = cx.getImageData(0, 0, W, H);
+        const C = cx.getImageData(0, 0, W, H);
         for (let i = 0; i < W * H; i++) if (hole[i] && sil[i]) for (let c = 0; c < 3; c++) C.data[i * 4 + c] = P[i * 4 + c];
         cx.putImageData(C, 0, 0);
       } catch (e) { console.warn('LaMa unavailable:', e.message); removed = 0; }

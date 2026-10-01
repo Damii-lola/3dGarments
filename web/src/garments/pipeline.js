@@ -26,6 +26,9 @@
  *   models?:  { upper?, lower?, full? }  3D model GLB url(s) for this photo, best first (TRELLIS.2, Hunyuan3D 2.1)
  *   onStep?(text)
  *   onSex?(sex)   the model being dressed (the clothes' sex), before anything is made for it
+ *   fitRounds?    re-cuts to match the photo (3)
+ *   search?       CLIPSeg looks for what the vision model named on the garments (false: the app; see clean.js)
+ *   painter?      'patch' (instant) | 'lama'
  * }
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …), source }]  lower garments first
  */
@@ -61,28 +64,33 @@ export function specFits(spec, zone, type) {
   return has(/torso/) && has(/skirt/);
 }
 
-export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, onSex = null, fitRounds = 3 }) {
+export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, onSex = null,
+  fitRounds = 3, search = false, painter = 'patch' }) {
   onStep('Finding the clothes in the photo…');
-  const parsed = await parsePhoto(image);
-  const c = document.createElement('canvas'), k = Math.min(1, 1024 / Math.max(image.width, image.height));
+  // the vision model (a server round trip) reads the photo while the clothes parser and the pose model run here
+  const c = document.createElement('canvas'), k = Math.min(1, 768 / Math.max(image.width, image.height));
   c.width = Math.round(image.width * k); c.height = Math.round(image.height * k);
   c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
+  const described = describe(c.toDataURL('image/jpeg', 0.88));
+  described.catch(() => {});
+  const parsed = await parsePhoto(image);
+  const posed = detectPose(parsed).catch(() => null);
   onStep('Reading what each garment is…');
-  let { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await describe(c.toDataURL('image/jpeg', 0.9));
+  let { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await described;
   // what the vision model named on the garments, plus what's always worth a look (its list varies from run to run)
   const onGarment = [...new Set([...named, 'necklace', 'chain', 'hand', 'long_hair', 'bag_strap'])];
   // whose clothes: menswear on the male model, womenswear on the female one (unisex: the one shown)
   // (unisex: whoever wears them in the photo; nobody: the model already shown)
   let sex = madeFor === 'men' ? 'male' : madeFor === 'women' ? 'female' : wornBy === 'man' ? 'male' : wornBy === 'woman' ? 'female' : null;
   // the vision model can't tell (a torso without a face): the photo itself decides (CLIPSeg over the person)
-  if (!sex) sex = (await wearerSex(parsed).catch(() => null)) || human.sex;
+  if (!sex && search) sex = await wearerSex(parsed).catch(() => null);
+  sex ||= human.sex;
   if (sex !== human.sex) { onStep(`These are ${madeFor}'s clothes: dressing the ${sex} model…`); human.setSex(sex); }
   // the app puts that model's own body settings on before anything is cut for it
   if (onSex) await onSex(sex);
   const B = human.active;
   const body = bodyMeasures(human);
-  onStep('Finding the body in the photo…');
-  const kp = await detectPose(parsed).catch(() => null);
+  const kp = await posed;
   // the vision model named nothing (it happens): the clothes-parsing model's own classes stand in
   if (!garments.length) {
     const cnt = new Map(); for (const l of parsed.label) cnt.set(l, (cnt.get(l) || 0) + 1);
@@ -106,7 +114,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     if (zone !== 'upper' && garment.lower) garment.lower.length = measuredLowerLength(parsed, cut.mask) || garment.lower.length;
     // the other garments the vision model saw in this zone are worn under this one (it's the one that got cut)
     const underIt = garments.filter((o) => o !== g && zoneOf(o.type) === zone).map((o) => o.type);
-    const clean = await cleanGarment(parsed, cut, { onGarment, under: underIt, onStep });
+    const clean = await cleanGarment(parsed, cut, { onGarment, under: underIt, onStep, search, painter });
     onStep(`Cutting the ${g.type}'s sewing pattern…`);
     const pat = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body });
     // how close it sits (sew.js hugs a fitted / tight garment onto the body: negative ease, as a knit is worn)
