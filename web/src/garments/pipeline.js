@@ -69,7 +69,7 @@ export function specFits(spec, zone, type) {
 }
 
 export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, onSex = null,
-  fitRounds = 3, fitTolerance = 0.05, search = false, painter = 'patch', parseSize = 512, onDraft = null, alive = () => true }) {
+  fitRounds = 3, fitTolerance = 0.05, search = false, painter = 'patch', parseSize = 512, onDraft = null, alive = () => true, parsed: parsedIn = null }) {
   // the caller gave up on this photo (the clothes taken off, the other model chosen): stop where we are
   const check = () => { if (!alive()) { const e = new Error('cancelled'); e.cancelled = true; throw e; } };
   onStep('Finding the clothes in the photo…');
@@ -85,7 +85,7 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   const described = describe(jpeg);
   described.catch(() => {});
   await new Promise((r) => setTimeout(r, 0));           // (let the request go out)
-  const parsed = await parsePhoto(image, 1024, parseSize);
+  const parsed = parsedIn || await parsePhoto(image, 1024, parseSize);
   const posed = detectPose(parsed).catch(() => null);
   onStep('Reading what each garment is…');
   let { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await described;

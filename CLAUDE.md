@@ -89,6 +89,20 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         Canvases that are read back must be CPU-backed (willReadFrequently at their first getContext: a GPU readback
                         costs seconds). WebGPU (fp16 SegFormer) is opt-in ?gpu=1: unverified on real phones (no f16 → CPU).
                         Time it with a stage-by-stage harness (describe stubbed, patterns from the local py worker) before and after
+  src/garments/hanger.js + layer.js  HANGER PHOTOS → CLOTHES LAYERED ON THE BODYSUIT (the main case: shop photos on hangers).
+                        tryon.wear(images) parses the first photo: no wearer (isHangerPhoto) → hanger flow, else pipeline.js.
+                        Views: the photos whose garment is whole (top + hem inside the frame; sides may touch), 1st = front,
+                        2nd = back; close-ups ignored. cleanGarment takes the hanger leftovers, a garment worn inside it (underIn:
+                        farthest-point k-means, cluster unions contrasting with the main colour, closing over necklace cords,
+                        grown along its colour, opened to drop buttons) and jewellery off. layer.js: the garment's own shape
+                        (side-seam lines fitted on the straight torso band, shoulder line, hem above the stand, sleeves = outside
+                        the seams), scale = body shoulder points / garment shoulder width; charts resampled from the photos:
+                        torso (around by arc length — front photo front half, back photo back half — × down from the shoulder
+                        line, collar capped 9 cm) and one per sleeve (along the arm from the shoulder joint × around it). One
+                        SkinnedMesh of the body's skin triangles (subset geometry: its bones, morph targets, suitGap/suitNrm),
+                        alpha-tested (the photo's outline = the garment's edges), 1.2 mm over the suit; Body.layers re-binds it.
+                        Skin fully inside sinks; underwear covered with 2 cm to spare is not drawn (materials.js discards
+                        hidden fabric: its normals can face either way, sinking pushed it OUT). Tops only so far.
   src/services/         api/auth/local/wardrobe: garment-pipeline client
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket

@@ -9,6 +9,8 @@
  *   tryOn.takeOff();
  */
 import { garmentsFromPhoto } from './pipeline.js';
+import { hangerGarment, isHangerPhoto } from './hanger.js';
+import { parsePhoto } from './parse.js';
 import { api } from '../services/api.js';
 import { API_URL } from '../services/config.js';
 import { prefetchModels } from './models.js';
@@ -63,18 +65,34 @@ export function createTryOn({ human, stage }) {
     get wearing() { return worn.length > 0; },
     get busy() { return !!busy; },
     /** @returns [{ zone, garment, sex, source }] what was made, or null when it was taken off before it was done */
-    async wear(image, onStep = () => {}, onSex = null) {
+    /** images: the group's photos (the first decides: a garment on a hanger → layered on the bodysuit from its
+     *  front / back shots; worn by someone → made from that photo) */
+    async wear(images, onStep = () => {}, onSex = null) {
+      images = [].concat(images);
+      const image = images[0];
       if (busy) throw new Error('Already dressing the model — one photo at a time');
       busy = (async () => {
         takeOff();
         const me = run;
         const live = () => me === run;
         let drafted = false;
+        const describe = (jpeg) => retry(() => api('/api/ngl/describe', { method: 'POST', body: { image: jpeg }, timeout: 120_000 }));
+        const sexHook = onSex && ((sex) => (live() ? onSex(sex) : undefined));
+        onStep('Looking at the photos…');
+        const first = await parsePhoto(image, 1024, 384);
+        if (isHangerPhoto(first)) {
+          const res = await hangerGarment(human, images, { onStep, describe, onSex: sexHook, alive: live, parsedFirst: first })
+            .catch((e) => { if (!live()) return null; throw e; });
+          if (!res || !live()) { for (const r of res || []) r.built.dispose(); return res && live() ? [] : null; }
+          worn = res.map((r) => r.built);
+          show();
+          return res.map(({ zone, garment, sex, source }) => ({ zone, garment, sex, source }));
+        }
         const res = await garmentsFromPhoto(human, image, {
-          describe: (jpeg) => retry(() => api('/api/ngl/describe', { method: 'POST', body: { image: jpeg }, timeout: 120_000 })),
+          describe,
           pattern: (req) => retry(() => api('/api/ngl/pattern', { method: 'POST', body: req, timeout: 120_000 })),
           onStep: (t) => onStep(drafted && /^Matching|^Trying/.test(t) ? `Dressed — fine-tuning the fit to the photo…` : t),
-          onSex: onSex && ((sex) => (live() ? onSex(sex) : undefined)),
+          onSex: sexHook,
           // each garment is shown the moment its first drape is sewn; the re-cuts to the photo replace it after
           // (two frames: the stage draws it before the next garment's sewing holds the page)
           onDraft: async (builts) => {
@@ -85,7 +103,7 @@ export function createTryOn({ human, stage }) {
           // the app's budget is ~30 s a photo: up to two re-cuts to the photo when the first cut is off (after it's shown), no CLIPSeg
           // (139 MB) or LaMa (208 MB) — the clothes parser, the jewellery detector and fill.js do their jobs in a
           // fraction of the time
-          fitRounds: 2, fitTolerance: 0.15, search: false, painter: 'patch', parseSize: 384,
+          fitRounds: 2, fitTolerance: 0.15, search: false, painter: 'patch', parseSize: 384, parsed: first,
           alive: live,
         }).catch((e) => { if (e.cancelled || !live()) return null; takeOff(); throw e; });
         if (!res || !live()) {                  // taken off meanwhile (another sex, another photo): dropped

@@ -211,8 +211,9 @@ async function onWear(g) {
   uploads.setWearing(wearing, g.id);
   busy('Reading the photo…');
   try {
-    const img = await photoBitmap(g.images[0]);           // the group's first photo: the garment from the front
-    const made = await tryOn.wear(img, busy, (sex) => { if (sex !== M.sex) { useSex(sex); buildPanel(); } });
+    // the group's photos: on a hanger, its front and back shots are found among them (the first decides which kind)
+    const imgs = await Promise.all(g.images.map(photoBitmap));
+    const made = await tryOn.wear(imgs, busy, (sex) => { if (sex !== M.sex) { useSex(sex); buildPanel(); } });
     if (made === null) { wearing = null; return; }       // taken off before it was done
     wearing = made.length ? g.id : null;
     if (!made.length) toast(`No garment found in “${g.name}”'s photo`, 'error');

@@ -196,6 +196,7 @@ class Body {
     this.widthDx = extras.widthBoneDx || this.bones.map(() => 0);
     this.probes = extras.shoulderProbes || null;
     this.weightListeners = new Set();   // called when skin weights change at runtime (worn garments copy them)
+    this.layers = new Set();            // garments layered on the bodysuit (garments/layer.js): re-bound with the body
 
     // bind pose, in mesh space (the glb root carries no transform)
     this.root.updateMatrixWorld(true);
@@ -336,6 +337,7 @@ class Body {
     mesh.skeleton.calculateInverses();
     mesh.bind(mesh.skeleton, mesh.matrixWorld);
     this.suit.bind(mesh.skeleton, mesh.bindMatrix);
+    for (const m of this.layers || []) m.bind(mesh.skeleton, mesh.bindMatrix);
     // pose zero keeps each bone's offset from its parent, expressed in the parent's frame
     this.localPos = this.bones.map((b) => b.position.clone());
     if (!this.soleVerts) this.#pickSoles(); // rest-pose soles: the same for every width

@@ -342,7 +342,16 @@ export function underIn(px, sil, W, H) {
   for (const i of idx) { const c = lab(i); L[i * 3] = c[0]; L[i * 3 + 1] = c[1]; L[i * 3 + 2] = c[2]; }
   // k-means, k = 5, on a sample
   const K = 5, smp = idx.filter((_, n) => n % Math.max(1, Math.floor(idx.length / 6000)) === 0);
-  const C = []; for (let k = 0; k < K; k++) { const i = smp[Math.floor((k + 0.5) / K * smp.length)]; C.push([L[i * 3], L[i * 3 + 1], L[i * 3 + 2]]); }
+  // farthest-point start (a small region of its own colour — a white tee in a dark shirt — gets a centre)
+  const C = [[L[smp[0] * 3], L[smp[0] * 3 + 1], L[smp[0] * 3 + 2]]];
+  while (C.length < K) {
+    let bi = smp[0], bd = -1;
+    for (const i of smp) {
+      let d = Infinity; for (const c of C) d = Math.min(d, (L[i * 3] - c[0]) ** 2 + (L[i * 3 + 1] - c[1]) ** 2 + (L[i * 3 + 2] - c[2]) ** 2);
+      if (d > bd) { bd = d; bi = i; }
+    }
+    C.push([L[bi * 3], L[bi * 3 + 1], L[bi * 3 + 2]]);
+  }
   const near = (i) => { let b = 0, bd = Infinity; for (let k = 0; k < K; k++) { const d = (L[i * 3] - C[k][0]) ** 2 + (L[i * 3 + 1] - C[k][1]) ** 2 + (L[i * 3 + 2] - C[k][2]) ** 2; if (d < bd) { bd = d; b = k; } } return b; };
   for (let it = 0; it < 8; it++) {
     const acc = Array.from({ length: K }, () => [0, 0, 0, 0]);
@@ -352,11 +361,33 @@ export function underIn(px, sil, W, H) {
   const lab8 = new Int8Array(W * H).fill(-1); for (const i of idx) lab8[i] = near(i);
   let top = H, bot = 0, x0 = W, x1 = 0;
   for (const i of idx) { const x = i % W, y = (i / W) | 0; if (y < top) top = y; if (y > bot) bot = y; if (x < x0) x0 = x; if (x > x1) x1 = x; }
-  const gh = bot - top, cxm = (x0 + x1) / 2, r = Math.max(3, Math.round(gh / 60));
+  const gh = bot - top, cxm = (x0 + x1) / 2, r = Math.max(2, Math.round(gh / 120));
   let best = null;
+  // candidate colours: each cluster alone, and with the clusters close to it (a shaded white tee spans a few),
+  // never the garment's own main colour
+  const count = new Array(K).fill(0); for (const i of idx) count[lab8[i]]++;
+  const main = count.indexOf(Math.max(...count));
+  const dist = (a, b) => Math.hypot(C[a][0] - C[b][0], C[a][1] - C[b][1], C[a][2] - C[b][2]);
+  const sets = [];
   for (let k = 0; k < K; k++) {
-    let m = new Uint8Array(W * H); for (const i of idx) if (lab8[i] === k) m[i] = 1;
-    // opening: erode then dilate by r (thin lines gone, solid regions back to their size)
+    if (k === main) continue;
+    sets.push([k]);
+    const near = [k, ...[...Array(K).keys()].filter((j) => j !== k && j !== main && dist(j, k) < 30)];
+    if (near.length > 1) sets.push(near);
+  }
+  for (const set of sets) {
+    const k = set[0];
+    // a garment shown under this one contrasts with it (a shade of the garment's own fabric doesn't)
+    if (set.some((j) => dist(j, main) < 40)) continue;
+    let m = new Uint8Array(W * H); for (const i of idx) if (set.includes(lab8[i])) m[i] = 1;
+    // closing first (a necklace's cord running down a tee doesn't cut it in two), then opening: erode then dilate
+    // by r (thin lines of this colour gone — a plaid's — solid regions back to their size)
+    { const rc = Math.max(2, Math.round(gh / 200)), d = dilate(m, W, H, rc), e = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        let ok = d[y * W + x]; for (let q = -rc; q <= rc && ok; q++) { const X = x + q, Y = y + q; if (X < 0 || X >= W || !d[y * W + X] || Y < 0 || Y >= H || !d[Y * W + x]) ok = 0; }
+        e[y * W + x] = ok && sil[y * W + x];
+      }
+      m = e; }
     const er = new Uint8Array(W * H);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       let ok = m[y * W + x]; for (let d = -r; d <= r && ok; d++) { const X = x + d, Y = y + d; if (X < 0 || X >= W || !m[y * W + X] || Y < 0 || Y >= H || !m[Y * W + x]) ok = 0; }
@@ -366,21 +397,47 @@ export function underIn(px, sil, W, H) {
     // the component on the centre front, just under the neckline
     let seed = -1;
     for (let y = top; y < top + 0.3 * gh && seed < 0; y++) for (let dx = -Math.round(0.04 * W); dx <= Math.round(0.04 * W); dx++) { const i = y * W + Math.round(cxm + dx); if (m[i] && sil[i]) { seed = i; break; } }
+    if (globalThis.__underDebug) console.log('clusters', set.join('+'), C[k].map((v) => v.toFixed(0)).join(','), 'seed', seed);
     if (seed < 0) continue;
     const comp = [seed], seen = new Uint8Array(W * H), st = [seed]; seen[seed] = 1;
     while (st.length) { const i = st.pop(), x = i % W, y = (i / W) | 0; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && m[j] && sil[j] && !seen[j]) { seen[j] = 1; st.push(j); comp.push(j); } }
     // tall down the centre (≥ 30 % of the garment's height), a modest share (3–35 %), and narrower than the garment
     let cy0 = H, cy1 = 0, cxa = W, cxb = 0; for (const i of comp) { const x = i % W, y = (i / W) | 0; if (y < cy0) cy0 = y; if (y > cy1) cy1 = y; if (x < cxa) cxa = x; if (x > cxb) cxb = x; }
     const share = comp.length / idx.length;
+    if (globalThis.__underDebug) console.log('  comp', comp.length, 'h', ((cy1 - cy0) / gh).toFixed(2), 'share', share.toFixed(3), 'wfrac', ((cxb - cxa) / (x1 - x0)).toFixed(2));
     if (cy1 - cy0 < 0.3 * gh || share < 0.03 || share > 0.35 || cxb - cxa > 0.6 * (x1 - x0)) continue;
     // and not the garment's own main colour
-    let own = 0; for (const i of idx) if (lab8[i] === k) own++;
+    let own = 0; for (const i of idx) if (set.includes(lab8[i])) own++;
     if (own > 0.45 * idx.length) continue;
     if (!best || comp.length > best.length) best = comp;
   }
   if (!best) return null;
-  const out = new Uint8Array(W * H); for (const i of best) out[i] = 1;
-  return out;
+  // grown along its own colour: connected garment pixels clearly closer to its colour than to the garment's main
+  // one (a shaded tee darkens toward the hem; its core is only the lighter part)
+  const mean = [0, 0, 0]; for (const i of best) for (let c = 0; c < 3; c++) mean[c] += L[i * 3 + c] / best.length;
+  const M = C[main], dTo = (i, c) => Math.hypot(L[i * 3] - c[0], L[i * 3 + 1] - c[1], L[i * 3 + 2] - c[2]);
+  const out = new Uint8Array(W * H), st = [...best]; for (const i of best) out[i] = 1;
+  while (st.length) {
+    const i = st.pop(), x = i % W, y = (i / W) | 0;
+    for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+      if (j < 0 || out[j] || !sil[j]) continue;
+      if (dTo(j, mean) < 0.7 * dTo(j, M)) { out[j] = 1; st.push(j); }
+    }
+  }
+  // small blobs of the same colour on its edge (white buttons on a placket) aren't part of it: an opening sized to
+  // the region's own width takes them off
+  const wr = []; for (let y = 0; y < H; y++) { let c = 0; for (let x = 0; x < W; x++) c += out[y * W + x]; if (c) wr.push(c); }
+  wr.sort((a, b) => a - b);
+  const ro = Math.max(2, Math.round((wr[wr.length >> 1] || 0) * 0.3));
+  const er = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let ok = out[y * W + x]; for (let q = -ro; q <= ro && ok; q++) { const X = x + q, Y = y + q; if (X < 0 || X >= W || !out[y * W + X] || Y < 0 || Y >= H || !out[Y * W + x]) ok = 0; }
+    er[y * W + x] = ok;
+  }
+  const op = dilate(er, W, H, ro);
+  for (let i = 0; i < W * H; i++) op[i] = op[i] && out[i] ? 1 : 0;
+  let n = 0; for (const i of idx) if (op[i]) n++;
+  return n < 0.35 * idx.length ? op : (() => { const o = new Uint8Array(W * H); for (const i of best) o[i] = 1; return o; })();
 }
 
 /**
