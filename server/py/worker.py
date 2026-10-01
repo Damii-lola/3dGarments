@@ -18,6 +18,16 @@ except Exception:
 
 out = sys.stdout
 sys.stdout = sys.stderr                    # stray prints never corrupt the protocol
+# one throwaway pattern per sex: the first build of a process pays for lazy imports and first-call setup
+for sex in ('female', 'male'):
+    try:
+        sys.stdin = io.StringIO(json.dumps({'garment': {'type': 'top', 'upper': {}}, 'zone': 'upper', 'sex': sex, 'body': {}}))
+        sys.stdout = io.StringIO()
+        pattern.main()
+    except BaseException:
+        pass
+    finally:
+        sys.stdin, sys.stdout = sys.__stdin__, sys.stderr
 out.write('{"ready": true}\n'); out.flush()
 for line in sys.stdin:
     if not line.strip(): continue

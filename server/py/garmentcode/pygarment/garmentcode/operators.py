@@ -543,6 +543,58 @@ def _bend_extend_2_tangent(
     return length_diff + tan_0_diff + tan_1_diff + curvature_reg + end_expantion_reg
 
 
+def _bend_extend_batch(S, cp, target_len, direction, target_tangent_start, target_tangent_end, point_estimates=50):
+    """(3dGarments) _bend_extend_2_tangent for many shifts at once (S: m × 5) → m values: one numpy pass evaluates
+    the objective and all its finite differences"""
+    S = np.asarray(S, dtype=float)
+    m = len(S)
+    P = np.empty((m, 4, 2))
+    P[:, 0] = cp[0]
+    P[:, 1] = np.asarray(cp[1], float) + S[:, 0:2]
+    P[:, 2] = np.asarray(cp[2], float) + S[:, 2:4]
+    P[:, 3] = np.asarray(cp[-1], float) + direction[None, :] * S[:, 4:5]
+    d0, d1, d2 = 3 * (P[:, 1] - P[:, 0]), 3 * (P[:, 2] - P[:, 1]), 3 * (P[:, 3] - P[:, 2])
+
+    def deriv(t):
+        t = t[None, :, None]
+        return (1 - t) ** 2 * d0[:, None] + 2 * (1 - t) * t * d1[:, None] + t ** 2 * d2[:, None]
+
+    length = np.sum(_GL_W[None, :] * np.linalg.norm(deriv(_GL_T), axis=2), axis=1)
+    out = (length - target_len) ** 2
+
+    def unit(v, alt):
+        n = np.hypot(v[:, 0], v[:, 1])
+        bad = n < 1e-12
+        v = np.where(bad[:, None], alt, v)
+        n = np.hypot(v[:, 0], v[:, 1])
+        return (v[:, 0] + 1j * v[:, 1]) / n
+    out += np.abs(unit(d0, P[:, 2] - P[:, 0]) - target_tangent_start) ** 2
+    out += np.abs(unit(d2, P[:, 3] - P[:, 1]) - target_tangent_end) ** 2
+
+    t = np.linspace(0, 1, point_estimates)
+    D = deriv(t)
+    tt = t[None, :, None]
+    DD = 2 * ((1 - tt) * (d1 - d0)[:, None] + tt * (d2 - d1)[:, None])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        k = np.abs(D[..., 0] * DD[..., 1] - D[..., 1] * DD[..., 0]) / np.hypot(D[..., 0], D[..., 1]) ** 3
+    k = np.where(np.isfinite(k), k, -np.inf).max(axis=1)
+    out += np.where(np.isfinite(k), k, 0.0) ** 2
+    out += 0.001 * S[:, -1] ** 2
+    return out
+
+
+def _fun_and_grad(args):
+    """the objective and its forward-difference gradient (scipy's '2-point' steps), in one batched evaluation"""
+    def fg(x):
+        x = np.asarray(x, dtype=float)
+        h = np.sqrt(np.finfo(float).eps) * np.where(x >= 0, 1.0, -1.0) * np.maximum(1.0, np.abs(x))
+        h = (x + h) - x
+        S = np.vstack([x, x + np.diag(h)])
+        v = _bend_extend_batch(S, *args)
+        return float(v[0]), (v[1:] - v[0]) / h
+    return fg
+
+
 _CMT_CACHE = {}
 
 
@@ -587,17 +639,19 @@ def _curve_match_tangents(curve, target_tan0, target_tan1, target_len=None,
     target_tan1 = target_tan1 / np.linalg.norm(target_tan1)
 
     # match tangents with the requested ones while preserving length
+    args = (
+        curve_cps, 
+        curve.length() if target_len is None else target_len,
+        direction,
+        list_to_c(target_tan0),  
+        list_to_c(target_tan1), 
+        70   # NOTE: Low values cause instable resutls
+    )
+    # (3dGarments: the objective and its finite differences evaluated together, batched — same steps as scipy's)
     out = minimize(
-        _bend_extend_2_tangent,  # with tangent matching
+        _fun_and_grad(args),  # with tangent matching
         [0, 0, 0, 0, 0], 
-        args=(
-            curve_cps, 
-            curve.length() if target_len is None else target_len,
-            direction,
-            list_to_c(target_tan0),  
-            list_to_c(target_tan1), 
-            70   # NOTE: Low values cause instable resutls
-        ),
+        jac=True,
         method='L-BFGS-B',
     )
     if not out.success:

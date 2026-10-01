@@ -12,8 +12,8 @@ import { garmentsFromPhoto } from './pipeline.js';
 import { api } from '../services/api.js';
 import { API_URL } from '../services/config.js';
 import { prefetchModels } from './models.js';
-import { MODEL_URL as PARSE_URL } from './parse.js';
-import { VITPOSE_URL } from './pose.js';
+import { parseModel } from './parse.js';
+import { poseModel } from './pose.js';
 
 /** an uploaded image ({ blob } locally, { url } from the cloud) → ImageBitmap, upright */
 export async function photoBitmap(img) {
@@ -34,7 +34,7 @@ async function retry(call, tries = 3) {
 /** what every try-on needs, fetched while the user is still choosing photos: the two photo models (cached on disk
  *  after the first visit) and the API (a sleeping Render instance takes ~30 s to start) */
 export function prepareTryOn() {
-  prefetchModels([PARSE_URL, VITPOSE_URL]);
+  prefetchModels([parseModel(), poseModel()]);
   fetch(`${API_URL}/health`).catch(() => {});
 }
 
@@ -69,9 +69,9 @@ export function createTryOn({ human, stage }) {
           describe: (jpeg) => retry(() => api('/api/ngl/describe', { method: 'POST', body: { image: jpeg }, timeout: 120_000 })),
           pattern: (req) => retry(() => api('/api/ngl/pattern', { method: 'POST', body: req, timeout: 120_000 })),
           onStep, onSex,
-          // the app's budget is ~30 s a photo: one re-cut to the photo, no CLIPSeg (139 MB) or LaMa (208 MB) —
+          // the app's budget is ~30 s a photo: one re-cut to the photo when the first cut is clearly off, no CLIPSeg (139 MB) or LaMa (208 MB) —
           // the clothes parser, the jewellery detector and fill.js do their jobs in a fraction of the time
-          fitRounds: 1, search: false, painter: 'patch',
+          fitRounds: 1, fitTolerance: 0.25, search: false, painter: 'patch', parseSize: 384,
         });
         worn = res.map((r) => r.built);
         show();

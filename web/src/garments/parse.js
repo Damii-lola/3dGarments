@@ -14,17 +14,21 @@ import { colorSignature } from '@shared/wardrobe.js';
 export const LABELS = ['background', 'hat', 'hair', 'sunglasses', 'upper', 'skirt', 'pants', 'dress', 'belt',
   'shoe_l', 'shoe_r', 'face', 'leg_l', 'leg_r', 'arm_l', 'arm_r', 'bag', 'scarf'];
 
-export const MODEL_URL = 'https://huggingface.co/Xenova/segformer_b2_clothes/resolve/main/onnx/model_quantized.onnx';
-const S = 512, O = 128, NC = 18;
+const SEGFORMER = 'https://huggingface.co/Xenova/segformer_b2_clothes/resolve/main/onnx/';
+/** int8 on the CPU (29 MB), fp16 on the GPU (56 MB: WebGPU has no int8 kernels) */
+export const MODEL_URL = { wasm: `${SEGFORMER}model_quantized.onnx`, webgpu: `${SEGFORMER}model_fp16.onnx` };
+const NC = 18;
 const MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 
-const getSession = () => modelSession(globalThis.__parseModelUrl || MODEL_URL);
+export const parseModel = () => [globalThis.__parseModelUrl || MODEL_URL];
+const getSession = () => modelSession(...parseModel());
 
 /**
  * @param img  drawable (canvas / ImageBitmap / <img>)
  * @returns { w, h, rgba, label: Uint8Array(w·h), prob: Float32Array(w·h) (confidence of the label) }
  */
-export async function parsePhoto(img, maxSide = 1024) {
+export async function parsePhoto(img, maxSide = 1024, S = 512) {
+  const O = S / 4;                                                // (the logits come out at a quarter of the input)
   const w0 = img.width || img.naturalWidth, h0 = img.height || img.naturalHeight;
   const k = Math.min(1, maxSide / Math.max(w0, h0));
   const w = Math.round(w0 * k), h = Math.round(h0 * k);

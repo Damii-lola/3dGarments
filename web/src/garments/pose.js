@@ -11,7 +11,9 @@ export const KP = ['nose', 'eye_l', 'eye_r', 'ear_l', 'ear_r', 'shoulder_l', 'sh
   'hip_l', 'hip_r', 'knee_l', 'knee_r', 'ankle_l', 'ankle_r'];
 const IW = 192, IH = 256, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 
-const load = () => modelSession(globalThis.__vitposeUrl || VITPOSE_URL);
+// (int8: on the CPU even where there's WebGPU — ~1 s, and its fp16 version is 172 MB)
+export const poseModel = () => [globalThis.__vitposeUrl || VITPOSE_URL, { gpu: false }];
+const load = () => modelSession(...poseModel());
 
 /** parsed (parse.js parsePhoto) → { [name]: { x, y, score } | null } in photo pixels */
 export async function detectPose(parsed, minScore = 0.3) {

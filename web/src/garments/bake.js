@@ -113,6 +113,8 @@ function pack(boxes, maxW = 2048, maxH = 2048) {
  * @param photos { front: Photo, back?: Photo }
  * @returns { map (canvas), normal (canvas), uv: Float32Array(N·2), W, H, ppm }
  */
+const PREP = new WeakMap();      // Photo → its prepared colour / relief / inside distance
+
 export function bakeGarment(g, photos, detail = null) {
   const { N, X, tris, P2, panels } = g;
   /* ---- layout ---- */
@@ -140,7 +142,9 @@ export function bakeGarment(g, photos, detail = null) {
     const nc = prepareFabric(c, [{ x: 0, w: ph.w, h: ph.h }], { bleed: 24 });
     return { w: ph.w, h: ph.h, D, col: cx.getImageData(0, 0, ph.w, ph.h).data, nrm: nc.getContext('2d').getImageData(0, 0, ph.w, ph.h).data, data: ph.data };
   };
-  const F = prep(photos.front), B = photos.back ? prep(photos.back) : null;
+  // (the same photo is prepared once: a garment re-cut to the photo is baked again from it)
+  const prepOnce = (ph) => { if (!PREP.has(ph)) PREP.set(ph, prep(ph)); return PREP.get(ph); };
+  const F = prepOnce(photos.front), B = photos.back ? prepOnce(photos.back) : null;
 
   // vertex normals of the draped garment (which way each point faces)
   const VN = new Float32Array(N * 3);

@@ -26,9 +26,10 @@
  *   models?:  { upper?, lower?, full? }  3D model GLB url(s) for this photo, best first (TRELLIS.2, Hunyuan3D 2.1)
  *   onStep?(text)
  *   onSex?(sex)   the model being dressed (the clothes' sex), before anything is made for it
- *   fitRounds?    re-cuts to match the photo (3)
+ *   fitRounds?    re-cuts to match the photo (3), while the fit error is above fitTolerance (0.05)
  *   search?       CLIPSeg looks for what the vision model named on the garments (false: the app; see clean.js)
  *   painter?      'patch' (instant) | 'lama'
+ *   parseSize?    the clothes parser's input (512²; 384²: half the time, the cut-outs ~97 % the same)
  * }
  * @returns [{ zone, garment (NGL), built (sew.js result: mesh, hide, posed, …), source }]  lower garments first
  */
@@ -65,15 +66,21 @@ export function specFits(spec, zone, type) {
 }
 
 export async function garmentsFromPhoto(human, image, { describe, pattern, designs = {}, specs = {}, models = {}, under = [], onStep = () => {}, onSex = null,
-  fitRounds = 3, search = false, painter = 'patch' }) {
+  fitRounds = 3, fitTolerance = 0.05, search = false, painter = 'patch', parseSize = 512 }) {
   onStep('Finding the clothes in the photo…');
   // the vision model (a server round trip) reads the photo while the clothes parser and the pose model run here
   const c = document.createElement('canvas'), k = Math.min(1, 768 / Math.max(image.width, image.height));
   c.width = Math.round(image.width * k); c.height = Math.round(image.height * k);
-  c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
-  const described = describe(c.toDataURL('image/jpeg', 0.88));
+  // (a CPU canvas: reading a GPU one back costs seconds on some devices)
+  c.getContext('2d', { willReadFrequently: true }).drawImage(image, 0, 0, c.width, c.height);
+  // (encoded asynchronously, and sent BEFORE the parser starts: its model run holds the page for seconds, and the
+  // request would only leave after it)
+  const jpeg = await new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('could not encode the photo'))), 'image/jpeg', 0.88))
+    .then((b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); }));
+  const described = describe(jpeg);
   described.catch(() => {});
-  const parsed = await parsePhoto(image);
+  await new Promise((r) => setTimeout(r, 0));           // (let the request go out)
+  const parsed = await parsePhoto(image, 1024, parseSize);
   const posed = detectPose(parsed).catch(() => null);
   onStep('Reading what each garment is…');
   let { garments = [], onGarment: named = [], madeFor = 'unisex', wornBy = 'nobody' } = await described;
@@ -90,7 +97,6 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   if (onSex) await onSex(sex);
   const B = human.active;
   const body = bodyMeasures(human);
-  const kp = await posed;
   // the vision model named nothing (it happens): the clothes-parsing model's own classes stand in
   if (!garments.length) {
     const cnt = new Map(); for (const l of parsed.label) cnt.set(l, (cnt.get(l) || 0) + 1);
@@ -104,6 +110,9 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
   }
   const out = [], worn = [...under], seen = new Set();
   const order = garments.map((g) => ({ g, zone: zoneOf(g.type) })).sort((a, b) => (a.zone === 'lower' ? -1 : 1) - (b.zone === 'lower' ? -1 : 1));
+  // every garment's region, and its first sewing pattern asked for right away: the server cuts them while the
+  // photo is cleaned and the garments before it are sewn
+  const jobs = [];
   for (const { g, zone } of order) {
     if (seen.has(zone)) continue;
     const cut = cutGarment(parsed, zone);
@@ -112,11 +121,16 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     seen.add(zone);
     const garment = structuredClone(g);
     if (zone !== 'upper' && garment.lower) garment.lower.length = measuredLowerLength(parsed, cut.mask) || garment.lower.length;
+    const pat = pattern({ garment, design: designs[zone], zone, sex: human.sex, body });
+    pat.catch(() => {});
+    jobs.push({ g, zone, cut, garment, pat });
+  }
+  for (const { g, zone, cut, garment, pat: patP } of jobs) {
     // the other garments the vision model saw in this zone are worn under this one (it's the one that got cut)
     const underIt = garments.filter((o) => o !== g && zoneOf(o.type) === zone).map((o) => o.type);
     const clean = await cleanGarment(parsed, cut, { onGarment, under: underIt, onStep, search, painter });
     onStep(`Cutting the ${g.type}'s sewing pattern…`);
-    const pat = await pattern({ garment, design: designs[zone], zone, sex: human.sex, body });
+    const pat = await patP;
     // how close it sits (sew.js hugs a fitted / tight garment onto the body: negative ease, as a knit is worn)
     const snug = zone === 'lower' ? (/skinny/.test(garment.lower?.leg) ? 'skinny' : /pencil|straight|bodycon/.test(garment.lower?.skirt_shape) && g.type === 'skirt' ? 'fitted' : null)
       : garment.upper?.fit;
@@ -138,12 +152,13 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     const sew = (p) => sewPattern(B, human, item, p, photo, { under: worn.map((w) => w.posed), detail });
     let built = sew(pat);
     // the fit: measured on the photo, measured on our model, re-cut until they agree
+    const kp = await posed;                    // (the pose model ran while the server was busy)
     const measured = kp ? photoMeasures(parsed, cut.mask, kp, zone, { kind: /pants|jeans|trousers/.test(g.type) ? 'pants' : g.type }) : {};
     const lowerWorn = out.find((o) => o.zone === 'lower');
     const target = resolveTarget(human, measured, lowerWorn ? lowerWorn.built.posed.pts : null);
     let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = pat.fit || {}, ov = {};
     const fitLog = [{ now, err }];
-    for (let r = 0; r < fitRounds && Object.keys(target).length && err > 0.05; r++) {
+    for (let r = 0; r < fitRounds && Object.keys(target).length && err > fitTolerance; r++) {
       const o = nextOverrides(zone, target, now, fit, ov);
       if (JSON.stringify(o) === JSON.stringify(ov)) break;
       onStep(`Matching the ${g.type} to the photo (${r + 1}/${fitRounds})…`);

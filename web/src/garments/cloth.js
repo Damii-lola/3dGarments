@@ -109,31 +109,47 @@ export class Cloth {
   }
 }
 
-/** points + outward normals on a hash grid; nearest(x, y, z) → point index or −1 (within ~2 cells) */
+/** points + outward normals on a grid; nearest(x, y, z) → point index or −1 (within 1.5 cells).
+ *  The grid is dense over the points' box (flat arrays: the cells' start offsets and the points sorted by cell,
+ *  their coordinates copied in that order) — the query runs every cloth step for every cloth point */
 export function makeCollider(pts, nrm, cell = 0.03) {
-  const grid = new Map();
-  const key = (a, b, c) => ((a + 1024) * 2048 + (b + 1024)) * 2048 + (c + 1024);
   const count = pts.length / 3;
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
   for (let i = 0; i < count; i++) {
-    const k = key(Math.floor(pts[i * 3] / cell), Math.floor(pts[i * 3 + 1] / cell), Math.floor(pts[i * 3 + 2] / cell));
-    let l = grid.get(k);
-    if (!l) grid.set(k, (l = []));
-    l.push(i);
+    const x = pts[i * 3], y = pts[i * 3 + 1], z = pts[i * 3 + 2];
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
   }
+  if (!count) { x0 = y0 = z0 = 0; x1 = y1 = z1 = 0; }
+  const nx = Math.floor((x1 - x0) / cell) + 1, ny = Math.floor((y1 - y0) / cell) + 1, nz = Math.floor((z1 - z0) / cell) + 1;
+  const cellOf = new Int32Array(count), start = new Int32Array(nx * ny * nz + 1);
+  for (let i = 0; i < count; i++) {
+    const c = (Math.floor((pts[i * 3] - x0) / cell) * ny + Math.floor((pts[i * 3 + 1] - y0) / cell)) * nz + Math.floor((pts[i * 3 + 2] - z0) / cell);
+    cellOf[i] = c; start[c + 1]++;
+  }
+  for (let c = 0; c < nx * ny * nz; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, -1), ids = new Int32Array(count), S = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const k = fill[cellOf[i]]++;
+    ids[k] = i; S[k * 3] = pts[i * 3]; S[k * 3 + 1] = pts[i * 3 + 1]; S[k * 3 + 2] = pts[i * 3 + 2];
+  }
+  const r2 = (cell * 1.5) ** 2;
   return {
     pts, nrm, cell,
     nearest(x, y, z) {
-      const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
-      let best = -1, bd = (cell * 1.5) ** 2;
-      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
-        const l = grid.get(key(cx + a, cy + b, cz + c));
-        if (!l) continue;
-        for (const i of l) {
-          const dx = pts[i * 3] - x, dy = pts[i * 3 + 1] - y, dz = pts[i * 3 + 2] - z, d = dx * dx + dy * dy + dz * dz;
-          if (d < bd) { bd = d; best = i; }
+      const cx = Math.floor((x - x0) / cell), cy = Math.floor((y - y0) / cell), cz = Math.floor((z - z0) / cell);
+      if (cx < -1 || cy < -1 || cz < -1 || cx > nx || cy > ny || cz > nz) return -1;
+      let best = -1, bd = r2;
+      const ax = Math.max(0, cx - 1), bx = Math.min(nx - 1, cx + 1), ay = Math.max(0, cy - 1), by = Math.min(ny - 1, cy + 1);
+      const az = Math.max(0, cz - 1), bz = Math.min(nz - 1, cz + 1);
+      for (let a = ax; a <= bx; a++) for (let b = ay; b <= by; b++) {
+        const row = (a * ny + b) * nz;
+        // the cells along z are contiguous: one run of points
+        for (let k = start[row + az], e = start[row + bz + 1]; k < e; k++) {
+          const dx = S[k * 3] - x, dy = S[k * 3 + 1] - y, dz = S[k * 3 + 2] - z, d = dx * dx + dy * dy + dz * dz;
+          if (d < bd) { bd = d; best = k; }
         }
       }
-      return best;
+      return best < 0 ? -1 : ids[best];
     },
   };
 }

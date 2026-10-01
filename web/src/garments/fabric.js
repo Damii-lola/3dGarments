@@ -155,7 +155,7 @@ export function prepareFabric(canvas, panels, { delight = 0.8, bleed = 12 } = {}
   /* ---- normal map (tangent space; rows go down = +v, as the texture is uploaded without flip) ---- */
   const nc = document.createElement('canvas');
   nc.width = W; nc.height = H;
-  const nctx = nc.getContext('2d');
+  const nctx = nc.getContext('2d', { willReadFrequently: true });    // (read back by bake.js)
   const nimg = nctx.createImageData(W, H), nd = nimg.data;
   const k = 3.2;                                                          // relief strength
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {

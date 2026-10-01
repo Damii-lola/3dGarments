@@ -38,12 +38,14 @@ let clip = null;
 // build parse.js uses — transformers.js's own bundled runtime crashes some browsers)
 function loadClip() {
   clip ||= Promise.all([AutoTokenizer.from_pretrained(CLIPSEG), AutoProcessor.from_pretrained(CLIPSEG),
-    modelSession(globalThis.__clipsegUrl || CLIPSEG_URL)]).catch((e) => { clip = null; throw e; });
+    modelSession(globalThis.__clipsegUrl || CLIPSEG_URL, { gpu: false })]).catch((e) => { clip = null; throw e; });
   return clip;
 }
 const loadLama = () => modelSession(globalThis.__lamaUrl || LAMA_URL);
 
-const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+// CPU-backed canvases (the context's settings are fixed by its first getContext): everything here is read back,
+// and reading back a GPU canvas costs seconds on some devices
+const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d', { willReadFrequently: true }); return c; };
 
 /** the region's holes (anything enclosed by the garment) filled: a hand or chain on it is inside it */
 function fillHoles(mask, w, h) {
