@@ -10,7 +10,9 @@ import {
 } from './human/body.js';
 import { DEFAULT_POSE, composePose } from './human/poses.js';
 import { createUploads } from './uploads/groups.js';
-import { createTryOn, photoBitmap, prepareTryOn } from './garments/tryon.js';
+// CLOTHES TRY-ON: switched off — being rebuilt from the beginning (only the bodysuit stays). The old system is kept
+// in web/src/garments/ (not imported); to bring it back, uncomment the lines marked TRY-ON in this file.
+// TRY-ON: import { createTryOn, photoBitmap, prepareTryOn } from './garments/tryon.js';
 import { loadProfile, saveProfile } from './services/profile.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -204,34 +206,34 @@ function useSex(sex) {
   save();
 }
 
-async function onWear(g) {
-  if (!tryOn || tryOn.busy) return;
-  if (wearing === g.id) { tryOn.takeOff(); wearing = null; uploads.setWearing(null); return; }
-  if (!g.images.length) return;
-  uploads.setWearing(wearing, g.id);
-  busy('Reading the photo…');
-  try {
-    // the group's photos: on a hanger, its front and back shots are found among them (the first decides which kind)
-    const imgs = await Promise.all(g.images.map(photoBitmap));
-    const made = await tryOn.wear(imgs, busy, (sex) => { if (sex !== M.sex) { useSex(sex); buildPanel(); } });
-    if (made === null) { wearing = null; return; }       // taken off before it was done
-    wearing = made.length ? g.id : null;
-    if (!made.length) toast(`No garment found in “${g.name}”'s photo`, 'error');
-    else toast(`${made.map((m) => m.garment.type).join(' + ')} on the ${human.sex} model`, 'success');
-  } catch (err) {
-    console.error(err);
-    tryOn.takeOff(); wearing = null;
-    toast(`Couldn't dress the model: ${err.message || err}`, 'error', 7000);
-  } finally {
-    busy(null);
-    uploads.setWearing(wearing);
-    stage.invalidate(4);
-  }
-}
+// TRY-ON: async function onWear(g) {
+// TRY-ON:   if (!tryOn || tryOn.busy) return;
+// TRY-ON:   if (wearing === g.id) { tryOn.takeOff(); wearing = null; uploads.setWearing(null); return; }
+// TRY-ON:   if (!g.images.length) return;
+// TRY-ON:   uploads.setWearing(wearing, g.id);
+// TRY-ON:   busy('Reading the photo…');
+// TRY-ON:   try {
+// TRY-ON:     // the group's photos: on a hanger, its front and back shots are found among them (the first decides which kind)
+// TRY-ON:     const imgs = await Promise.all(g.images.map(photoBitmap));
+// TRY-ON:     const made = await tryOn.wear(imgs, busy, (sex) => { if (sex !== M.sex) { useSex(sex); buildPanel(); } });
+// TRY-ON:     if (made === null) { wearing = null; return; }       // taken off before it was done
+// TRY-ON:     wearing = made.length ? g.id : null;
+// TRY-ON:     if (!made.length) toast(`No garment found in “${g.name}”'s photo`, 'error');
+// TRY-ON:     else toast(`${made.map((m) => m.garment.type).join(' + ')} on the ${human.sex} model`, 'success');
+// TRY-ON:   } catch (err) {
+// TRY-ON:     console.error(err);
+// TRY-ON:     tryOn.takeOff(); wearing = null;
+// TRY-ON:     toast(`Couldn't dress the model: ${err.message || err}`, 'error', 7000);
+// TRY-ON:   } finally {
+// TRY-ON:     busy(null);
+// TRY-ON:     uploads.setWearing(wearing);
+// TRY-ON:     stage.invalidate(4);
+// TRY-ON:   }
+// TRY-ON: }
 
 function buildPanel() {
   const host = $('#panel');
-  uploads ||= createUploads({ toast, onWear });
+  uploads ||= createUploads({ toast /* TRY-ON: , onWear */ });
   host.innerHTML = '';
   ui = {};
 
@@ -340,7 +342,7 @@ async function boot() {
   stage.root.add(human.object);
   stage.setSubjectHeight(human.heightM);
   stage.setView('front', { instant: true });
-  tryOn = createTryOn({ human, stage });
+  // TRY-ON: tryOn = createTryOn({ human, stage });
   if (params.get('suit') === '1') human.setSuit(true);      // testing: the black bodysuit over the whole body
   $('#stage-canvas').parentElement.append(busyEl);
   buildPanel();
@@ -349,8 +351,8 @@ async function boot() {
   // build the other body's shape targets while idle, so switching sex is instant
   const other = human.bodies[M.sex === 'female' ? 'male' : 'female'];
   (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(() => other.ensureShape(), { timeout: 4000 });
-  // the try-on's photo models and the API, readied while the user is still choosing photos
-  setTimeout(prepareTryOn, 2500);
+  // TRY-ON: the try-on's photo models and the API, readied while the user is still choosing photos
+  // TRY-ON: setTimeout(prepareTryOn, 2500);
   window.__3dg = { stage, human, model, get state() { return M; }, get profile() { return profile; }, applyShape, buildPanel, tryOn, ready: true };
 
   // this device's copy in the cloud: take it if it is newer (e.g. local data was cleared),

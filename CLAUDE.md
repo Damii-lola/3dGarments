@@ -5,6 +5,12 @@ A 3D model studio for fashion shops, in three stages, each shown alone (no UI of
 2. **Style (paid, not built yet):** pose the dressed model, backdrop, furniture, an AI prompt that sets up scene + pose (stage.js HDRIs/lighting and poses.js already exist).
 3. **Photoshoot (paid, not built yet):** product shots up to 4K / transparent PNG (stage.capture exists).
 
+## ⚠ Clothes try-on is SWITCHED OFF (being rebuilt from the beginning)
+The whole garment try-on system is commented out of the app: main.js lines marked `TRY-ON` (import, createTryOn,
+onWear, the cards' "Try on" button, prepareTryOn). Everything in web/src/garments/ is kept but nothing imports it.
+What stays live: the body, its controls, the photo upload groups, and the BODYSUIT (?suit=1 / human.setSuit /
+the lab's box). The notes on garments/ below describe the old, switched-off system.
+
 ## Layout
 ```
 server/                 Express API (Render). ESM, Node 22.
