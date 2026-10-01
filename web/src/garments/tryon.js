@@ -82,10 +82,10 @@ export function createTryOn({ human, stage }) {
             worn = builts; show(); drafted = true;
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
           },
-          // the app's budget is ~30 s a photo: one re-cut to the photo when the first cut is off (after it's shown), no CLIPSeg
+          // the app's budget is ~30 s a photo: up to two re-cuts to the photo when the first cut is off (after it's shown), no CLIPSeg
           // (139 MB) or LaMa (208 MB) — the clothes parser, the jewellery detector and fill.js do their jobs in a
           // fraction of the time
-          fitRounds: 1, fitTolerance: 0.15, search: false, painter: 'patch', parseSize: 384,
+          fitRounds: 2, fitTolerance: 0.15, search: false, painter: 'patch', parseSize: 384,
           alive: live,
         }).catch((e) => { if (e.cancelled || !live()) return null; takeOff(); throw e; });
         if (!res || !live()) {                  // taken off meanwhile (another sex, another photo): dropped

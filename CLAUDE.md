@@ -73,7 +73,10 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         the browser; words + patterns from the live API, retried twice) → worn on the model; it may switch the
                         model's sex first (onSex → main.js useSex: that sex's own settings) and follows body-shape changes.
                         Progress steps over the preview (.stage-busy); a manual sex switch takes the clothes off.
-                        BUDGET ≤ 30 s a photo (users leave): app options fitRounds 1 + fitTolerance 0.25, search false (no CLIPSeg,
+                        BUDGET ≤ 30 s a photo until the model is SHOWN DRESSED (users leave): pipeline pass 1 sews + shows every
+                        garment (onDraft), pass 2 re-cuts to the photo in the background (secant steps, photofit.nextOverrides hist;
+                        sew.js is async and yields a frame every ~50 ms with the visible body put back in its own pose; a take-off
+                        cancels via alive()). App options fitRounds 2 + fitTolerance 0.15, search false (no CLIPSeg,
                         139 MB), painter 'patch' (fill.js PatchMatch, not LaMa 208 MB), parseSize 384. prepareTryOn (boot + 2.5 s) wakes
                         the API and creates the parser/pose sessions in idle time (models.js: files in Cache Storage '3dg-models').
                         pipeline.js overlaps every wait: describe is SENT before the parser runs (a sync wasm run holds the page and

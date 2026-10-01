@@ -201,7 +201,7 @@ const KNOBS = {
 const LOWER_KEYS = ['pants.length', 'skirt.length', 'flare-skirt.length', 'pencil-skirt.length', 'levels-skirt.length'];
 
 /** next overrides from where the garment is (now) and where it should be (target), given the values used (fit) */
-export function nextOverrides(zone, target, now, fit, prev = {}) {
+export function nextOverrides(zone, target, now, fit, prev = {}, hist = []) {
   const o = { ...prev };
   for (const [m, key] of KNOBS[zone === 'lower' ? 'lower' : 'upper'] || []) {
     const t = target[m], c = now[m];
@@ -209,6 +209,17 @@ export function nextOverrides(zone, target, now, fit, prev = {}) {
     const k = Math.max(0.6, Math.min(1.6, t / c));
     if (Math.abs(1 - k) < 0.03) continue;                             // within 3 %: leave it
     const keys = key === 'LOWER_LENGTH' ? LOWER_KEYS : [key];
+    // two cuts already measured with different values of this knob: the secant through them (a measure isn't
+    // proportional to its knob — a sleeve's end moves less than its length — and one proportional step can stop
+    // far short), held within 0.4 … 2.5 × the last value
+    const pts = hist.filter((h) => h.fit?.[keys[0]] != null && h.now?.[m] != null).map((h) => [h.fit[keys[0]], h.now[m]]);
+    const [a, b] = pts.slice(-2);
+    if (a && b && Math.abs(b[0] - a[0]) > 1e-4 && Math.abs(b[1] - a[1]) > 1e-4) {
+      const x = b[0] + ((t - b[1]) * (b[0] - a[0])) / (b[1] - a[1]);
+      const ks = Math.max(0.4, Math.min(2.5, x / b[0]));
+      for (const kk of keys) if (fit[kk] != null) o[kk] = fit[kk] * ks;
+      continue;
+    }
     for (const kk of keys) if (fit[kk] != null) o[kk] = fit[kk] * k;
   }
   return o;

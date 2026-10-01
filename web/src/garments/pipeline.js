@@ -184,8 +184,10 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
     let now = modelMeasures(human, built.posed.pts, zone), err = fitError(target, now), fit = job.pat.fit || {}, ov = {};
     const fitLog = [{ now, err }];
     const keep = (b) => { if (built === job.built) retired.push(built); else built.dispose(); built = b; };
+    const hist = [{ fit: { ...fit }, now }];       // every cut measured: its knob values → its measures
     for (let r = 0; r < fitRounds && Object.keys(target).length && err > fitTolerance; r++) {
-      const o = nextOverrides(zone, target, now, fit, ov);
+      const last = hist[hist.length - 1];
+      const o = nextOverrides(zone, target, last.now, last.fit, ov, hist);
       if (JSON.stringify(o) === JSON.stringify(ov)) break;
       onStep(`Matching the ${g.type} to the photo (${r + 1}/${fitRounds})…`);
       // a round that can't be had (the pattern service unreachable) keeps the garment as it is
@@ -194,7 +196,10 @@ export async function garmentsFromPhoto(human, image, { describe, pattern, desig
       check();
       const b2 = await sew(p2), n2 = modelMeasures(human, b2.posed.pts, zone), e2 = fitError(target, n2);
       fitLog.push({ overrides: o, now: n2, err: e2 });
-      if (e2 < err) { keep(b2); now = n2; err = e2; fit = p2.fit || fit; ov = o; } else { b2.dispose(); break; }
+      hist.push({ fit: { ...(p2.fit || {}) }, now: n2 });
+      ov = o;
+      // the best cut so far is kept; a worse one still tells the next round which way the measure moves
+      if (e2 < err) { keep(b2); now = n2; err = e2; fit = p2.fit || fit; } else b2.dispose();
     }
     // AIpparel's pattern for this zone (a whole sewing pattern from the photo): a candidate when its panels are the
     // right kind of garment (it reads nearly everything as a dress: no trouser legs for trousers → not used), sewn on
