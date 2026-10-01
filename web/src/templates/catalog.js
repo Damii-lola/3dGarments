@@ -53,38 +53,49 @@ const teeCrew = {
   cut: (body) => {
     const L = body.L;
     return {
-      hemY: L.crotch + 0.035,                                  // just above the crotch: covers the waistband, a regular length
-      sleeveEnd: 0.62 * body.joint('upperarm_r').distanceTo(body.joint('lowerarm_r')),   // mid upper arm
+      hemY: L.crotch + 0.06,                                   // at the hips: just over the jeans' waistband
+      sleeveEnd: 0.85 * body.joint('upperarm_r').distanceTo(body.joint('lowerarm_r')),   // down near the elbow
       neck: body.neck, neckBase: L.neckBase,
     };
   },
   torso: {
-    // regular fit: ~1 cm off the chest at the sides, ~2 cm front and back; it sits on the shoulders and the neck
+    // OVERSIZED, BOXY: the body falls straight as a box from the chest's full width — no waist, no taper — well clear
+    // of the body (~4 cm front and back, ~3 cm at the sides); it rests on the shoulders and round the neck
     ease: (th, y, L) => {
-      const full = 0.003 + 0.005 * Math.cos(th) ** 2;
+      const full = 0.014 + 0.012 * Math.cos(th) ** 2;
       if (y >= L.neckBase) return 0.001;
-      return 0.002 + (full - 0.002) * smooth(L.neckBase, L.shoulder - 0.05, y) ** 0.7;
+      // (on the shoulders it lies on them: the room comes below, from the armpit down)
+      // (out at the sides the dropped shoulder stands off the deltoid as the sleeve does: they meet without a step)
+      const side = Math.sin(th) ** 2;
+      return 0.002 + (full - 0.002) * smooth(L.shoulder - 0.02, L.armpit - 0.02, y) * (0.35 + 0.65 * (Math.cos(th) ** 2 + (1 - Math.cos(th) ** 2) * smooth(L.armpit + 0.02, L.armpit - 0.06, y)));
     },
-    fall: 0.15,                                                 // it comes in under the chest only gently (no cling to the waist)
-    cap: 0.09,                                                 // the shoulder runs on over the top of the deltoid
+    fall: 0,                                                   // straight down: never comes in
+    cap: 0.05,                                                 // DROPPED SHOULDER: the body's shoulder runs down onto the upper arm
   },
   sleeve: {
-    // a short sleeve: a straight, open tube — as wide as the arm's widest point under it (the deltoid, the biceps) plus
-    // ease, never narrowing toward its hem
-    start: -0.04,                                              // it starts inside the torso's shoulder (overlapping it)
-    // a short sleeve: a straight, open tube round the upper arm — its radius the arm's widest under the sleeve (past
-    // the cap), the same all along, plus ease (more underneath: it hangs open)
+    start: 0.0,
+    meet: 0,                                                // set into the body's dropped shoulder over its first 14 cm
+    // a wide, open, straight sleeve from the dropped shoulder seam to near the elbow: ~4 cm clear of the arm all round
+    // (more underneath, where it hangs open), widening a little to its hem
     shape: (bins, NA, gap) => {
       let rMax = 0;
       for (const b of bins) if (b.along > 0.06) { let m = 0; for (const r of b.R) m += r / NA; rMax = Math.max(rMax, m); }
-      // its root comes out of the shoulder: from the arm's own surface (under the torso's cap) out to the tube by 9 cm
-      // along; past that the tube, flaring a little to its hem
+      // a cone: its opening at the dropped seam is big (it takes in the shoulder's edge and the armpit), narrowing in a
+      // straight line to its hem — so the shoulder's slope runs on down the sleeve without a step
+      const end = bins[bins.length - 1].along;
+      // the arm's outline over the sleeve's root (its bumps — the deltoid — spanned: per angle the most over 12 cm)
+      const root = new Float64Array(NA);
+      for (const b of bins) if (b.along < 0.12) for (let a = 0; a < NA; a++) root[a] = Math.max(root[a], b.R[a]);
+      const rootS = Float64Array.from(root, (_, a) => { let s = 0; for (let d = -6; d <= 6; d++) s += root[(a + d + NA) % NA]; return s / 13; });
       return bins.map((b) => {
-        const t = smooth(0.05, 0.11, b.along), flare = Math.max(0, b.along - 0.1) * 0.06;
+        const t = 1, k = Math.max(0, Math.min(1, b.along / end)) ** 0.8;
         return Float64Array.from({ length: NA }, (_, a) => {
-          const under = Math.max(0, -Math.cos((a / NA) * Math.PI * 2)), tube = rMax + gap + 0.008 + flare + 0.01 * under;
-          // (inside the torso's shoulder at first — it comes out from under it, no edge)
-          return (b.R[a] + gap - 0.004) * (1 - t) + Math.max(tube, b.R[a] + gap + 0.004) * t;
+          const c = Math.cos((a / NA) * Math.PI * 2), under = Math.max(0, -c);
+          // (it widens straight from the shoulder to its hem: the shoulder's line runs on down and out along it)
+          // (its first 4 cm rise from the arm's skin: the sleeve's top comes out from under the shoulder, no wall)
+          const rise = smooth(0.0, 0.05, b.along), base = (b.R[a] + gap - 0.003) * (1 - rise) + (rootS[a] + gap + 0.007) * rise;
+          const tube = base * (1 - k) + (rMax + gap + 0.045 + 0.03 * under) * k;
+          return (b.R[a] + gap) * (1 - t) + Math.max(tube, b.R[a] + gap + 0.004) * t;
         });
       });
     },
@@ -113,7 +124,9 @@ const teeCrew = {
         if (t.u < 0.004 || t.u > 0.996) return col(0.93);
         return col(1);
       }
-      if (t.along > cut.sleeveEnd || t.along < 0.01) return null;   // (the top of its start under the shoulder)     // (it starts under the torso's shoulder)
+      if (t.along > cut.sleeveEnd) return null;
+      // the armhole seam: where the sleeve comes out of the body's fabric (inside it, it isn't there)
+      { const A = prep.arms[t.part === 'sleeveR' ? 'r' : 'l'], q = A.at(t.u * Math.PI * 2, t.along); if (prep.torso.outside(q[0], q[1], q[2]) < -0.004) return null; }   // (it starts under the dropped shoulder)   // (the top of its start under the shoulder)     // (it starts under the torso's shoulder)
       const end = cut.sleeveEnd - t.along;
       if (end < 0.003) return col(0.9);
       if (Math.abs(end - 0.022) < 0.0008 || Math.abs(end - 0.0285) < 0.0008) return col(0.9);

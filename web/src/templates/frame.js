@@ -132,7 +132,7 @@ export function measureBody(human) {
  * in faster than that (m per m) — a woven top falls straight off the chest.
  * @returns { ys, rings: [{ y, cx, cz, R: Float64Array(NA) }], at(θ, y) → [x, y, z], NA }
  */
-export function torsoSurface(body, { y0, y1, step = 0.005, span = 0.025, ease = () => 0.01, fall = 0.05, skirt = false, cap = 0, minGap = 0.006 }) {
+export function torsoSurface(body, { y0, y1, step = 0.005, span = 0.025, ease = () => 0.01, fall = 0.05, fallFrom = null, skirt = false, cap = 0, minGap = 0.006 }) {
   const { Q, n, region, skin, L, joint } = body, NA = 180;
   // the shoulder caps (the arm within `cap` m of the shoulder joint, along the arm): part of the torso's surface — the
   // garment's shoulder runs over them (a dropped shoulder), its sleeves start past them
@@ -211,7 +211,7 @@ export function torsoSurface(body, { y0, y1, step = 0.005, span = 0.025, ease = 
   for (let k = 0; k < rows.length; k++) for (let a = 0; a < NA; a++) R[k][a] += ease((a / NA) * Math.PI * 2, rows[k]);
   for (let k = 1; k < rows.length; k++) {
     // (eased in round the armpit: no crease where it starts)
-    const f = fall + 4 * (1 - smooth(L.armpit + 0.06, L.armpit - 0.06, rows[k]));
+    const yf = fallFrom ? L[fallFrom] - 0.03 : L.armpit, f = fall + 4 * (1 - smooth(yf + 0.06, yf - 0.06, rows[k]));
     for (let a = 0; a < NA; a++) R[k][a] = Math.max(R[k][a], R[k - 1][a] - f * step);
   }
   // smoothed down the body (no ridges where one ring's few points differ from the next): ±1 cm above the shoulder
@@ -268,7 +268,13 @@ export function torsoSurface(body, { y0, y1, step = 0.005, span = 0.025, ease = 
   };
   const thOfU = (h, u) => { const { th, Ls } = h; let m = 1; while (m < Ls.length - 1 && Ls[m] < u) m++; const t = (u - Ls[m - 1]) / ((Ls[m] - Ls[m - 1]) || 1); return th[m - 1] + (th[m] - th[m - 1]) * t; };
   const uOfTh = (h, t) => { const { th, Ls } = h; const f = Math.max(0, Math.min(th.length - 1.0001, ((t - th[0]) / (th[th.length - 1] - th[0])) * (th.length - 1))), m = Math.floor(f); return Ls[m] + (Ls[m + 1] - Ls[m]) * (f - m); };
-  return { rows, rings, at, halves, thOfU, uOfTh, NA, centreAt: (y) => { const [A, Bq, t] = ringAt(y); return [A.cx + (Bq.cx - A.cx) * t, A.cz + (Bq.cz - A.cz) * t]; } };
+  /** is a point inside the fabric's surface (at its height)? → signed distance, horizontal (< 0 inside) */
+  const outside = (x, y, z) => {
+    if (y > rows[0] || y < rows[rows.length - 1]) return 1;
+    const [A, Bq, t] = ringAt(y), cx = A.cx + (Bq.cx - A.cx) * t, cz = A.cz + (Bq.cz - A.cz) * t, th = Math.atan2(x - cx, z - cz);
+    return Math.hypot(x - cx, z - cz) - (rAt(A, th) * (1 - t) + rAt(Bq, th) * t);
+  };
+  return { rows, rings, at, halves, thOfU, uOfTh, NA, outside, centreAt: (y) => { const [A, Bq, t] = ringAt(y); return [A.cx + (Bq.cx - A.cx) * t, A.cz + (Bq.cz - A.cz) * t]; } };
 }
 
 /* ------------------------------------------------------------------ the arms */
@@ -278,7 +284,7 @@ export function torsoSurface(body, { y0, y1, step = 0.005, span = 0.025, ease = 
  * by angle φ round the arm (0 the top, π/2 the front, π underneath), as `shape(φ, along, Rarm)` makes it.
  * @returns { at(φ, along) → [x, y, z], aOfV, vOfA, len, frame(x, y, z) → [along, φ] }
  */
-export function armSurface(body, side, { a0 = -0.05, a1, shape }) {
+export function armSurface(body, side, { a0 = -0.05, a1, shape, meet = null }) {
   const { Q, n, region, skin, joint } = body;
   const S = joint(`upperarm_${side}`), E = joint(`lowerarm_${side}`), W = joint(`hand_${side}`);
   const segs = [[S, E], [E, W]].map(([p, q]) => {
@@ -328,9 +334,26 @@ export function armSurface(body, side, { a0 = -0.05, a1, shape }) {
     const r0 = R[k][a] * (1 - g) + R[k][b] * g, r1 = R[k + 1][a] * (1 - g) + R[k + 1][b] * g;
     return r0 * (1 - t) + r1 * t;
   };
+  // MEET (a sleeve set into a body): over its first `meet.len` m the sleeve's radius is where its ray from the arm's
+  // axis comes out of the body's fabric (+ meet.over), blended into its own shape — the shoulder runs on into it
+  const axisAt = (along) => { const s = along <= L1 ? segs[0] : segs[1], t = along <= L1 ? along : along - L1; return [s, s.p.clone().addScaledVector(s.a, t)]; };
+  const meetR = (phi, along) => {
+    const [s, O] = axisAt(along), dx = s.up.x * Math.cos(phi) + s.f.x * Math.sin(phi), dy = s.up.y * Math.cos(phi) + s.f.y * Math.sin(phi), dz = s.up.z * Math.cos(phi) + s.f.z * Math.sin(phi);
+    const f = (r) => meet.outside(O.x + dx * r, O.y + dy * r, O.z + dz * r);
+    let lo = 0.005, hi = 0.12;
+    if (f(hi) < 0) return null;                    // (still inside at 25 cm: no exit that way)
+    if (f(lo) > 0) return lo;
+    for (let it = 0; it < 24; it++) { const m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
+    return hi + meet.over;
+  };
   const at = (phi, along) => {
-    const s = along <= L1 ? segs[0] : segs[1], t = along <= L1 ? along : along - L1, r = rAt(phi, along);
-    const o = s.p.clone().addScaledVector(s.a, t).addScaledVector(s.up, Math.cos(phi) * r).addScaledVector(s.f, Math.sin(phi) * r);
+    const [s, O] = axisAt(along);
+    let r = rAt(phi, along);
+    if (meet && along < meet.len) {
+      const m = meetR(phi, along), w = 1 - smooth(meet.len * 0.35, meet.len, along);
+      if (m != null) r = m * w + r * (1 - w);
+    }
+    const o = O.addScaledVector(s.up, Math.cos(phi) * r).addScaledVector(s.f, Math.sin(phi) * r);
     return [o.x, o.y, o.z];
   };
   const marks = [[0, 0], [L1, 0.45], [L1 + L2, 0.9]];

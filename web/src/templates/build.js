@@ -19,12 +19,12 @@ export function prepare(human, tpl) {
   const gap = GAP + PER_LAYER * Math.max(0, (tpl.layer || 1) - 1);
   const torso = tpl.torso && torsoSurface(body, {
     y0: L.neckTop, y1: cut.hemY - 0.03,
-    ease: (th, y) => gap + tpl.torso.ease(th, y, L), fall: tpl.torso.fall ?? 0.05, span: tpl.torso.span ?? 0.025, cap: tpl.torso.cap ?? 0, minGap: gap + 0.001,
+    ease: (th, y) => gap + tpl.torso.ease(th, y, L), fall: tpl.torso.fall ?? 0.05, fallFrom: tpl.torso.fallFrom ?? null, span: tpl.torso.span ?? 0.025, cap: tpl.torso.cap ?? 0, minGap: gap + 0.001,
   });
   const arms = {};
   if (tpl.sleeve) for (const side of ['r', 'l']) {
     const a1 = cut.sleeveEnd + 0.03;
-    arms[side] = armSurface(body, side, { a0: tpl.sleeve.start ?? -0.05, a1, shape: (bins, NA) => tpl.sleeve.shape(bins, NA, gap) });
+    arms[side] = armSurface(body, side, { a0: tpl.sleeve.start ?? -0.05, a1, shape: (bins, NA) => tpl.sleeve.shape(bins, NA, gap), meet: tpl.sleeve.meet && torso ? { outside: torso.outside, len: tpl.sleeve.meet, over: 0.0015 } : null });
   }
   return { body, L, cut, torso, arms };
 }
