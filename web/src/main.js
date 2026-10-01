@@ -340,6 +340,7 @@ async function boot() {
   stage.setSubjectHeight(human.heightM);
   stage.setView('front', { instant: true });
   tryOn = createTryOn({ human, stage });
+  if (params.get('suit') === '1') human.setSuit(true);      // testing: the black bodysuit over the whole body
   $('#stage-canvas').parentElement.append(busyEl);
   buildPanel();
   stage.invalidate(4);

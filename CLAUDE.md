@@ -58,6 +58,11 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         break three's morph-texture loop (the body came apart on a phone once a shape slider moved). The
                         morph data and weights stay (CPU code reads them); the shaders add two attributes morphPos/morphNrm,
                         re-summed only when the weights change, in the materials and the shadow (customDepthMaterial)
+  src/human/human.js    BODYSUIT (makeSuit): black, skin-tight, head to fingers to toes — a second SkinnedMesh on the body's own
+                        geometry + skeleton (follows every pose / shape slider; morphs from the body's CPU blend), skin triangles
+                        only, pushed out 1.5 mm (+2 mm where prepare.py sank the skin under the underwear; smoothed normals there).
+                        Invisible by default; testing: ?suit=1, human.setSuit(true), the lab's "Bodysuit" box (body + underwear
+                        not drawn while it's shown)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
   src/human/poses.js    pose + hand library, composePose()

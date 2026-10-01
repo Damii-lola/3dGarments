@@ -21,8 +21,9 @@ function patch(shader) {
     .replace('#include <morphtarget_vertex>', 'transformed += morphPos;');
 }
 
-/** a material's shaders take the CPU-blended morphs (its own onBeforeCompile still runs first) */
-function patchMaterial(m) {
+/** a material's shaders take the CPU-blended morphs (its own onBeforeCompile still runs first); for a mesh that
+ *  shares a geometry whose morphs another mesh's useCpuMorphs already blends */
+export function patchMaterial(m) {
   if (!m || m.userData.cpuMorphs) return;
   m.userData.cpuMorphs = true;
   const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
@@ -68,5 +69,6 @@ export function useCpuMorphs(mesh) {
   mesh.onBeforeRender = function (...a) { update(); prevBefore?.apply(this, a); };
   mesh.onBeforeShadow = function () { update(); };
   update();
+  mesh.userData.cpuMorphUpdate = update;
   return update;
 }

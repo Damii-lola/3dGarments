@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ZERO_DIRS, ZERO_PALM } from './rig.js';
 import { createBodyMaterial } from './materials.js';
-import { useCpuMorphs } from './cpumorph.js';
+import { useCpuMorphs, patchMaterial } from './cpumorph.js';
 import { assetUrl } from './assets.js';
 import { buildShape, SHAPE_TARGETS } from './shape.js';
 
@@ -53,6 +53,107 @@ const eulerQ = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(
 const isHang = (v) => !!(v && !Array.isArray(v) && v.hang);
 
 /** One loaded body model: mesh, skeleton, pose-zero frames and measuring data. */
+/**
+ * The bodysuit: a skin-tight black layer over the whole body — head, hands and every finger, feet and toes — on
+ * the body's own geometry and skeleton (so it follows every pose and shape exactly), its skin pushed out along the
+ * normals (suitGaps: 1.5 mm, and smoothly over the underwear). Invisible in normal use; shown for testing (?suit=1, human.setSuit(true), the lab's "suit" box).
+ */
+const SUIT_GAP = 0.0015;   // m (1.5 mm) off the skin
+const SINK = 0.002;        // m: prepare.py sinks the skin under the underwear 2 mm (it can't poke through it)
+/**
+ * Per-vertex gap (the `suitGap` attribute): 1.5 mm off the skin everywhere. The skin under the underwear was sunk
+ * 2 mm in prepare.py: the suit gets those 2 mm back there (blended across the underwear's edge), so it runs smooth.
+ * (The underwear itself isn't drawn while the suit is shown: Human#setSuit.)
+ */
+function suitGaps(g) {
+  const P = g.attributes.position.array, N = g.attributes.normal.array, part = g.attributes._part.array, n = P.length / 3;
+  const gap = new Float32Array(n).fill(SUIT_GAP);
+  const C = 0.025, grid = new Map(), key = (x, y, z) => `${x},${y},${z}`;
+  for (let i = 0; i < n; i++) if (part[i] > 3.5 && part[i] < 4.5) {
+    const k = key(Math.floor(P[i * 3] / C), Math.floor(P[i * 3 + 1] / C), Math.floor(P[i * 3 + 2] / C));
+    if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i);
+  }
+  if (!grid.size) return { gap, nrm: Float32Array.from(N) };
+  // under the underwear: a fabric point just outside this skin point (≤ 4 cm out, ≤ 2.5 cm sideways)
+  const under = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (part[i] > 3.5 && part[i] < 4.5) continue;
+    const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2];
+    const cx = Math.floor(x / C), cy = Math.floor(y / C), cz = Math.floor(z / C);
+    search: for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const l = grid.get(key(cx + a, cy + b, cz + c)); if (!l) continue;
+      for (const j of l) {
+        const dx = P[j * 3] - x, dy = P[j * 3 + 1] - y, dz = P[j * 3 + 2] - z, along = dx * nx + dy * ny + dz * nz;
+        if (along <= 0 || along > 0.04) continue;
+        if (dx * dx + dy * dy + dz * dz - along * along < 0.025 * 0.025) { under[i] = 1; break search; }
+      }
+    }
+  }
+  // blended across the edge: neighbour averaging on the skin
+  const idx = g.index.array, nb = Array.from({ length: n }, () => []);
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = idx[t + e], b = idx[t + (e + 1) % 3]; nb[a].push(b); nb[b].push(a); }
+  let w = under;
+  for (let it = 0; it < 10; it++) {
+    const next = w.slice();
+    for (let i = 0; i < n; i++) if (nb[i].length) { let s = 0; for (const j of nb[i]) s += w[j]; next[i] = (w[i] + s / nb[i].length) / 2; }
+    w = next;
+  }
+  for (let i = 0; i < n; i++) gap[i] = SUIT_GAP + SINK * Math.min(1, w[i] * 1.6);
+  // the suit's own normals: the body's, smoothed across that band — the sink's step is baked into the body's
+  // normals and would draw a line around the underwear's outline (muscle detail elsewhere is kept)
+  const nrm = Float32Array.from(N), band = new Uint8Array(n);
+  for (let i = 0; i < n; i++) band[i] = w[i] > 0.01 ? 1 : 0;
+  for (let it = 0; it < 8; it++) {
+    const next = nrm.slice();
+    for (let i = 0; i < n; i++) {
+      if (!band[i] || !nb[i].length) continue;
+      let x = nrm[i * 3], y = nrm[i * 3 + 1], z = nrm[i * 3 + 2];
+      for (const j of nb[i]) { x += nrm[j * 3]; y += nrm[j * 3 + 1]; z += nrm[j * 3 + 2]; }
+      const l = Math.hypot(x, y, z) || 1;
+      next[i * 3] = x / l; next[i * 3 + 1] = y / l; next[i * 3 + 2] = z / l;
+    }
+    nrm.set(next);
+  }
+  return { gap, nrm };
+}
+
+function makeSuit(mesh) {
+  const g = mesh.geometry;
+  const { gap, nrm } = suitGaps(g);
+  g.setAttribute('suitGap', new THREE.BufferAttribute(gap, 1));
+  g.setAttribute('suitNrm', new THREE.BufferAttribute(nrm, 3));
+  // the offset along the rest-pose normal (morphed, not yet skinned): it goes through the skinning with the point.
+  // (From the normal attribute itself: the shadow's depth shader has no objectNormal.)
+  const offset = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float suitGap;\nattribute vec3 suitNrm;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = suitNrm;')
+      .replace('#include <skinning_vertex>', 'transformed += normalize(suitNrm + morphNrm) * suitGap;\n#include <skinning_vertex>');
+  };
+  const mat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.55, metalness: 0 });
+  mat.onBeforeCompile = offset;
+  mat.customProgramCacheKey = () => 'bodysuit';
+  patchMaterial(mat);                          // the morphs come from the body's CPU blend (cpumorph.js)
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  depth.onBeforeCompile = offset;
+  depth.customProgramCacheKey = () => 'bodysuit-depth';
+  patchMaterial(depth);
+  // the skin's triangles only (group 0: the underwear's group 1 has no material here, so it isn't drawn)
+  const suit = new THREE.SkinnedMesh(g, [mat]);
+  suit.name = 'bodysuit';
+  suit.visible = false;
+  suit.frustumCulled = false;
+  suit.castShadow = suit.receiveShadow = true;
+  suit.customDepthMaterial = depth;
+  suit.bind(mesh.skeleton, mesh.bindMatrix);
+  suit.onBeforeRender = () => {
+    suit.morphTargetInfluences = mesh.morphTargetInfluences;   // (shape.js replaces the array when it adds targets)
+    mesh.userData.cpuMorphUpdate?.();
+  };
+  mesh.parent.add(suit);
+  return suit;
+}
+
 class Body {
   constructor(sex, gltf) {
     this.sex = sex;
@@ -87,6 +188,7 @@ class Body {
     // morphs blended on the CPU (some Android GPUs break three's morph-texture loop: the body came apart)
     useCpuMorphs(mesh);
     mesh.frustumCulled = false;
+    this.suit = makeSuit(mesh);
     const extras = mesh.userData || {};
     this.bones = mesh.skeleton.bones;
     this.boneIndex = Object.fromEntries(this.bones.map((b, i) => [b.name, i]));
@@ -233,6 +335,7 @@ class Body {
     this.root.updateMatrixWorld(true);
     mesh.skeleton.calculateInverses();
     mesh.bind(mesh.skeleton, mesh.matrixWorld);
+    this.suit.bind(mesh.skeleton, mesh.bindMatrix);
     // pose zero keeps each bone's offset from its parent, expressed in the parent's frame
     this.localPos = this.bones.map((b) => b.position.clone());
     if (!this.soleVerts) this.#pickSoles(); // rest-pose soles: the same for every width
@@ -401,6 +504,16 @@ export class Human {
   }
 
   get active() { return this.bodies[this.sex]; }
+
+  /** the bodysuit (testing): shown on both models (each is visible only when it's the active one) */
+  setSuit(on) {
+    this.suitOn = !!on;
+    for (const b of Object.values(this.bodies)) {
+      b.suit.visible = this.suitOn;
+      // the body inside isn't drawn (a skin crease would poke through a 1.5 mm suit), nor is its underwear
+      b.material.visible = b.clothMaterial.visible = !this.suitOn;
+    }
+  }
   get body() { return this.active.mesh; }
   get bones() { return this.active.bones; }
   get boneIndex() { return this.active.boneIndex; }

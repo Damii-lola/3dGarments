@@ -111,7 +111,7 @@ let helper = new THREE.SkeletonHelper(human.active.root);
 helper.visible = false;
 stage.scene.add(helper);
 const dbg = {};
-for (const id of ['skeleton', 'wire', 'weights', 'spin']) {
+for (const id of ['skeleton', 'wire', 'weights', 'spin', 'suit']) {
   const el = $(`#dbg-${id}`);
   dbg[id] = el.checked;
   el.addEventListener('change', () => {
@@ -119,6 +119,8 @@ for (const id of ['skeleton', 'wire', 'weights', 'spin']) {
     helper.visible = dbg.skeleton;
     human.body.material.forEach((m) => { m.wireframe = dbg.wire; });
     stage.setAutoRotate(dbg.spin);
+    human.setSuit(dbg.suit);
+    stage.invalidate?.(2);
     paintWeights();
   });
 }
