@@ -43,6 +43,9 @@ assets/                 SOURCE body models from the owner: MaleModel.fbx, Female
 tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab page test/extract.html; test/meshes.html lists an FBX's meshes),
                         prepare.py (merge kept meshes, tag parts, weld, metres, rename the rig to our bones, width morph,
                         shoulder probes, eye centres → GLB), glb.py
+tools/blender/          CLOTHES MADE IN BLENDER (4.2 LTS, headless: blender -b -P x.py -- args). READ KNOWLEDGE.md FIRST: everything
+                        learned about making clothes on a body (pattern → sew → weld → settle, cloth settings, fitting, layering,
+                        pattern drafts per garment type). tee.py = first drape test
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
   src/main.js           STAGE 1 UI: one panel (sex, skin, live measurements card, height & weight, body type, abdomen & waist,
