@@ -340,3 +340,188 @@ bpy.ops.wm.obj_export(filepath=..., export_selected_objects=True, forward_axis='
   then the faceless edges removed.
 - Simulation speed: about 1.6 k quads with self-collision at quality 10 runs about 10 s/frame on this container.
   Keep the cage coarse (1.5–2 cm grid) and subdivide after.
+
+---
+
+## 8. More research (round 2)
+
+**Sources for this round:**
+- Sewing With Numbers (three t-shirt drafting methods: Richardson, Aldrich, their own; t-shirt sleeves);
+- Melly Sews, The Last Stitch, Elizabeth Made This (knit neckbands);
+- t-shirt size specs (Perfect T-shirt Co, Brave Star, Fresh Clean Tees);
+- Garment Tool quick start;
+- seams-to-sewing-pattern source (artyredd, GPL; cloned and read);
+- blender_clothing_tools (whyoh);
+- A Tailor's Approach (Blender Artists);
+- STYLY's cloth tutorial;
+- Nabesaka (cloth for stills);
+- Blender Studio "Clothing Shapes";
+- the manual's Shape / Collisions / Property Weights pages;
+- Marvelous Designer's fabric manual;
+- fold-drawing guides.
+
+YouTube refuses this container (bot check), so video courses are known only from their text pages.
+
+### 8.1 Drafting a men's tee the way pattern makers do
+
+**Measurements needed:**
+- chest girth, neck girth;
+- shoulder length (neck point to shoulder point) and shoulder drop (slope);
+- armhole depth (vertical from the shoulder point to the armpit);
+- across chest and across back;
+- biceps girth;
+- the lengths.
+
+"The top hangs from the shoulders. If it hangs unevenly, the fit is off." Shoulder slope and length come from the body's
+MEASUREMENTS, not from percentages.
+
+**Ease, knit:**
+- zero-ease sloper for stable knit (25 % stretch);
+- 2 cm ease = easy fit, 4 cm = loose;
+- negative ease = close fitting (shrink in the sim);
+- our "normal tee, top bodysuit-close, bottom out": about 0–2 cm ease at the chest, more at the hem (the straight side
+  seam from the armpit down IS the "flying out" below the chest).
+
+**Sleeve cap height** (A = armhole depth):
+
+| cap | height | effect |
+|---|---|---|
+| deep | 0.75·A | sleeve hangs close to the body, arm down |
+| medium | 0.66·A | default |
+| shallow | 0.5·A | sleeve stands out from the body |
+
+- Knit tees use a shallow-to-medium cap: the sleeve flies out at an angle, as in our reference photos.
+- Sleeve width at the underarm: biceps girth (or half the total armhole length per half-sleeve).
+- Cap ease 0–3 mm for knits; 12 mm is too much.
+- ALWAYS "true" the cap: its curve length = the armhole's length.
+- Cap curve: on the diagonal from the cap top to the underarm corner, push 12 mm in at ¼ and 12 mm out at ¾.
+
+**Sleeve variants:**
+- fitted (hem tapers);
+- loose (vertical underarm, no taper, full biceps width at the hem);
+- cap sleeve (shorter).
+
+**Neckband:**
+- Rib cut at 70–75 % of the neckline length for stretchy rib, 88 % for firm jersey.
+- Folded width 2.5 cm (classic crew; heavier tees 3.5 cm cut / 1.8 cm finished).
+- Folded lengthwise; notched at centre back, shoulders and centre front.
+- Stretched (the band, not the body) onto the neckline: this pulls the neck in so it hugs the base of the neck.
+- In the sim: make the band its own piece, shorter than the neckline, sewn to it. The sewing springs plus its short
+  length draw the neckline in like the real thing. Then fold it (two layers), or fake it with a solidify + the edge
+  band in the texture.
+- Topstitch 3–6 mm from the seam (a texture/normal detail).
+
+**Hems:** sleeve and body hems are turned up 2–2.5 cm with twin-needle stitching. A turned hem is two layers: it hangs
+heavier and straighter, and it stays flat. In the sim, use a stiffer and heavier strip along the hem via Property Weights
+(Bending group + mass), or a real folded strip.
+
+**Size-M men's tee, real spec sheets** (flat measurements; double the widths for girths):
+
+| measurement | value |
+|---|---|
+| chest (pit to pit) | 20.5–21 in = 52–53 cm → girth ~105 cm on a ~96–100 cm chest: about 5–9 cm ease for a regular fit |
+| length (HPS to hem) | 27.5–29 in = 70–74 cm |
+| shoulder seam to seam | 18.25 in = 46 cm |
+| sleeve (from the shoulder seam) | 8–8.25 in = 20–21 cm |
+
+**Sewing order** (it matters for a sim that stitches in stages):
+1. shoulders;
+2. the neckband;
+3. sleeves set in FLAT into the armholes;
+4. side seam + sleeve underarm in ONE continuous seam (hem to sleeve hem);
+5. hems.
+
+This is why a real tee reads as one continuous piece from the body into the sleeve: the underarm seam runs straight
+through. Use exactly this topology: the sleeve is not a separate tube.
+
+### 8.2 How folds form (what the sim must reproduce, and what to check)
+
+- Two forces: gravity (fabric falls straight down, soft rounded folds where it is loose) and tension (anchor points pull
+  it taut: angular, tight folds radiating from the pinch point).
+- Pinch points on a tee: shoulders, armpits, elbows, the waist where it bunches.
+- Arm down: folds gather UNDER the armpit and drag lines run from the armpit across the chest/back.
+- Arm raised: fabric bunches at the shoulder and stretches across the chest.
+- Cotton jersey: soft but structured. Folds are fewer and rounder than silk, sharper than knit fleece.
+- MD's fabric model:
+  - shear lower than weft/warp → stretchy, clinging (jersey, silk);
+  - shear equal to weft/warp → wrinkles easily (woven cotton, denim);
+  - buckling ratio near 100 % → bends easily (jersey).
+- In Blender terms: low shear, low compression, low bending, for jersey.
+
+### 8.3 Blender features that matter, beyond the basics
+
+**Property Weights** (Physics ‣ Cloth ‣ Property Weights): per-vertex control via vertex groups.
+- **Shrinking group + Max Shrinking**: shrink ONLY where painted. This is the tool for "bodysuit-close at the chest and
+  shoulders, free below": paint the yoke/chest/shoulders 1 → 0 by the waist, max shrink about 0.05–0.15.
+  - Python: `s.vertex_group_shrink='tight'; s.shrink_min=0; s.shrink_max=0.1`. Weight 0 → shrink_min, weight 1 →
+    shrink_max.
+- **Structural group** (max tension/compression), **Shear group**, **Bending group** (max bending): stiffer hem bands,
+  collar, neckband, cuffs.
+- **Rest Shape Key**: start the sim from a pre-draped shape key WITHOUT making it the rest state. Apply-as-mesh is a
+  "plastic deformation": it relaxes every spring into the draped shape (the ballooning problem). Use it to start from a
+  good guess while keeping the flat pattern's true rest lengths.
+- **Dynamic Mesh**: the rest shape follows the modifiers above the cloth every frame (stylised squash/stretch). It
+  excludes Rest Shape Key.
+- **Max Sewing Force**:
+  - The manual says 0 (unbounded) is NOT recommended: it is unstable in the first frames while the springs are long.
+  - Values seen: 5 (light), 15 (heavy), 20–25 (shirts, A Tailor's Approach / PIXXO).
+  - opensew uses 0 but with low gravity and pinning.
+- **Speed multiplier** 0.5 (A Tailor's Approach) or 0.1–0.2 (tight collision work): defaults are "way too snappy".
+- **Impulse clamping** 25–55 in tight spots: stops explosions.
+- Collision distance: 5 mm object / 2 mm self (A Tailor's Approach, Cotton preset shirt; Denim trousers).
+- Garment Tool:
+  - quality steps above 15 to stop body penetration;
+  - collision distance about 2 mm on the cloth AND the body;
+  - Initialize Simulation animates gravity 0 → 9.8, sewing force, and Max Shrinking over the first frames.
+- Mesh density: about 10 k faces for a shirt at 1:1 scale (A Tailor's Approach). opensew uses a 1.8 cm grid + subsurf.
+- Air viscosity 10 + pressure 10 (medium) / 50 (high) with gravity 0 is seams-to-sewing-pattern's "Quick Clothsim". That
+  is for plush toys, not clothes.
+
+### 8.4 Getting a garment onto every pose and every body shape
+
+**Poses (Blender manual, rigged cloth):**
+- Model or sew in the bind pose.
+- The Armature modifier sits ABOVE Cloth; pin groups (waistband, collar) follow the bones.
+- Animate from the bind pose to the target pose over several frames (~20–40), and sim through it: the cloth follows.
+- Freeze a frame you like with **Cloth ‣ Save as Shape Key** (or apply), then sculpt fixes.
+- For stills: pose at frame 150, rest pose at 0, bake to 175–200, pick the frame.
+
+**Body shapes (our sliders), options from best to cheapest:**
+1. **Morph the body inside the sim.** Animate the body's shape key 0 → 1 over ~30 frames while the dressed cloth
+   simulates, then let it settle. The garment's new shape − its base shape = a GARMENT SHAPE KEY for that body morph.
+   - Done per body morph (belly, chest, shoulders, weight…), this gives the garment the same morph targets as the body.
+   - Our app already blends morphs on the CPU (cpumorph.js), so the garment just carries its own deltas.
+   - This is the closest to "perfectly fits everything".
+2. **Surface Deform**, bound at the base shape: carries the garment with the body's surface, keeping the offset (Blender
+   Studio does this for secondary clothing). It gives no new folds. A heavy belly pushes the tee out evenly instead of
+   stretching it taut, but it is good for small changes.
+3. Skin binding (the app's old bindToBody/unskin): the same as 2 with bones, done in the app.
+- Blender Studio keeps the corrective shape-key count small: shared masks and drivers blend sculpted displacement per
+  bone rotation.
+- "Deform to Corrective" (extension) bakes any modifier result (cloth, surface deform) into a corrective shape key with
+  the rig live.
+
+### 8.5 Two routes from design to pattern
+
+1. **Pattern first** (tailor, opensew, Garment Tool, clothing_tools): draft flat pieces → place them around the body →
+   sew → sim.
+   - The pieces' joining edges need MATCHING vertex counts (clothing_tools walks the boundary from one picked vertex per
+     side to the next corner, adding one sewing edge per vertex pair).
+   - Gaps such as button fronts are left unsewn.
+2. **3D first, then flatten** (seams-to-sewing-pattern):
+   - Model the garment roughly in 3D, mark seams where it would be cut, then UV unwrap (Conformal/Angle Based).
+   - Remesh to an even triangle size (edge = √(area per tri / (√3/4)) × 0.8).
+   - Bevel the seams, delete their faces: the bevel's edges become the sewing edges.
+   - Each UV island becomes a FLAT piece: the vertex position = the island's mean position + tangent·Δu + bitangent·Δv,
+     pushed off along the normal; then rescale so the area matches the 3D area.
+   - Sim it: the flat pieces sew back into the 3D shape with real rest lengths.
+   - This route lets us start from a 3D tee shaped like the photo and get a true pattern out of it, plus an SVG pattern
+     and UVs = pattern pieces.
+
+### 8.6 Finishing for real-time (the web app)
+
+- Keep the sim cage moderate (5–15 k faces). Subdivide or solidify at export or in the app.
+- Bake fine wrinkles to a normal map: the high-res sim/sculpt → the low-res mesh, with no large gap between them, MikkT
+  tangents, and UV islands padded. Use this when the in-app mesh must be light.
+- Simulate the big shapes and folds, then add small hand-sculpted or texture wrinkles on top. Pure sim reads generic.
+- Seam/stitch detail lives in the texture (our PNG) or the normal map, not in geometry.
