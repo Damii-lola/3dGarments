@@ -525,3 +525,88 @@ through. Use exactly this topology: the sleeve is not a separate tube.
   tangents, and UV islands padded. Use this when the in-app mesh must be light.
 - Simulate the big shapes and folds, then add small hand-sculpted or texture wrinkles on top. Pure sim reads generic.
 - Seam/stitch detail lives in the texture (our PNG) or the normal map, not in geometry.
+
+---
+
+## 9. Round 3: the garments after the tee (drafts + sim tips)
+
+**Sources:** Sewing For A Living (men's pants, collar + stand), Mood Fabrics (men's shirt), Mueller & Sohn (collar with
+stand), The London Pattern Cutter (tailored collar), Blender Artists threads on layered cloth, the Blender manual
+(rigged-cloth pinning).
+
+### 9.1 Men's trousers (drafted on a rectangle 2 × ¼ seat wide, outseam long)
+
+**Measurements:** ¼ waist, ¼ seat, waist → seat depth, crotch depth (seated, chair → waist), outseam, knee level, knee and
+hem girths.
+
+**Crotch:**
+- Front crotch extension = 10–12 % of ¼ seat; back = 30–35 % of ¼ seat (about 3× the front).
+- Curve guides: 1 cm at 45° (front), 1.5 cm at 45° (back).
+- The man's front curve is fuller, the back shallower than a woman's.
+- Rise ease: 3 cm (men), 2 cm (women).
+
+**Front panel:**
+- Waist down 0.5 cm and in 0.5 cm.
+- Fly extension 3.5–4 cm at the waist, tapering to 0 at 15 cm below.
+- Leg in 3 cm at the knee/hem.
+
+**Back panel:**
+- Raised 1.5 cm at the centre back.
+- Back waist = ¼ waist + 1.5 cm for a dart (dart 1.5 × 4–5 cm; omit it on casual or roomy trousers).
+- Hem out 2 cm, in 1 cm at the knee/hem.
+
+**Hem width (half leg):** slim 18–19 cm, straight 20–22 cm, wide 24–28 cm or more.
+
+**Ease:**
+- waist 2.5 cm total;
+- seat/thigh 2.5–4 cm (slim), 5–7.5 cm (relaxed), 10–15 cm (very relaxed).
+
+**Waistband:** waist + 4 cm overlap, 4 cm finished (cut 10 cm, folded).
+
+**In the sim:**
+- The waistband/yoke holds them up: make it tight (shrink group) or pin it to the pelvis bones.
+- Leg tubes alone slide off.
+- Crotch seams are where they explode: sew them last, at low force.
+
+### 9.2 Men's shirt (button-up)
+
+**Collar:**
+- The stand (band) is 2.5–3.5 cm high; the fall (blade) is 4–4.8 cm.
+- The stand's inner edge = the neckline's length (half neck + 5 cm to the button extension).
+- The fall must be deeper than the stand so it covers the stand's seam.
+- In the sim: give the stand and fall high bending stiffness via a Bending group (interfacing). Stand around 20–40×
+  fabric, fall about 5–10×. Sew the fall to the top of the stand, folded down.
+- opensew's experience: pin the back collar while the front draws in.
+
+**Front:**
+- Placket about 3.5–3.8 cm wide (stiffer: bending group).
+- Buttons about 8–9 cm apart; the top button sits on the stand.
+- Sew the front edges together only at the buttons (one seam per button) if it should stay closed. A button
+  is also a 3D object riding on the surface; see layer.js's buildAnchored idea.
+
+**Back yoke:** a separate piece across the shoulders, about 8–10 cm deep at the centre back. It is stiffer (double
+layer) and is what makes a shirt's shoulders sit square.
+
+**Cuffs:** stiff bands, wrist + 2.5–4 cm.
+
+**Tailored jacket collar:** stand about 2.5 cm, fall about 4.5 cm; lapels roll along the break line (needs a Bending
+group and an unsewn front above the top button).
+
+### 9.3 Layering in practice (community + opensew, all agree)
+
+- Simulate ONE LAYER AT A TIME from the inside out.
+  1. Simulate the tee with its own collision OFF, bake it or apply it at the good frame.
+  2. Turn the tee's COLLISION ON and simulate the next layer over it.
+  3. Repeat for each layer.
+- Each settled layer becomes a collider (or its cage does) for the next.
+- Collision distance 3–5 mm, quality 8–12 or more, self-collision on. "Don't simulate what you don't need to simulate."
+- Never sim two layers that collide with each other at the same time: they fight and explode.
+
+### 9.4 Rigged-cloth recipe (manual)
+
+1. Set the armature to its bind pose.
+2. Model or sew the clothing so it encloses but never penetrates the body.
+3. Parent it to the armature (Armature modifier first, Cloth below it).
+4. Pin vertex groups (collar, belt line) with non-zero weights; the pinned vertices follow the bones.
+5. Add Collision to the body.
+6. Every posed result starts from the bind pose and moves to the target over several frames.
