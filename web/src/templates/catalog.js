@@ -53,8 +53,8 @@ const teeCrew = {
   cut: (body) => {
     const L = body.L;
     return {
-      hemY: L.crotch + 0.06,                                   // at the hips: just over the jeans' waistband
-      sleeveEnd: 0.85 * body.joint('upperarm_r').distanceTo(body.joint('lowerarm_r')),   // down near the elbow
+      hemY: L.crotch + 0.027,                                   // at the hips: just over the jeans' waistband
+      sleeveEnd: 0.91 * body.joint('upperarm_r').distanceTo(body.joint('lowerarm_r')),   // down near the elbow
       neck: body.neck, neckBase: L.neckBase,
     };
   },
@@ -62,12 +62,13 @@ const teeCrew = {
     // OVERSIZED, BOXY: the body falls straight as a box from the chest's full width — no waist, no taper — well clear
     // of the body (~4 cm front and back, ~3 cm at the sides); it rests on the shoulders and round the neck
     ease: (th, y, L) => {
-      const full = 0.014 + 0.012 * Math.cos(th) ** 2;
+      const full = 0.014 + 0.012 * Math.cos(th) ** 2 + 0.02 * Math.sin(th) ** 2;
       if (y >= L.neckBase) return 0.001;
       // (on the shoulders it lies on them: the room comes below, from the armpit down)
       // (out at the sides the dropped shoulder stands off the deltoid as the sleeve does: they meet without a step)
       const side = Math.sin(th) ** 2;
-      return 0.002 + (full - 0.002) * smooth(L.shoulder - 0.02, L.armpit - 0.02, y) * (0.35 + 0.65 * (Math.cos(th) ** 2 + (1 - Math.cos(th) ** 2) * smooth(L.armpit + 0.02, L.armpit - 0.06, y)));
+      return 0.002 + (full - 0.002) * smooth(L.shoulder - 0.02, L.armpit - 0.02, y) * (0.35 + 0.65 * (Math.cos(th) ** 2 + (1 - Math.cos(th) ** 2) * smooth(L.armpit + 0.02, L.armpit - 0.06, y)))
+        - 0.012 * Math.sin(th) ** 2 * smooth(L.waist, L.hip, y);           // (the sides fall wider toward the hem)
     },
     fall: 0,                                                   // straight down: never comes in
     cap: 0.05,                                                 // DROPPED SHOULDER: the body's shoulder runs down onto the upper arm
@@ -94,7 +95,7 @@ const teeCrew = {
           // (it widens straight from the shoulder to its hem: the shoulder's line runs on down and out along it)
           // (its first 4 cm rise from the arm's skin: the sleeve's top comes out from under the shoulder, no wall)
           const rise = smooth(0.0, 0.05, b.along), base = (b.R[a] + gap - 0.003) * (1 - rise) + (rootS[a] + gap + 0.007) * rise;
-          const tube = base * (1 - k) + (rMax + gap + 0.045 + 0.03 * under) * k;
+          const tube = base * (1 - k) + (rMax + gap + 0.046 + 0.03 * under) * k;
           return (b.R[a] + gap) * (1 - t) + Math.max(tube, b.R[a] + gap + 0.004) * t;
         });
       });
@@ -103,7 +104,7 @@ const teeCrew = {
   /** the crew neck's line: a curve round the neck, low at the front, just under the nape at the back */
   neckY(prep, p) {
     const { cut } = prep, t = Math.atan2(p[0] - cut.neck.x, p[2] - cut.neck.z), c = Math.cos(t);
-    return cut.neckBase + 0.016 - 0.062 * ((1 + c) / 2) ** 3 - 0.012 * ((1 - c) / 2) ** 3;
+    return cut.neckBase + 0.016 - 0.036 * ((1 + c) / 2) ** 3 - 0.012 * ((1 - c) / 2) ** 3;
   },
   paint(prep) {
     const { cut } = prep, self = teeCrew;
