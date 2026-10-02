@@ -152,4 +152,35 @@ const teeCrew = {
   },
 };
 
-export const TEMPLATES = { [teeCrew.id]: teeCrew };
+/* ------------------------------------------------------------------ men's plain crew neck tee (one piece, on the skin) */
+
+/**
+ * Made from the body's own surface (skinwear.js): the chest, the shoulders and the top of the sleeves fit like the
+ * bodysuit (a few mm off the skin); from the chest down the body flies out to hang straight off it, and the sleeves
+ * fly out toward their hems. Proportions measured on the reference photos (measure tool: clothes parser + pose).
+ */
+const teeSkin = {
+  id: 'men/tee_crew', name: 'Plain crew neck tee', sex: 'male', category: 'tshirt', layer: 2, kind: 'skin',
+  color: [242, 242, 239],
+  gap: 0.004,
+  cut: (body) => ({
+    hemY: body.L.crotch + 0.017,
+    sleeveEnd: 0.91 * body.joint('upperarm_r').distanceTo(body.joint('lowerarm_r')),
+    neck: body.neck, neckBase: body.L.neckBase,
+  }),
+  neckY: (cut, x, z) => {
+    const t = Math.atan2(x - cut.neck.x, z - cut.neck.z), c = Math.cos(t);
+    return cut.neckBase + 0.016 - 0.036 * ((1 + c) / 2) ** 3 - 0.012 * ((1 - c) / 2) ** 3;
+  },
+  // 1 = bodysuit-close: the chest and shoulders; easing off below the chest to fly out from the waist down
+  tight: (y, L) => smooth(L.waist, L.armpit - 0.02, y),
+  fall: 0.3,                                                 // (it drapes in toward the small of the back, it doesn't stand off it)
+  fallFrom: (L) => L.armpit - 0.1,
+  // how far past the body's hull it hangs (the sides a little more): growing to the hem
+  flare: (y, th, L) => (0.014 + 0.055 * Math.sin(th) ** 2) * smooth(L.armpit, L.waist, y) * (1 - 0.45 * smooth(L.waist, L.crotch, y)),
+  // the sleeve: tight over the shoulder, flying out from mid upper arm to its hem
+  sleeveLoose: (along, cut) => smooth(0.03, cut.sleeveEnd, along),
+  sleeveFlare: (along, r, a, A) => 0.014,
+};
+
+export const TEMPLATES = { [teeSkin.id]: teeSkin, 'men/tee_crew_shell': teeCrew };

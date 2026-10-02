@@ -11,6 +11,18 @@ onWear, the cards' "Try on" button, prepareTryOn). Everything in web/src/garment
 What stays live: the body, its controls, the photo upload groups, and the BODYSUIT (?suit=1 / human.setSuit /
 the lab's box). The notes on garments/ below describe the old, switched-off system.
 
+## Garment templates (the new system, web/src/templates/)
+One template per garment type (catalog.js), men first. `wearTemplate(human, TEMPLATES[id])` (build.js). kind 'skin'
+(skinwear.js): the garment IS the body's skin surface — torso and sleeves one continuous piece — pushed out per vertex
+in rest space (shares the body's attributes/skinning/CPU morphs like the bodysuit): `tight(y)` = bodysuit-close (chest,
+shoulders; small hollows spanned by a smoothed mean-radius field), loose parts hang on an upper-envelope field
+(+`flare`, `fall` from `fallFrom`), sleeves tight at the shoulder flying out to a tube by the hem; loose fabric
+relaxed (x/z only, outward only); clear of the underwear (suitGap). Edges (neckline, hem, sleeve hems) = per-vertex
+signed distance `wearCut`, fragments < 0 discarded. Skin it covers isn't drawn (materials.js: _hide > 0.9 discards).
+Landmarks from measureBody are posed: shifted to rest space by the torso's mean offset. MEASURE, DON'T EYEBALL:
+scratchpad tools measure the reference photos (SegFormer upper-clothes mask + ViTPose; local models in
+web/public/_tmp/models) and the render (exact magenta mask, keypoints from a shirtless render) in shoulder widths.
+
 ## Layout
 ```
 server/                 Express API (Render). ESM, Node 22.

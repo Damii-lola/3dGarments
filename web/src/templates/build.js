@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three';
 import { useCpuMorphs } from '../human/cpumorph.js';
+import { wearSkin } from './skinwear.js';
 import { ATLAS, RECT, measureBody, torsoSurface, armSurface, bindToBody, unskin } from './frame.js';
 
 const GAP = 0.004;          // m: the first layer over the skin (clears the underwear, 2.5 mm off it)
@@ -89,6 +90,7 @@ function textureOf(src) {
 }
 
 export function wearTemplate(human, tpl, { texture = null } = {}) {
+  if (tpl.kind === 'skin') return wearSkin(human, tpl);
   const B = human.active, mesh = B.mesh;
   B.ensureShape?.();
   const prep = prepare(human, tpl);
