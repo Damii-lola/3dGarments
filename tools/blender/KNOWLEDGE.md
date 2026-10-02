@@ -610,3 +610,203 @@ group and an unsewn front above the top button).
 4. Pin vertex groups (collar, belt line) with non-zero weights; the pinned vertices follow the bones.
 5. Add Collision to the body.
 6. Every posed result starts from the bind pose and moves to the target over several frames.
+
+---
+
+## 10. Round 4: how the professional and research systems do it
+
+**Sources:**
+- the Blender 5.2 LTS manual (Cloth Dynamics node), Digital Production, CG Channel (5.2 release);
+- the GarmentCode repo (assets/Sim_props/*.yaml, pygarment/meshgen/garment.py; cloned and read);
+- CLO3D support (particle distance, simulation modes);
+- Seamer Studio (github ahzs645/seamer-studio, MIT; packages/cloth-sim cloned and read);
+- HOOD (github Dolorousrtur/HOOD, MIT) and ContourCraft;
+- Blender Studio "Procedural Wrinkles";
+- tension-map add-ons;
+- the Cycles baking manual;
+- hood drafting (Curvy Sewing Collective and others).
+
+### 10.1 Blender 5.2 LTS (July 2026): node-based XPBD cloth
+
+We have 4.2.3. 5.2 is a separate download, can be installed beside it, and is worth it for custom constraints.
+
+**Cloth Dynamics node** (Geometry Nodes, around a built-in **XPBD Solver** node):
+- Inputs: Pin Group (1 = fixed, < 1 = soft pin), **Stretchiness** (0 = no stretch), **Bendiness** (0 = no bend).
+- Solver: Substeps, Constraint Iterations, Simulation-to-World.
+- Structure: Mass, Friction (tan of the friction angle), Collision Radius (the margin to colliders).
+- Linear damping; gravity; tearing (All / Custom edge group / Voronoi; threshold = relative strain); effectors
+  (collection, tags, bundles: force fields, colliders, custom effectors).
+- **Residual error output**: ≤ 1 is good (relative to 1 mm for distance constraints). Above 1 consistently means more
+  iterations are needed; above 1 only sometimes means it is over-constrained (overlapping colliders, extreme forces).
+  Very small means you are wasting iterations.
+
+**Rules:**
+- Keep substeps < 20 (rounding errors from 1/dt²) and raise iterations instead.
+- Too few iterations looks plausible but stretches and bends too much: check the residual.
+- Colliders must be MANIFOLD (closed). Open boundaries let points sneak behind and get ejected. Our body mesh has open
+  edges (the neck cut is closed, but the eyes are gone, etc.): check it.
+- Thin colliders tunnel.
+
+**Missing (experimental):** self-collision, wind, drag.
+
+**Why it matters:** in nodes we can set PER-EDGE REST LENGTHS from the flat pattern, which is what GarmentCode and
+Seamer do (below). The old cloth modifier only takes rest lengths from a mesh state.
+
+### 10.2 GarmentCode (the dataset system: 115 k garments draped on random bodies)
+
+- **Box mesh**: all panels meshed as ONE connected mesh with the seams already merged, placed around the body.
+  **Rest lengths are the flat pattern's edge lengths**, so there are no sewing springs and no weld: the stitched
+  garment simply relaxes toward its true cut.
+- Simulator: NVIDIA Warp XPBD (GPU), with point-triangle and edge-edge self-collision, attachment constraints, and body
+  collision that pushes inside-points out.
+
+**default_sim_props.yaml:**
+
+| group | values |
+|---|---|
+| steps | max_sim_steps 2400, **zero_gravity_steps 10** (gravity off at the start while the seams pull in) |
+| static check | static_threshold 0.03 (L1 per vertex per frame, cm), non_static_percent 1.5 (done when < 1.5 % of vertices still move) |
+| failure checks | max_body_collisions 35, max_self_collisions 300 (more = failed drape) |
+| material | garment_tri_ka 1e4, garment_tri_ke 1e4 (in-plane), **garment_edge_ke 1 = "very soft" bending** (mid_bending.yaml: 100), spring_ke 5e4, edge_kd 10, tri_kd 1, spring_kd 10, density 1, thickness 0.1, fabric friction 0.5 |
+| damping | global_damping 0.25, max velocity 25 |
+| body | collision thickness 0.25 (cm), friction 0.5 |
+| attachment | stiffness 1000 for **400 frames** on labelled vertices: skirt/trouser waist ("lower_interface") pulled vertically, collars pulled sideways (left/right), strapless tops; then released |
+
+- **Cloth reference drag ("global collision resolution")**: every garment vertex is assigned to a body part (arm panels
+  → arms, body panels → torso, legs). A vertex caught in the WRONG part is dragged back to its own: an arm sleeve
+  stuck in the torso gets pulled out. They skip legs↔body because it fights the waist attachment.
+- **Body collision filters**: skirts ignore the arms (an arm resting against a skirt mustn't push it); internal
+  geometry is ignored.
+- **Body smoothing (optional)**: start the drape on a Laplacian-smoothed body and restore the detail over 100 frames
+  from frame 150. Cloth doesn't snag on small features while it settles.
+- What fails and is filtered: a skirt sliding down to the legs; heavy self-intersections.
+
+### 10.3 CLO3D / Marvelous practice (industry)
+
+- **Particle distance** (mesh size): 20 mm while building and dressing; ≤ 5 mm for the final quality pass, with the
+  "Fitting (Accurate Fabric)" or "Complete Nonlinear" simulation mode.
+- Defaults: 20 mm particles, 2.5 mm cloth collision, 3 mm avatar offset. CLO's strain and stress maps depend on these,
+  so changing them changes the "fit" you read.
+- **Arrangement points/bounding cylinders** on the avatar: panels are wrapped around them before stitching (= opensew's
+  arc-length placement, Seamer's cylinders).
+- Fit checks: strain map (% stretch per triangle) and stress map. Red at the shoulders/armpits = too tight.
+
+### 10.4 Seamer Studio (MIT, three.js + WebGPU XPBD in the browser)
+
+This is a working proof that pattern → drape can run IN OUR WEB APP on WebGPU, and its code is reusable (MIT).
+
+**Avatar cylinders:**
+- Tapered elliptical capsules fitted per bone segment (least-squares radius line lifted to enclose all samples, or
+  the 95th-percentile radius, plus padding).
+- Pieces are "curved" (rolled around the cylinder by arc length / mid radius) or "flat" (tangent, +3 mm out).
+- Front/back pieces roll in OPPOSITE circumferential directions. Getting that wrong pulls the seams straight through the
+  body.
+
+**Sim data:**
+- **Rest lengths from the flat 2D pattern**; 3D positions are only the start.
+- **Anisotropic stretch** (warp/weft compliance blended by the edge's angle to the grain).
+- Bending = dihedral constraint (with fold lines at a target angle, e.g. a folded neckband or hem), falling back to a
+  distance constraint between opposite vertices. Beyond rest length the bend pair uses the stretch compliance.
+- Edges are graph-coloured for conflict-free Gauss-Seidel on the GPU.
+- Seams: both sides resampled to equal interval counts, linked 1:1 (particles repeated on the shorter side to
+  distribute ease/gather), solved as constraints; seam iterations 1 per substep.
+
+**XPBD config:**
+
+| setting | value |
+|---|---|
+| time step | 16 ms × 40 substeps (dt 0.4 ms) |
+| gravity | −9.8 y |
+| near-damping (8 neighbours) | 0.1 |
+| thickness | 5 mm (cloth and edges) |
+| max velocity | 1 m/s |
+| friction | self 0.1, body 0.3 |
+| self-collision radius | 1 cm (design particle distance 10 mm) |
+| body search radius | 2.5 cm |
+| triangle skip | self-collision skipped for triangles closer than 3 cm in 2D |
+| hash cell | 2 cm |
+| collision constraints per particle | 16 self / 32 body |
+
+**Compliance mapped log-linearly** from a UI 0–100 scale: stretch α ∈ [0.01, 100], bend α ∈ [0.001, 10]; wire 1e‑7.
+
+**Fabric presets** (stretch warp/weft 0–100, bend 0–100, thickness mm, weight g/m²):
+
+| fabric | warp | weft | bend | thickness | weight |
+|---|---|---|---|---|---|
+| Jersey knit | 55 | 70 | 8 | 0.6 | 180 |
+| Cotton poplin | 8 | 10 | 22 | 0.4 | 120 |
+| Denim | 5 | 6 | 55 | 0.9 | 340 |
+| Wool flannel | 15 | 18 | 35 | 0.8 | 280 |
+| Silk charmeuse | 12 | 14 | 6 | 0.2 | 80 |
+| Chiffon | 18 | 20 | 4 | 0.12 | 45 |
+| Canvas | 3 | 4 | 70 | 1.0 | 400 |
+| Leather | 6 | 6 | 60 | 1.2 | 450 |
+| Satin | 10 | 12 | 14 | 0.3 | 110 |
+
+**Body changes, two refits** (no re-drape needed):
+- (a) Rigid Kabsch/Horn fit of each piece's saved drape onto its new placement; the solver absorbs the rest.
+- (b) **Cylinder refit**: decompose each particle into (u, v, standoff) on the OLD body's cylinder and recompose on the
+  NEW one. It tracks size and pose changes coherently with no settling, splay or curl.
+- (b) is the cheap in-app answer to body sliders. The quality answer is still per-morph garment shape keys simulated
+  in Blender (§8.4).
+
+### 10.5 HOOD / ContourCraft (learned garment dynamics)
+
+- **HOOD** (CVPR 2023, MIT code): a graph network predicts a garment's motion for ANY body shape and pose sequence, for
+  tight or loose garments, in real time. Input: a garment template .obj and SMPL poses or any mesh sequence.
+  - It needs CUDA, PyTorch Geometric and PyTorch3D, plus the **SMPL body model, whose licence is NON-COMMERCIAL**: a
+    problem for a shop product unless our own body is used as a mesh sequence.
+- **ContourCraft** (SIGGRAPH 2024): the same family, resolving intersections between multiple garments.
+- Use: possibly offline, to bake garment motion or poses on Kaggle GPUs. Not in the browser.
+
+### 10.6 Checking fit and finishing
+
+**Tension/strain maps:** compare each edge's (or face's) current length with its rest length.
+- Blender Studio's face compression value: `1 − 2^(−A_def / A_base)` gives 0.5 for unchanged area, below 0.5
+  compressed, above stretched.
+- Directional version: the edge's direction in UV space; angles ×2 so opposite directions don't cancel. Wrinkles run
+  across a compressed edge and along a stretched one.
+- Store it as an attribute → read it in the shader (Attribute node), or export it and measure in our tools. Use it as
+  OUR fit check (like CLO's strain map): the shoulders and chest of a "bodysuit-close" tee should read slightly
+  stretched (1–5 %), the lower body ≈ 0.
+- Procedural micro-wrinkles: perlin noise squashed along the tension direction per UV cell, 4 offset grids blended.
+  Bump detail only.
+
+**Baking wrinkles to normal maps (Cycles):**
+- Select the high-res drape, then the low mesh active → Bake: Normal, **Selected to Active**.
+- Rays are cast inward from the low mesh: use Cage + Cage Extrusion, or Max Ray Distance without a cage.
+- Start the extrusion at a small fraction of the model's size (a few mm to cm for a tee) and raise it only until the
+  detail is captured; too large picks up the wrong surface.
+- Use a margin (padding) and MikkTSpace tangents (three.js expects MikkT: compute tangents or use glTF tangents).
+  Black spots = ray misses.
+
+**Mesh resolution vs behaviour (old cloth modifier):**
+- Every vertex is a mass point, and edges are springs. Forum guidance says Vertex Mass is per vertex, so subdividing
+  makes the cloth heavier and changes the drape. TO VERIFY with a test before relying on it.
+- Either way: fix the resolution FIRST (1.5–2 cm cage), tune the fabric on it, and never re-tune after subdividing;
+  subdivide only after the sim.
+- XPBD (5.2 / Seamer / Warp) is far less resolution-dependent when compliance is set per edge correctly.
+
+### 10.7 More drafts
+
+**Hoodie:**
+- Body = bust/4 + 3 cm ease per quarter, often a dropped shoulder.
+- Hood height = head-to-shoulder + 5 cm.
+- Hood top width = ½ head girth + 5 cm.
+- Hood bottom = the front + back neckline lengths (it must match the neckline exactly; opensew: neck edge = neckline /
+  1.005).
+- 2 cm centre overlap.
+- Kangaroo pocket: 11 cm top, 20 cm bottom, 8 cm sides, 15 cm diagonal openings.
+- Rib cuffs: 5 cm × 2 × wrist (17 cm), i.e. a band shorter than the sleeve hem it gathers.
+- Rib hem band: the same idea, gathering the hem in.
+
+### 10.8 What this means for our build (decision notes, not done yet)
+
+1. For draping quality: sew in Blender. Either the 4.2 cloth modifier (opensew method, §1), or 5.2 Geometry Nodes XPBD
+   with flat-pattern rest lengths (GarmentCode/Seamer method: no weld step).
+   - The 5.2 route lacks self-collision; a tee on a standing body barely needs it, but layered outfits do.
+2. For every body slider: bake garment shape keys per body morph in Blender (§8.4). For poses: Armature + corrective
+   shapes, or later a re-drape.
+3. In the browser later: Seamer (MIT) shows WebGPU XPBD draping is feasible live. The cylinder refit is a cheap
+   fallback for body changes.
+4. Always validate with the measuring tools (photo metrics in §6) and a strain map, never by eye.
