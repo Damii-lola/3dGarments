@@ -19,6 +19,12 @@ armhole), places the pieces round the body (arc length round draped cross-sectio
 + smoothed), closes the seams (presew), relaxes every edge to its FLAT-PATTERN length (no creases baked in), welds and
 drapes (cloth sim, jersey) → ~/.3dg-sew/tee.obj; `send.py -f sew/load.py` (STATE['load']) streams it to the site, which
 rigs it like the body (surface-smoothed weights) and hides the skin it covers. sewlib.py = pieces, seams, sim helpers.
+SEWN IN AN A-POSE (export_body.py also writes body_pose.obj/json: arms lowered 15° more, ~47° down — sewn with the
+arm out, a sleeve stands out stiffly once it hangs), then UNPOSED to the rest pose (sewlib.unpose: inverse skinning with
+surface-smoothed weights). Pattern lengths above the armhole are measured along the body (half the extra path: the full
+one left a fold across the chest). Rib neckband at 85 % of the neckline; sleeve cap asymmetric, each half = its own
+armhole, no ease; weld removes non-manifold faces + fills small holes; seams and open edges smoothed after the drape;
+no Solidify (its inner shell showed at seams).
 
 ## Layout
 ```

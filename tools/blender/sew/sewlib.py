@@ -14,11 +14,14 @@ from mathutils.bvhtree import BVHTree
 
 
 # ------------------------------------------------------------------------------------------------- the body
-def load_body(d):
-    """the exported rest body as a collider; returns (object, meta, bvh)"""
+def load_body(d, pose=False):
+    """the exported body as a collider — the rest pose, or the sewing pose (arms lowered); returns (object, meta, bvh)"""
     meta = json.load(open(os.path.join(d, 'body_rest.json')))
+    if pose:
+        pm = json.load(open(os.path.join(d, 'body_pose.json')))
+        meta['joints'] = pm['joints']; meta['D'] = pm['D']; meta['W'] = pm['W']
     V, F = [], []
-    for line in open(os.path.join(d, 'body_rest.obj')):
+    for line in open(os.path.join(d, 'body_pose.obj' if pose else 'body_rest.obj')):
         if line.startswith('v '): V.append(tuple(map(float, line.split()[1:4])))
         elif line.startswith('f '): F.append([int(t) - 1 for t in line.split()[1:]])
     me = bpy.data.meshes.new('body'); me.from_pydata(V, [], F); me.update()
@@ -195,12 +198,27 @@ class Piece:
                 best = min(best, math.dist(p, (a[0] + ab[0] * t, a[1] + ab[1] * t)))
             return best
         n_ring = len(self.uv)
+        # a row just inside the outline, one point per outline segment (each segment gets its own triangle: no slivers
+        # along a straight or steep edge — they made the seams non-manifold)
+        row = []
+        for k in range(len(poly)):
+            a, b = poly[k], poly[(k + 1) % len(poly)]
+            m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2); L = math.dist(a, b) or 1e-9
+            nx, ny = -(b[1] - a[1]) / L, (b[0] - a[0]) / L
+            off = 0.5 * min(L, h)
+            for sg in (1, -1):
+                q = (m[0] + sg * nx * off, m[1] + sg * ny * off)
+                if inside(q) and dist_edge(q) > 0.3 * off:
+                    if all(math.dist(q, r) > 0.4 * h for r in row): row.append(q)
+                    break
+        self.uv += row
         u = min(us) + h / 2
         while u < max(us):
             v = min(vs) + h / 2
             while v < max(vs):
                 p = (u, v)
-                if inside(p) and dist_edge(p) > 0.45 * h: self.uv.append(p)
+                if inside(p) and dist_edge(p) > 0.9 * h and all(math.dist(p, r) > 0.7 * h for r in row if abs(r[0] - u) < h and abs(r[1] - v) < h):
+                    self.uv.append(p)
                 v += h
             u += h
         edges_c = [(ring[k], ring[(k + 1) % len(ring)]) for k in range(len(ring))]
@@ -220,6 +238,17 @@ class Piece:
             c = (sum(self.uv[i][0] for i in ff) / 3, sum(self.uv[i][1] for i in ff) / 3)
             if inside(c): tris.append(ff)
         self.tris = tris
+        # check: every outline vertex of the meshed piece must be one of ours (sewn); the triangulation adds none
+        import collections
+        ec = collections.Counter()
+        for t in tris:
+            for k in range(3): a, b = t[k], t[(k + 1) % 3]; ec[(min(a, b), max(a, b))] += 1
+        rs = set(ring)
+        stray = {v for e, c in ec.items() if c == 1 for v in e if v not in rs}
+        over = [e for e, c in ec.items() if c > 2]
+        missing = [k for k in range(len(ring)) if (min(ring[k], ring[(k + 1) % len(ring)]), max(ring[k], ring[(k + 1) % len(ring)])) not in ec]
+        if stray or over or missing:
+            print(f'  ! piece {name}: {len(stray)} stray outline verts, {len(over)} over-shared edges, {len(missing)} outline edges missing', flush=True)
 
     def edge(self, name):
         for n, idx in self.edges:
@@ -346,6 +375,13 @@ class Garment:
         edges = [e for seam in self.seams for e in seam if e[0] != e[1]]
         me.from_pydata([tuple(c) for c in self.co], edges, self.faces); me.update()
         ob = bpy.data.objects.new(self.name, me); bpy.context.scene.collection.objects.link(ob)
+        ob['face_piece'] = [pc.name for pc in self.pieces for t in pc.tris]
+        vinfo = []
+        for pc in self.pieces:
+            for k in range(len(pc.uv)):
+                en = [n for n, idx in pc.edges if k in idx]
+                vinfo.append(f'{pc.name}:{k}:{"/".join(en) or "in"}')
+        ob['vinfo'] = vinfo
         for gname, vs in self.groups.items():
             g = ob.vertex_groups.new(name=gname); g.add(list(vs), 1.0, 'REPLACE')
         # the cloth's REST shape = the flat pattern (each piece laid out in the plane y = 0, side by side): the drape
@@ -441,10 +477,50 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
         for i in members: bm.verts[i].co = c
         for i in members:
             if i != r: targetmap[bm.verts[i]] = bm.verts[r]
-    roots = [bm.verts[r] for r, m in groups.items() if len(m) > 1]   # (the merged stitch points survive the weld)
+    roots = [bm.verts[r] for r, m in groups.items() if len(m) > 1]
+    bm.normal_update()   # (the merged stitch points survive the weld)
+    bm.faces.ensure_lookup_table()
+    for k, f in enumerate(bm.faces): f.material_index = 0
+    fp = ob.get('face_piece')
     bmesh.ops.weld_verts(bm, targetmap=targetmap)
+    if fp:
+        import collections
+        cnt = collections.Counter()
+        for e in bm.edges:
+            if len(e.link_faces) > 2: cnt[tuple(sorted(fp[f.index] if f.index < len(fp) else '?' for f in e.link_faces))] += 1
+        if cnt: print('  ! non-manifold after weld, faces from:', dict(cnt), flush=True)
+        vinfo = ob.get('vinfo')
+        for e in [e for e in bm.edges if len(e.link_faces) > 2][:3]:
+            print('    edge', [[vinfo[m] for m in groups.get(find(v.index), [v.index])] for v in e.verts], flush=True)
+    # manifold: an edge with > 2 faces keeps the two that agree best (a duplicate or folded third face goes)
+    removed = 0
+    for it in range(5):
+        bad = [e for e in bm.edges if len(e.link_faces) > 2]
+        if not bad: break
+        kill = set()
+        for e in bad:
+            fs = list(e.link_faces)
+            seen = {}
+            for f in fs:
+                key = frozenset(v.index for v in f.verts)
+                if key in seen: kill.add(f)
+                else: seen[key] = f
+            rest = [f for f in fs if f not in kill]
+            while len(rest) > 2:
+                # the face whose normal agrees least with its edge-neighbours (away from this edge)
+                def score(f):
+                    ns = [g.normal for ed in f.edges if ed is not e for g in ed.link_faces if g is not f]
+                    return sum(f.normal.dot(n) for n in ns) / (len(ns) or 1)
+                worst = min(rest, key=score); kill.add(worst); rest.remove(worst)
+        bm.normal_update()
+        bmesh.ops.delete(bm, geom=list(kill), context='FACES_ONLY'); removed += len(kill)
     loose = [e for e in bm.edges if not e.link_faces]
     bmesh.ops.delete(bm, geom=loose, context='EDGES')
+    lv = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=lv, context='VERTS')
+    if removed:
+        filled = fill_small_holes(bm)
+        print(f'  weld: {removed} extra faces removed (non-manifold edges), {filled} small holes filled', flush=True)
     # the seams smoothed: a merged stitch line zig-zags (each side's spacing differs a little); its vertices and their
     # neighbours relax along the surface a few times
     seam_v = {v for v in roots if v.is_valid}
@@ -456,6 +532,8 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
     ring = [v for v in ring if v.is_valid and not v.is_boundary]
     for it in range(10):
         bmesh.ops.smooth_vert(bm, verts=ring, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    bm.verts.index_update()
+    ob['seam_verts'] = [v.index for v in seam_v if v.is_valid]
     if bvh:
         for v in bm.verts:
             loc, nrm, _, d = bvh.find_nearest(v.co)
@@ -472,3 +550,108 @@ def write_obj(ob, path, modifiers=True):
         for v in me.vertices: f.write('v %.6f %.6f %.6f\n' % tuple(v.co))
         for p in me.polygons: f.write('f ' + ' '.join(str(i + 1) for i in p.vertices) + '\n')
     ev.to_mesh_clear()
+
+
+def unpose(co, meta, bvh_unused=None, k=6, smooth_rounds=12, faces=None):
+    """garment vertices draped on the sewing-pose body → the rest pose (inverse skinning): each vertex takes the
+    weights of the k nearest posed body vertices (inverse-square), the body weights first smoothed over the body's
+    surface; the blended deform matrix is inverted"""
+    import numpy as np
+    from mathutils import Matrix
+    from mathutils.kdtree import KDTree
+    V, F, W, D = meta['V'], meta['F'], meta['W'], {n: Matrix(m) for n, m in meta['D'].items()}
+    n = len(V)
+    # body weights smoothed over its surface (the skin's own changes from torso to arm within a few cm)
+    nb = [set() for _ in range(n)]
+    for f in F:
+        for a in range(len(f)): nb[f[a]].add(f[(a + 1) % len(f)]); nb[f[(a + 1) % len(f)]].add(f[a])
+    cur = [dict((name, w) for name, w in W[i]) for i in range(n)]
+    for it in range(smooth_rounds):
+        nxt = []
+        for i in range(n):
+            o = {b: w * 0.5 for b, w in cur[i].items()}
+            if nb[i]:
+                f = 0.5 / len(nb[i])
+                for j in nb[i]:
+                    for b, w in cur[j].items(): o[b] = o.get(b, 0) + w * f
+            nxt.append(o)
+        cur = nxt
+    kd = KDTree(n)
+    for i, v in enumerate(V): kd.insert(v, i)
+    kd.balance()
+    out = []
+    for p in co:
+        acc = {}
+        for (q, i, d) in kd.find_n(p, k):
+            f = 1.0 / (d * d + 1e-6)
+            for b, w in cur[i].items(): acc[b] = acc.get(b, 0) + w * f
+        top = sorted(acc.items(), key=lambda t: -t[1])[:4]; s_ = sum(w for _, w in top) or 1
+        M = Matrix(((0, 0, 0, 0),) * 4)
+        for b, w in top: M = M + D[b] * (w / s_)
+        out.append(M.inverted_safe() @ Vector(p))
+    return out
+
+
+def smooth_seams(ob, bvh, rings=2, iters=4, out_gap=0.004):
+    """after the drape: the seams (weld's ob['seam_verts']) and 2 rings round them relaxed again, kept off the body"""
+    me = ob.data; bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+    band = {bm.verts[i] for i in ob.get('seam_verts', []) if i < len(bm.verts)}
+    for r in range(rings):
+        for v in list(band):
+            for e in v.link_edges: band.add(e.other_vert(v))
+    band = [v for v in band if not v.is_boundary]
+    for it in range(iters):
+        bmesh.ops.smooth_vert(bm, verts=band, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        for v in band:
+            loc, nrm, _, d = bvh.find_nearest(v.co)
+            if loc is not None and (v.co - loc).dot(nrm) < out_gap: v.co = loc + nrm * out_gap
+    bm.to_mesh(me); bm.free(); me.update()
+
+
+def boundary_loops(bm):
+    adj = {}
+    for e in bm.edges:
+        if e.is_boundary:
+            a, b = e.verts; adj.setdefault(a, []).append(b); adj.setdefault(b, []).append(a)
+    seen, loops = set(), []
+    for v in adj:
+        if v in seen: continue
+        loop = [v]; seen.add(v); prev, cur = None, v
+        while True:
+            nxt = [u for u in adj[cur] if u is not prev and u not in seen]
+            if not nxt: break
+            prev, cur = cur, nxt[0]; loop.append(cur); seen.add(cur)
+        loops.append(loop)
+    return loops
+
+
+def fill_small_holes(bm, max_sides=10):
+    n = 0
+    for loop in boundary_loops(bm):
+        if 3 <= len(loop) <= max_sides:
+            try:
+                f = bm.faces.new(loop); bmesh.ops.triangulate(bm, faces=[f]); n += 1
+            except ValueError:
+                pass
+    bm.normal_update()
+    return n
+
+
+def smooth_edges(ob, iters=12, rings=2):
+    """the open edges (hems, sleeve ends, neckband top) relaxed ALONG themselves — a cut edge reads as one clean line —
+    and the rows just inside follow"""
+    me = ob.data; bm = bmesh.new(); bm.from_mesh(me)
+    loops = [l for l in boundary_loops(bm) if len(l) > 10]
+    for it in range(iters):
+        for loop in loops:
+            m = len(loop); P = [v.co.copy() for v in loop]
+            for k in range(m):
+                loop[k].co = P[k] * 0.5 + (P[k - 1] + P[(k + 1) % m]) * 0.25
+    inner = set()
+    for loop in loops:
+        cur = set(loop)
+        for r in range(rings):
+            nxt = {e.other_vert(v) for v in cur for e in v.link_edges} - cur
+            inner |= {v for v in nxt if not v.is_boundary}; cur |= nxt
+    bmesh.ops.smooth_vert(bm, verts=list(inner), factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    bm.to_mesh(me); bm.free(); me.update()

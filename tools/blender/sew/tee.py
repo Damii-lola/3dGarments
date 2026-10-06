@@ -25,7 +25,7 @@ H = 0.015                                                    # mesh spacing (no 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scn = bpy.context.scene
 scn.gravity = (0, 0, -9.81); scn.frame_start = 1; scn.frame_current = 1
-body, meta, bvh = S.load_body(D)
+body, meta, bvh = S.load_body(D, pose=True)                 # sewn with the arms lowered (A-pose)
 V, part, dom = meta['V'], meta['part'], meta['dom']
 ARM = ('upperarm', 'lowerarm', 'hand', 'thumb', 'index', 'middle', 'ring', 'pinky')
 armish = lambda i: dom[i].split('_')[0] in ARM                # (by the strongest bone: the weights are split)
@@ -41,7 +41,11 @@ def top_z(x, y, r=0.012, ry=0.04):
     zs = [v[2] for i, v in enumerate(V) if skin(i) and abs(v[0] - x) < r and abs(v[1] - y) < ry]
     return max(zs)
 # the armpit: the lowest skin the upper arm owns, next to the torso
-pit = min((v for i, v in enumerate(V) if skin(i) and dom[i] == 'upperarm_l' and v[0] < Sh.x + 0.07), key=lambda v: v[2]); zPit = pit[2]
+pit = min((v for i, v in enumerate(V) if skin(i) and dom[i] == 'upperarm_l' and v[0] < Sh.x + 0.07), key=lambda v: v[2])
+# (the armhole's depth is anatomy: measured on the REST pose — lowering the arm drags the armpit's skin down with it)
+VR = [tuple(map(float, l.split()[1:4])) for l in open(os.path.join(D, 'body_rest.obj')) if l.startswith('v ')]
+pitR = min((v for i, v in enumerate(VR) if skin(i) and dom[i] == 'upperarm_l' and v[0] < Sh.x + 0.07), key=lambda v: v[2])
+zPit = pitR[2]
 Gneck, _ = girth(neck0.z + 0.035, lambda i: skin(i))
 rN = Gneck * 1.12 / (2 * math.pi)                            # the neckline's radius: neck girth × 1.12
 # high point shoulder: going down the neck, the last height where the body is still no wider than the neckline
@@ -141,8 +145,37 @@ def torso_piece(name, sHPS, sSP, drop):
     return [('hem', [(-sC, zH), (sC, zH)]), ('side_L', [(sC, zH), (sC, zU)]), ('arm_L', A_L),
             ('shoulder_L', [(sSP, zSP), (sHPS, zHPS)]), ('neck', neckline(sHPS, drop)),
             ('shoulder_R', [(-sHPS, zHPS), (-sSP, zSP)]), ('arm_R', A_R), ('side_R', [(-sC, zU), (-sC, zH)])]
-FE = torso_piece('front', sHPS_f, sSP_f, 0.065)
-BE = torso_piece('back', sHPS_b, sSP_b, 0.022)
+# ABOVE THE ARMHOLE the pattern is measured ALONG THE BODY, as a tailor does: from the armhole's level the front climbs
+# back over the chest and the back forward over the shoulder blades to the shoulder's top — a longer path than the
+# height it gains. Per panel: path ÷ height on the profile midway along the shoulder; the pattern's heights above zU
+# are stretched by it (and the placement squeezes them back)
+def profile_k(front_):
+    xm = (rN + xSP) / 2; pts = []; z = zU
+    while z < 1.70:
+        o = Vector((xm, -1.0 if front_ else 1.0, z)); d = Vector((0, 1.0 if front_ else -1.0, 0))
+        hit = bvh.ray_cast(o, d, 2.0)
+        if hit[0] is None: break
+        pts.append((hit[0].y, z)); z += 0.005
+    # (up to where the two sides meet: the top of the shoulder — the ray from above)
+    top = bvh.ray_cast(Vector((xm, pts[-1][0], 2.0)), Vector((0, 0, -1)), 2.0)[0] if pts else None
+    if top is not None: pts.append((top.y, top.z))
+    # the fabric spans the hollows (under the collarbone, between the shoulder blades): the path along the profile's
+    # convex outline, not the skin's
+    sg = -1 if front_ else 1
+    h = S.hull2([(sg * y, zz) for y, zz in pts] + [(sg * pts[0][0] - 1.0, pts[0][1]), (sg * pts[-1][0] - 1.0, pts[-1][1])])
+    out_ = [q for q in h if q[0] > min(sg * y for y, zz in pts) - 0.5]
+    out_.sort(key=lambda q: q[1])
+    arc = sum(math.dist(out_[k], out_[k + 1]) for k in range(len(out_) - 1))
+    print('   profile', 'front' if front_ else 'back', [(round(y, 3), round(zz, 3)) for y, zz in pts[::6]])
+    return max(1.0, min(1.8, arc / max(0.02, pts[-1][1] - zU)))
+kF, kB = profile_k(True), profile_k(False)
+# (half the measured extra: the full path left a fold of spare cloth across the upper chest — jersey stretches over it)
+kF, kB = 1 + 0.5 * (kF - 1), 1 + 0.5 * (kB - 1)
+print(f'along-the-body factor above the armhole: front {kF:.2f}, back {kB:.2f}')
+def stretch(edges, k):
+    return [(n, [(u, v if v <= zU else zU + (v - zU) * k) for u, v in pts]) for n, pts in edges]
+FE = stretch(torso_piece('front', sHPS_f, sSP_f, 0.065 / kF), kF)
+BE = stretch(torso_piece('back', sHPS_b, sSP_b, 0.022 / kB), kB)
 armF = S.curve_len(dict(FE)['arm_L']); armB = S.curve_len(dict(BE)['arm_L'])
 
 # sleeve: width = biceps + ease, cap height solved so the cap measures the armhole + 2 %
@@ -158,32 +191,53 @@ Gb = S.perimeter(S.hull2([(q.dot(upv), q.dot(fwv)) for q in bic]))
 W = Gb * 1.06 + 0.05                                          # a tee's sleeve is easy: biceps × 1.06 + 5 cm
 SL = 0.23                                                     # shoulder seam to sleeve hem
 Wh = W * 0.94
-def cap(capH, sgn):
-    return [(sgn * W / 2 * t, capH * (1 - math.cos(math.pi * t)) / 2 if False else capH * math.sin(math.pi * t / 2) ** 2) for t in (k / 24 for k in range(25))]
-lo, hi = 0.01, 0.2
+def cap_half(w, capH, sgn):
+    return [(sgn * w * t, capH * math.sin(math.pi * t / 2) ** 2) for t in (k / 24 for k in range(25))]
+def half_w(capH, target):                                     # the half width whose cap curve measures `target`
+    lo_, hi_ = 0.0, 0.5
+    for _ in range(40):
+        m = (lo_ + hi_) / 2
+        if S.curve_len(cap_half(m, capH, 1)) < target: lo_ = m
+        else: hi_ = m
+    return lo_
+# ASYMMETRIC CAP (as tailors cut it): each half measures its own armhole (front ≠ back), the two widths together = W
+lo, hi = 0.01, 0.3
 for _ in range(50):
     capH = (lo + hi) / 2
-    if S.curve_len(cap(capH, 1)) * 2 < (armF + armB) * 1.02: lo = capH
+    if half_w(capH, armF) + half_w(capH, armB) > W: lo = capH
     else: hi = capH
-print(f'sleeve: biceps {Gb:.3f}, width {W:.3f}, cap height {capH:.3f} (armhole {armF + armB:.3f})')
+WF, WB = half_w(capH, armF), half_w(capH, armB)
+SL = capH + 0.10                                              # the underarm seam: 10 cm below the cap (a tee's sleeve)
+print(f'sleeve: biceps {Gb:.3f}, width {W:.3f} (front {WF:.3f} / back {WB:.3f}), cap height {capH:.3f}, length {SL:.3f} (armhole {armF:.3f} + {armB:.3f})')
 def sleeve_edges():
-    cf = cap(capH, 1); cb = [p for p in cap(capH, -1)][::-1]
-    return [('cap_front', cf), ('under_front', [(W / 2, capH), (Wh / 2, SL)]), ('hem', [(Wh / 2, SL), (-Wh / 2, SL)]),
-            ('under_back', [(-Wh / 2, SL), (-W / 2, capH)]), ('cap_back', cb)]
+    cf = cap_half(WF, capH, 1); cb = cap_half(WB, capH, -1)[::-1]
+    hf, hb = WF - (W - Wh) / 2, WB - (W - Wh) / 2
+    return [('cap_front', cf), ('under_front', [(WF, capH), (hf, SL)]), ('hem', [(hf, SL), (-hb, SL)]),
+            ('under_back', [(-hb, SL), (-WB, capH)]), ('cap_back', cb)]
 # vertex counts shared across each seam
 nF, nB = max(4, round(armF / H)), max(4, round(armB / H))
 nS = max(2, round(max(S.curve_len(dict(FE)['shoulder_L']), S.curve_len(dict(BE)['shoulder_L'])) / H))
 nSide = max(3, round((zU - zH) / H))
 common = {'shoulder_L': nS, 'shoulder_R': nS, 'side_L': nSide, 'side_R': nSide}
-front = S.Piece('front', FE, H, {**common, 'arm_L': nF, 'arm_R': nF})
-back = S.Piece('back', BE, H, {**common, 'arm_L': nB, 'arm_R': nB})
+lNf, lNb = S.curve_len(dict(FE)['neck']), S.curve_len(dict(BE)['neck'])
+nNf, nNb = max(6, round(lNf / H)), max(4, round(lNb / H))
+front = S.Piece('front', FE, H, {**common, 'arm_L': nF, 'arm_R': nF, 'neck': nNf})
+back = S.Piece('back', BE, H, {**common, 'arm_L': nB, 'arm_R': nB, 'neck': nNb})
+# the NECKBAND (a crew neck's rib): a strip 2 cm high, cut at 85 % of the neckline (stretched onto it, it draws the
+# neckline in to sit on the base of the neck instead of standing off it)
+BH = 0.02; Lb = 0.85 * (lNf + lNb); Lbf = Lb * lNf / (lNf + lNb)
+band = S.Piece('band', [('bottom_front', [(0, 0), (Lbf, 0)]), ('bottom_back', [(Lbf, 0), (Lb, 0)]),
+                        ('end_R', [(Lb, 0), (Lb, BH)]), ('top', [(Lb, BH), (0, BH)]), ('end_L', [(0, BH), (0, 0)])],
+               H * 0.7, {'bottom_front': nNf, 'bottom_back': nNb, 'end_R': 3, 'end_L': 3})
 nU = max(3, round((SL - capH) / H))
 sleeveL = S.Piece('sleeve_l', sleeve_edges(), H, {'cap_front': nF, 'cap_back': nB, 'under_front': nU, 'under_back': nU})
 sleeveR = S.Piece('sleeve_r', sleeve_edges(), H, {'cap_front': nF, 'cap_back': nB, 'under_front': nU, 'under_back': nU})
 
 # ------------------------------------------------------------------ 3. placement
 def place_torso(back_):
-    def f(s, z):
+    k = kB if back_ else kF
+    def f(s, v):
+        z = v if v <= zU else zU + (v - zU) / k
         x, y = section(z).point(s, back_)
         return (x, y, z)
     return f
@@ -196,20 +250,37 @@ def place_sleeve(side):
     def f(u, t):
         al = al_pit + (t - capH) if t >= capH else al_pit - (capH - t) * 0.55
         R = R0 + (0.02 * (1 - t / capH) if t < capH else 0.0)
-        ph = u / R0
+        ph = (u - (WF - WB) / 2) / R0                       # (the underarm seam at the bottom of the arm)
         return tuple(Sj + a * al + (up * math.cos(ph) + fw * math.sin(ph)) * R)
     return f
 G = S.Garment('Tee')
 G.add(front, place_torso(False)); G.add(back, place_torso(True))
 G.add(sleeveL, place_sleeve('l')); G.add(sleeveR, place_sleeve('r'))
+# the band round the neckline as placed: bottom on the neckline ring (front neck, then the back neck back round), top
+# 2 cm up and leaning in toward the neck
+ring = [G.co[G.vid(front, i)] for i in front.edge('neck')] + [G.co[G.vid(back, i)] for i in back.edge('neck')][::-1][1:]
+rl = [0.0]
+for k in range(1, len(ring)): rl.append(rl[-1] + (ring[k] - ring[k - 1]).length)
+nax = Vector((0, neck0.y, 0))
+def place_band(u, v):
+    t = u / Lb * rl[-1]
+    k = max(0, min(len(ring) - 2, next((j for j in range(len(rl) - 1) if rl[j + 1] >= t), len(ring) - 2)))
+    f = (t - rl[k]) / ((rl[k + 1] - rl[k]) or 1)
+    p = ring[k].lerp(ring[k + 1], f)
+    inward = Vector((nax.x - p.x, nax.y - p.y, 0)).normalized()
+    return tuple(p + Vector((0, 0, v)) + inward * (v * 0.35))
+G.add(band, place_band)
 G.sew(front, 'side_L', back, 'side_L'); G.sew(front, 'side_R', back, 'side_R')
 G.sew(front, 'shoulder_L', back, 'shoulder_L'); G.sew(front, 'shoulder_R', back, 'shoulder_R')
 G.sew(sleeveL, 'cap_front', front, 'arm_L', reverse=True); G.sew(sleeveL, 'cap_back', back, 'arm_L')
 G.sew(sleeveR, 'cap_front', front, 'arm_R'); G.sew(sleeveR, 'cap_back', back, 'arm_R', reverse=True)
 for sl in (sleeveL, sleeveR): G.sew(sl, 'under_front', sl, 'under_back', reverse=True)
+G.sew(band, 'bottom_front', front, 'neck'); G.sew(band, 'bottom_back', back, 'neck', reverse=True)
+G.sew(band, 'end_R', band, 'end_L', reverse=True)
 # the collar band (the tailor's hands): torso above the shoulder line − 1 cm
 for p, nm in ((front, 'collar_front'), (back, 'collar_back')):
-    G.groups[nm] = {G.vid(p, i) for i, uv in enumerate(p.uv) if uv[1] > zSP - 0.01}
+    kk = kF if p is front else kB
+    G.groups[nm] = {G.vid(p, i) for i, uv in enumerate(p.uv) if uv[1] > zU + (zSP - 0.01 - zU) * kk}
 G.groups['collar'] = G.groups['collar_front'] | G.groups['collar_back']
 # above the armhole: shrink-wrapped onto the body (+ 1 cm), blended in over 6 cm — the shoulders slope, no slice
 # holds them; the drape restores the pattern's own lengths (it rests as the flat pattern)
@@ -225,7 +296,8 @@ wrap_upper(G.co)
 nbr = [set() for _ in G.co]
 for f in G.faces:
     for k in range(3): a, b = f[k], f[(k + 1) % 3]; nbr[a].add(b); nbr[b].add(a)
-up = [k for k, p in enumerate(G.co) if p.z > zU - 0.06 and nbr[k]]
+bandv = {G.vid(band, i) for i in range(len(band.uv))}
+up = [k for k, p in enumerate(G.co) if p.z > zU - 0.06 and nbr[k] and k not in bandv]
 for it in range(30):
     new = {k: G.co[k].lerp(sum((G.co[j] for j in nbr[k]), Vector()) / len(nbr[k]), 0.5) for k in up}
     for k, p in new.items():
@@ -243,10 +315,17 @@ S.write_obj(ob, os.path.join(D, 'tee_sewn.obj'), modifiers=False)
 # drape: the soft jersey settles onto the shoulders and hangs
 S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200); S.run(120, 'settle')
 S.apply_cloth(ob)
+S.smooth_seams(ob, bvh)                                   # (a seam's crease the drape kept: smoothed once more)
+S.smooth_edges(ob)                                        # clean hem / sleeve-end / neckband lines
+S.write_obj(ob, os.path.join(D, 'tee_pose.obj'), modifiers=False)
+# back to the rest pose, where the site rigs it to the body
+rest = S.unpose([v.co.copy() for v in ob.data.vertices], meta)
+for v, c in zip(ob.data.vertices, rest): v.co = c
+ob.data.update()
 
 # ------------------------------------------------------------------ 5. finish
 bpy.context.view_layer.objects.active = ob
-so = ob.modifiers.new('thick', 'SOLIDIFY'); so.thickness = 0.0015; so.offset = -1.0
+# (no Solidify: at a seam's fold its inner shell crosses the outer one as a ragged line; the site draws both sides)
 for p in ob.data.polygons: p.use_smooth = True
 S.write_obj(ob, os.path.join(D, 'tee.obj'))
 print('written', os.path.join(D, 'tee.obj'))
