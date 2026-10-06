@@ -45,7 +45,9 @@ tools/body/             model pipeline: extract.mjs (FBX → JSON via the lab pa
                         shoulder probes, eye centres → GLB), glb.py
 tools/blender/          CLOTHES MADE IN BLENDER (4.2 LTS, headless: blender -b -P x.py -- args). READ KNOWLEDGE.md FIRST: everything
                         learned about making clothes on a body (pattern → sew → weld → settle, cloth settings, fitting, layering,
-                        pattern drafts per garment type). tee.py = first drape test
+                        pattern drafts per garment type). GARMENTS.md: EVERY garment type (men's + women's tops/bottoms, traditional,
+                        swim, work…) broken into building blocks (fit/ease, sleeve system, neckline, collar, closure, hem, waist,
+                        leg, skirt maths) + fabric → cloth settings + a catalogue line per garment. tee.py = first drape test
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
   src/main.js           STAGE 1 UI: one panel (sex, skin, live measurements card, height & weight, body type, abdomen & waist,

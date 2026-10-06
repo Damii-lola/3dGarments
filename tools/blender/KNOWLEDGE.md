@@ -810,3 +810,26 @@ This is a working proof that pattern → drape can run IN OUR WEB APP on WebGPU,
 3. In the browser later: Seamer (MIT) shows WebGPU XPBD draping is feasible live. The cylinder refit is a cheap
    fallback for body changes.
 4. Always validate with the measuring tools (photo metrics in §6) and a strain map, never by eye.
+
+### 10.9 GarmentCode's parametric grammar (assets/design_params/default.yaml): a proven template parameter set
+
+**Lengths are fractions of body measurements.**
+
+| group | parameters |
+|---|---|
+| **meta** | upper ∈ {FittedShirt, Shirt, none}; waistband ∈ {StraightWB, FittedWB, none}; bottom ∈ {SkirtCircle, AsymmSkirtCircle, GodetSkirt, Pants, Skirt2, SkirtManyPanels, PencilSkirt, SkirtLevels, none} |
+| **shirt** | strapless, length 0.5–3.5, width 1.0–1.3, flare 0.7–1.6 |
+| **collar (neckline)** | front/back shape ∈ {Circle, Curvy, V, Square, Trapezoid, CircleArc, Bezier2}, width −0.5–1, front depth 0.3–2, back depth 0–2, angles 70–110°, bezier controls; component ∈ {Turtle, SimpleLapel, Hood2Panels} with depth, standing lapel, hood depth/length |
+| **sleeve** | sleeveless, armhole ∈ {Square, Angle, Curve}, length 0.1–1.15, connecting width 0–2, end width 0.2–2, rest angle 10–50°, opening direction, standing shoulder (+ length 4–10), ruffle 1–2, cuff ∈ {Band, Skirt, BandSkirt} (+ length, flare, ruffle) |
+| **left.*** | the same keys for an asymmetric left side (one-shoulder etc.) |
+| **skirt** | length, rise 0.5–1, ruffle 1–2, bottom cut, flare |
+| **flare-skirt** | suns 0.1–1.95 (circle fraction), n_panels 4–15, panel_curve, asymmetric front length, cuts |
+| **godet** | insert width/depth 10–50, 4–12 inserts |
+| **pencil** | flare 0.6–1.5, low angle ±30, slits front/back/left/right 0–0.9 |
+| **levels** | 1–5 tiers, level ruffle 1–1.7, base fraction |
+| **pants** | length 0.2–0.9, width 1–1.5, flare 0.5–1.2, rise 0.5–1, cuffs |
+
+**Their pants:** front crotch extension = front hip / 4; minimum total extension = leg girth − hips/2 + 5 cm ("2 inch
+ease, from a pattern-making book"); waist-hip difference split between the side angle and a dart.
+
+Our templates should expose the same kind of parameter set (see GARMENTS.md Part 4).
