@@ -40,7 +40,7 @@ def bunch(ob, start, axis, ts, half, view_dir, ridge_r=44, valley_r=30, strength
         q += sculpt_drag_q(ob, 'Draw', tilted_ring(start + axis * t, axis, half, view_dir, tilt, 0.006, rnd.uniform(0, 6)), radius=ridge_r, strength=strength)
         if k + 1 < len(ts):
             tm = (t + ts[k + 1]) / 2 + rnd.uniform(-0.004, 0.004)
-            q += sculpt_drag_q(ob, 'Draw', tilted_ring(start + axis * tm, axis, half * 0.9, view_dir, tilt + rnd.uniform(-0.1, 0.1), 0.005, rnd.uniform(0, 6)), radius=valley_r, strength=strength, ctrl=True)
+            q += sculpt_drag_q(ob, 'Draw', tilted_ring(start + axis * tm, axis, half * 0.9, view_dir, tilt + rnd.uniform(-0.1, 0.1), 0.005, rnd.uniform(0, 6)), radius=valley_r, strength=strength * 0.65, ctrl=True)
     a, b = start + axis * (min(ts) - 0.02), start + axis * (max(ts) + 0.02)
     q += sculpt_drag_q(ob, 'Draw', [a + (b - a) * (k / 12) for k in range(13)], radius=smooth_r, strength=0.12, shift=True)
     return q

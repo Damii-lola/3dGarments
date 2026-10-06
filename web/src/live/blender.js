@@ -47,33 +47,78 @@ function restPositions(human) {
   return out;
 }
 
-/** skin a rest-space garment like the body under it: each vertex copies the bone weights of the nearest body vertex
- *  (rest positions, 2 cm hash grid), so it follows every pose the site shows */
-function skinLikeBody(human, P) {
+/** skin a rest-space garment like the body under it: each vertex blends the bone weights of the 6 nearest body
+ *  vertices (rest positions, 2 cm hash grid; inverse-square distance), keeps the 4 strongest bones, and the weights
+ *  are then smoothed across the garment's own surface (one nearest vertex jumps between the arm and the side at the
+ *  armpit and tears the fabric there when the arm moves) */
+const K = 6;
+function skinLikeBody(human, P, idx) {
   const mesh = human.active.mesh, g = mesh.geometry;
   const R = restPositions(human), n = R.length / 3, S = 0.02, grid = new Map();
-  const key = (x, y, z) => `${Math.floor(x / S)},${Math.floor(y / S)},${Math.floor(z / S)}`;
+  const key = (x, y, z) => `${x},${y},${z}`;
   const part = g.attributes._part?.array;
   for (let i = 0; i < n; i++) {
     if (part && part[i] > 0.5 && part[i] < 3.5) continue;          // eyes etc. (skin 0, fabric 4 are fine)
-    const k = key(R[i * 3], R[i * 3 + 1], R[i * 3 + 2]);
+    const k = key(Math.floor(R[i * 3] / S), Math.floor(R[i * 3 + 1] / S), Math.floor(R[i * 3 + 2] / S));
     let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(i);
   }
-  const m = P.length / 3, si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
   const BI = g.attributes.skinIndex.array, BW = g.attributes.skinWeight.array;
+  const m = P.length / 3;
+  const W = new Array(m);                                           // per vertex: Map bone → weight
+  const bi = new Int32Array(K), bd = new Float64Array(K);
   for (let v = 0; v < m; v++) {
     const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
     const cx = Math.floor(x / S), cy = Math.floor(y / S), cz = Math.floor(z / S);
-    let best = -1, bd = Infinity;
-    for (let r = 0; r < 8 && best < 0; r++) {
+    bi.fill(-1); bd.fill(Infinity);
+    for (let r = 0; r < 8; r++) {
       for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
         if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue;
-        const a = grid.get(`${cx + dx},${cy + dy},${cz + dz}`); if (!a) continue;
-        for (const i of a) { const d = (R[i * 3] - x) ** 2 + (R[i * 3 + 1] - y) ** 2 + (R[i * 3 + 2] - z) ** 2; if (d < bd) { bd = d; best = i; } }
+        const a = grid.get(key(cx + dx, cy + dy, cz + dz)); if (!a) continue;
+        for (const i of a) {
+          const d = (R[i * 3] - x) ** 2 + (R[i * 3 + 1] - y) ** 2 + (R[i * 3 + 2] - z) ** 2;
+          if (d >= bd[K - 1]) continue;
+          let j = K - 1; while (j > 0 && bd[j - 1] > d) { bd[j] = bd[j - 1]; bi[j] = bi[j - 1]; j--; }
+          bd[j] = d; bi[j] = i;
+        }
       }
+      // every vertex in the next shell is ≥ r·S away: stop once the K found are all nearer than that
+      if (bi[K - 1] >= 0 && bd[K - 1] <= (r * S) ** 2) break;
     }
-    if (best < 0) best = 0;
-    for (let k = 0; k < 4; k++) { si[v * 4 + k] = BI[best * 4 + k]; sw[v * 4 + k] = BW[best * 4 + k]; }
+    const w = new Map();
+    for (let j = 0; j < K; j++) {
+      const i = bi[j]; if (i < 0) continue;
+      const f = 1 / (bd[j] + 1e-6);
+      for (let k = 0; k < 4; k++) { const b = BI[i * 4 + k], wt = BW[i * 4 + k]; if (wt > 0) w.set(b, (w.get(b) || 0) + wt * f); }
+    }
+    W[v] = w;
+  }
+  // smooth over the garment's edges (3 rounds, half own / half neighbours' mean)
+  if (idx) {
+    const nb = Array.from({ length: m }, () => new Set());
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+      nb[a].add(b); nb[a].add(c); nb[b].add(a); nb[b].add(c); nb[c].add(a); nb[c].add(b);
+    }
+    const norm = (w) => { let s = 0; for (const x of w.values()) s += x; const o = new Map(); for (const [b, x] of w) o.set(b, x / (s || 1)); return o; };
+    let cur = W.map(norm);
+    for (let it = 0; it < 3; it++) {
+      const nxt = new Array(m);
+      for (let v = 0; v < m; v++) {
+        const o = new Map(); for (const [b, x] of cur[v]) o.set(b, x * 0.5);
+        const ns = nb[v]; if (!ns.size) { nxt[v] = cur[v]; continue; }
+        const f = 0.5 / ns.size;
+        for (const u of ns) for (const [b, x] of cur[u]) o.set(b, (o.get(b) || 0) + x * f);
+        nxt[v] = o;
+      }
+      cur = nxt;
+    }
+    for (let v = 0; v < m; v++) W[v] = cur[v];
+  }
+  const si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
+  for (let v = 0; v < m; v++) {
+    const top = [...W[v]].sort((p, q) => q[1] - p[1]).slice(0, 4);
+    const s = top.reduce((t, e) => t + e[1], 0) || 1;
+    top.forEach(([b, x], k) => { si[v * 4 + k] = b; sw[v * 4 + k] = x / s; });
   }
   return { si, sw };
 }
@@ -125,7 +170,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       geo.setIndex(new THREE.BufferAttribute(idx, 1));
       if (rest) {
         // modelled on the rest-pose body: rigged like the body under it, so it wears the site's pose
-        const { si, sw } = skinLikeBody(human, P);
+        const { si, sw } = skinLikeBody(human, P, idx);
         geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
         geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
         o = new THREE.SkinnedMesh(geo, material(col));
@@ -147,7 +192,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       a.array.set(P);
       a.needsUpdate = true;
       if (rest) {
-        const { si, sw } = skinLikeBody(human, P);
+        const { si, sw } = skinLikeBody(human, P, o.geometry.index.array);
         o.geometry.attributes.skinIndex.array.set(si); o.geometry.attributes.skinIndex.needsUpdate = true;
         o.geometry.attributes.skinWeight.array.set(sw); o.geometry.attributes.skinWeight.needsUpdate = true;
       }
