@@ -20,7 +20,7 @@ def offset(p):
         if t > sleeve_len - 0.06: return 0.008               # rib cuff
         return 0.022 + 0.016 * sm(sleeve_len - 0.35, sleeve_len - 0.12, t)   # roomier low on the forearm (bunch)
     if p.z < hem + 0.06: return 0.010                        # hem rib band
-    if p.z > 1.5 and abs(p.x) < 0.11: return 0.006           # neck rib
+    if p.z > 1.46 and abs(p.x) < 0.13: return 0.006          # neck rib
     blouse = sm(hem + 0.06, hem + 0.12, p.z) * (1 - sm(1.25, 1.45, p.z))
     return 0.018 + 0.022 * blouse                           # the body balloons over the band
 me = ob.data

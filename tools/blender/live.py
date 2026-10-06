@@ -438,8 +438,11 @@ def _start_ui():
         sp.shading.color_type = 'OBJECT'
     SERVER = Server()
     SERVER.ns.update(view3d=view3d, close_splash=close_splash, look=look, sculpt_drag=sculpt_drag,
-                     object_mode=object_mode, show_space=show_space)
+                     object_mode=object_mode, show_space=show_space,
+                     stroke_queue_add=stroke_queue_add, run_next=run_next)
     close_splash()
+    if _dg_tick not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_dg_tick)
     bpy.app.timers.register(lambda: (SERVER.poll(0), 0.05)[1], persistent=True)
     return None
 
@@ -527,6 +530,33 @@ def sculpt_drag(ob, brush, points, radius=50, strength=None, ctrl=False, shift=F
     if ctrl:
         win.event_simulate(type='LEFT_CTRL', value='RELEASE', x=last[0], y=last[1])
     return len(pts)
+
+
+def _dg_tick(scene, depsgraph=None):
+    STATE['dg_count'] = STATE.get('dg_count', 0) + 1
+    STATE['dg_time'] = time.time()
+
+
+def stroke_queue_add(**spec):
+    """queue a stroke spec (brush, points, radius, strength, ctrl, shift, ob): run_next() plays them one at a time — a
+    stroke must finish before the next brush setting is applied (settings act when the events run, not when queued)"""
+    STATE.setdefault('queue', []).append(spec)
+
+
+def run_next():
+    """play the next queued stroke; returns how many are left (the client waits for the depsgraph to go quiet)"""
+    q = STATE.get('queue') or []
+    if not q:
+        return 0
+    spec = q.pop(0)
+    ob = spec.pop('ob')
+    if isinstance(ob, str):
+        ob = bpy.data.objects[ob]
+    if spec.pop('look', None):
+        pass
+    STATE['stroke_sent'] = time.time()
+    sculpt_drag(ob, **spec)
+    return len(q)
 
 
 def object_mode():

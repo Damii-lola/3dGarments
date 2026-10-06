@@ -12,7 +12,7 @@ r = bpy.data.objects['rig_male'].data.bones
 S, E, W = r['upperarm_l'].head_local.copy(), r['lowerarm_l'].head_local.copy(), r['hand_l'].head_local.copy()
 L = STATE['L']
 hem = L['hip'][0] - 0.03                     # the sweatshirt's rib band sits at the hip
-top = 1.56; armpit = S.z - 0.115; xn = 0.085
+top = 1.565; armpit = S.z - 0.115; xn = 0.03
 chest = [P[i] for i in skin if abs(P[i].z - (armpit - 0.03)) < 0.012 and abs(P[i].x) < 0.2]
 Wt = max(p.x for p in chest) + 0.02
 Y0, Y1 = min(p.y for p in chest) - 0.03, max(p.y for p in chest) + 0.03
@@ -60,6 +60,34 @@ with bpy.context.temp_override(window=win, screen=win.screen, area=area, region=
     for x in bpy.context.view_layer.objects: x.select_set(x == ob)
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.modifier_apply(modifier='Mirror'); bpy.ops.object.modifier_apply(modifier='Shrinkwrap'); bpy.ops.object.modifier_apply(modifier='Subdivision')
+# CREW NECKLINE (the video: inset the neck, then shape it round): cut away the faces above a crew line around the
+# neck — 6 cm low at the front, ~1 cm at the back — and put the new edge exactly on that line
+import math
+nb = 1.545
+ring = [P[i] for i in skin if abs(P[i].z - nb) < 0.01 and abs(P[i].x) < 0.09]
+ncy = (min(p.y for p in ring) + max(p.y for p in ring)) / 2
+nrx = max(p.x for p in ring) + 0.014
+nryf = ncy - min(p.y for p in ring) + 0.014; nryb = max(p.y for p in ring) - ncy + 0.014
+def crew(th):
+    c = math.cos(th)
+    ry = nryf if c > 0 else nryb
+    z = nb + 0.008 * (1 - abs(c)) - 0.062 * max(0.0, c) ** 1.6 - 0.01 * max(0.0, -c) ** 2
+    return Vector((math.sin(th) * nrx, ncy - c * ry, z))
+def above(p):
+    th = math.atan2(p.x, -(p.y - ncy))
+    q = crew(th)
+    r = math.hypot(p.x / nrx, (p.y - ncy) / (nryf if p.y < ncy else nryb))
+    return p.z > q.z and r < 1.6
+bm = bmesh.new(); bm.from_mesh(ob.data)
+bmesh.ops.delete(bm, geom=[f for f in bm.faces if above(f.calc_center_median())], context='FACES')
+bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+edge = [v for v in bm.verts if v.is_boundary and v.co.z > 1.42 and abs(v.co.x) < 0.2]
+for v in edge:
+    v.co = crew(math.atan2(v.co.x, -(v.co.y - ncy)))
+for it in range(3):                          # even out the ring just under the new edge
+    bmesh.ops.smooth_vert(bm, verts=list({e.other_vert(v) for v in edge for e in v.link_edges if not e.other_vert(v).is_boundary}), factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+bm.to_mesh(ob.data); bm.free()
+STATE['crew'] = dict(nb=nb, ncy=ncy)
 STATE['shirt'] = dict(hem=hem, S=tuple(S), E=tuple(E), W=tuple(W))
 print('sweatshirt blockout', len(ob.data.vertices), 'verts; hem', round(hem, 3), 'chest half width', round(Wt, 3))
 look((0, 0, 1.2), (0.6, -1, 0.25), 2.4)
