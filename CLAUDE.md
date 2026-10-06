@@ -48,6 +48,19 @@ tools/blender/          CLOTHES MADE IN BLENDER (4.2 LTS, headless: blender -b -
                         pattern drafts per garment type). GARMENTS.md: EVERY garment type (men's + women's tops/bottoms, traditional,
                         swim, work…) broken into building blocks (fit/ease, sleeve system, neckline, collar, closure, hem, waist,
                         leg, skirt maths) + fabric → cloth settings + a catalogue line per garment. tee.py = first drape test
+                        LIVE (live.py + send.py, no templates: clothing is modelled live in Blender ON THE SITE'S BODY):
+                        `blender -b -P tools/blender/live.py` (or with the UI: `blender -P …`, same server on a timer) imports
+                        web/public/body/{male,female}.glb (same vertices, same order as the site) and serves ws://127.0.0.1:8790.
+                        The site with ?blender=1 (web/src/live/blender.js) sends its body AS SHOWN (sex + world positions of
+                        every vertex: pose, height, width, shape sliders) → shape key 'site' on the Blender body (armature
+                        muted, collision on), re-sent whenever it changes; Blender streams every mesh in its "Garments"
+                        collection (evaluated: cloth frames as they simulate) back, drawn on the body. Round trip measured
+                        0.00006 mm. Control = `python3 tools/blender/send.py '<python>'` / `-f file.py` (token in
+                        ~/.3dg-blender-token, 0600; browsers can never exec); helpers in the session: body(), new_garment(),
+                        step(frames, every), push(), STATE. Browser origins allow-listed (localhost dev + damii-lola.github.io).
+                        Blender ↔ app coords: app (x, y, z) = Blender (x, z, -y). Chrome splits big WS messages: the server
+                        joins fragments (keep the first frame's opcode). SIGPIPE is ignored (a client leaving mid-send killed
+                        Blender). Don't pkill by a pattern that appears in your own command line
 web/                    Vite + three.js SPA (GitHub Pages)
   public/body/          BUILT rigged models: male.glb, female.glb (from tools/body/prepare.py)
   src/main.js           STAGE 1 UI: one panel (sex, skin, live measurements card, height & weight, body type, abdomen & waist,

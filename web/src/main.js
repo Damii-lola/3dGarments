@@ -344,6 +344,11 @@ async function boot() {
   stage.setView('front', { instant: true });
   // TRY-ON: tryOn = createTryOn({ human, stage });
   if (params.get('suit') === '1') human.setSuit(true);      // testing: the black bodysuit over the whole body
+  // LIVE BLENDER (tools/blender/live.py): clothing modelled in Blender on this very body, streamed here live
+  if (params.has('blender')) {
+    const url = params.get('blender').startsWith('ws') ? params.get('blender') : 'ws://127.0.0.1:8790';
+    import('./live/blender.js').then(({ connectBlender }) => { window.__blender = connectBlender({ human, stage, url }); });
+  }
   $('#stage-canvas').parentElement.append(busyEl);
   buildPanel();
   stage.invalidate(4);
