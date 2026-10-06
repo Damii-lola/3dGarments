@@ -404,8 +404,9 @@ class Garment:
 # ------------------------------------------------------------------------------------------------- simulation
 SOFT = dict(tension=15, compression=15, shear=5, bending=0.5, mass=0.3, air=1.0)
 # a men's tee: 160–190 g/m² cotton jersey — a little more body than opensew's SOFT (it falls off the chest instead of
-# showing every muscle)
-JERSEY = dict(tension=15, compression=15, shear=5, bending=1.5, mass=0.3, air=1.0)
+# showing every muscle), and stiff enough in bending that it settles into a few broad folds rather than many fine
+# ripples (a pressed, new-off-the-shelf tee, not one pulled from the bottom of a drawer)
+JERSEY = dict(tension=18, compression=18, shear=6, bending=4.0, mass=0.3, air=1.2)
 
 
 def cloth(ob, name, fabric=SOFT, quality=10, gravity=1.0, pin=None, pin_stiff=25, sewing=False, shrink=0.0,
@@ -521,6 +522,15 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
     if removed:
         filled = fill_small_holes(bm)
         print(f'  weld: {removed} extra faces removed (non-manifold edges), {filled} small holes filled', flush=True)
+    # a seam joins pieces that were each wound correctly on their own, but not always in agreement with each other —
+    # a face wound backward right at the join reads as a bright crack (its vertex normals, averaged with its
+    # correctly-wound neighbours, nearly cancel). Make every face agree with its neighbours, then check the whole
+    # garment still faces OUT of the body (recalc only enforces agreement, not which way is "out")
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    if bvh:
+        sample = bm.faces[:40] if len(bm.faces) > 40 else list(bm.faces)
+        agree = sum(1 for f in sample if (lambda h: h[0] is not None and f.normal.dot(f.calc_center_median() - h[0]) > 0)(bvh.find_nearest(f.calc_center_median())))
+        if agree < len(sample) / 2: bmesh.ops.reverse_faces(bm, faces=list(bm.faces))
     # the seams smoothed: a merged stitch line zig-zags (each side's spacing differs a little); its vertices and their
     # neighbours relax along the surface a few times
     seam_v = {v for v in roots if v.is_valid}
@@ -635,6 +645,22 @@ def fill_small_holes(bm, max_sides=10):
                 pass
     bm.normal_update()
     return n
+
+
+def iron(ob, bvh, iters=6, factor=0.25, out_gap=0.006):
+    """a light whole-garment Laplacian pass after the drape: a few fine wrinkles the sim left (not the big folds —
+    those span many vertices and barely move under a small-factor average) smoothed flat, like pressing the fabric;
+    never pulled in past out_gap from the body, and the open edges (hem, sleeve ends, neckband) held still so the
+    silhouette doesn't shrink"""
+    me = ob.data; bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+    edge_v = {v for loop in boundary_loops(bm) for v in loop}
+    inner = [v for v in bm.verts if v not in edge_v]
+    for it in range(iters):
+        bmesh.ops.smooth_vert(bm, verts=inner, factor=factor, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        for v in inner:
+            loc, nrm, _, d = bvh.find_nearest(v.co)
+            if loc is not None and (v.co - loc).dot(nrm) < out_gap: v.co = loc + nrm * out_gap
+    bm.to_mesh(me); bm.free(); me.update()
 
 
 def smooth_edges(ob, iters=12, rings=2):

@@ -51,7 +51,7 @@ function restPositions(human) {
  *  skin's own weights change from torso to arm within a few cm — copied as they are, the fabric folds into a groove at
  *  the shoulder when the arm comes down from the T-pose. Smoothed along the body's surface (never through space), so
  *  the two thighs, close across the gap but far apart on the skin, never mix. */
-function softBodyWeights(human, rounds = 14) {
+function softBodyWeights(human, rounds = 24) {
   const g = human.active.mesh.geometry, n = g.attributes.position.count;
   const BI = g.attributes.skinIndex.array, BW = g.attributes.skinWeight.array, idx = g.index.array;
   const P = g.attributes.position.array;
@@ -89,9 +89,34 @@ function softBodyWeights(human, rounds = 14) {
 }
 
 /** skin a rest-space garment like the body under it: each vertex blends the (surface-smoothed) bone weights of the
- *  6 nearest body vertices (rest positions, 2 cm hash grid; inverse-square distance) and keeps the 4 strongest bones */
-const K = 6;
-function skinLikeBody(human, P) {
+ *  6 nearest body vertices (rest positions, 2 cm hash grid; inverse-square distance); THEN smoothed again across the
+ *  GARMENT's own mesh (a few rounds) before picking the 4 strongest bones — a seam welds two pattern pieces into one
+ *  vertex, and its neighbours either side can come from quite different placements (front panel vs. sleeve cap), so
+ *  the raw per-vertex nearest-body blend can jump sharply right at that line; smoothing over the garment's own
+ *  topology (not just the body's) is what actually levels that jump out, and it's what stopped the shoulder tearing
+ *  once the arm came down a long way from the T-pose it was sewn in */
+const K = 10;
+function smoothGarmentWeights(maps, idx, rounds = 10) {
+  const m = maps.length, nbr = Array.from({ length: m }, () => new Set());
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+    nbr[a].add(b); nbr[a].add(c); nbr[b].add(a); nbr[b].add(c); nbr[c].add(a); nbr[c].add(b);
+  }
+  let cur = maps;
+  for (let it = 0; it < rounds; it++) {
+    const nxt = new Array(m);
+    for (let v = 0; v < m; v++) {
+      const ns = nbr[v]; if (!ns.size) { nxt[v] = cur[v]; continue; }
+      const o = new Map(); for (const [b, x] of cur[v]) o.set(b, x * 0.5);
+      const f = 0.5 / ns.size;
+      for (const u of ns) for (const [b, x] of cur[u]) o.set(b, (o.get(b) || 0) + x * f);
+      nxt[v] = o;
+    }
+    cur = nxt;
+  }
+  return cur;
+}
+function skinLikeBody(human, P, idx) {
   const g = human.active.mesh.geometry;
   const R = restPositions(human), n = R.length / 3, S = 0.02, grid = new Map();
   const key = (x, y, z) => `${x},${y},${z}`;
@@ -104,6 +129,7 @@ function skinLikeBody(human, P) {
   const SW = softBodyWeights(human);
   const m = P.length / 3, si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
   const bi = new Int32Array(K), bd = new Float64Array(K);
+  const maps = new Array(m);
   for (let v = 0; v < m; v++) {
     const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
     const cx = Math.floor(x / S), cy = Math.floor(y / S), cz = Math.floor(z / S);
@@ -132,7 +158,11 @@ function skinLikeBody(human, P) {
       const f = 1 / (bd[j] + 1e-6);
       for (const [b, x] of SW[i]) w.set(b, (w.get(b) || 0) + x * f);
     }
-    const top = [...w].sort((p, q) => q[1] - p[1]).slice(0, 4);
+    maps[v] = w;
+  }
+  const smoothed = idx ? smoothGarmentWeights(maps, idx) : maps;
+  for (let v = 0; v < m; v++) {
+    const top = [...smoothed[v]].sort((p, q) => q[1] - p[1]).slice(0, 4);
     const s = top.reduce((t, e) => t + e[1], 0) || 1;
     top.forEach(([b, x], k) => { si[v * 4 + k] = b; sw[v * 4 + k] = x / s; });
   }
@@ -223,7 +253,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       geo.setIndex(new THREE.BufferAttribute(idx, 1));
       if (rest) {
         // modelled on the rest-pose body: rigged like the body under it, so it wears the site's pose
-        const { si, sw } = skinLikeBody(human, P);
+        const { si, sw } = skinLikeBody(human, P, idx);
         geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
         geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
         o = new THREE.SkinnedMesh(geo, material(col));
@@ -238,7 +268,11 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       geo.computeVertexNormals();
       o.name = `blender:${m.id}`;
       o.userData = { rest, msg: { color: col.color, style: col.style } };
-      o.castShadow = o.receiveShadow = m.style !== 'wire';
+      // casts a shadow (onto the body, the ground), but doesn't RECEIVE one: a cloth seam's sharp little fold,
+      // caught edge-on to the light in some poses, self-shadow-acnes into a bright crack across the fabric there —
+      // worse than losing the (minor) self-shadow nicety a sewn, mostly-smooth garment barely needs anyway
+      o.castShadow = m.style !== 'wire';
+      o.receiveShadow = false;
       o.frustumCulled = false;
       meshes.set(m.id, o);
     } else {
@@ -246,7 +280,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       a.array.set(P);
       a.needsUpdate = true;
       if (rest) {
-        const { si, sw } = skinLikeBody(human, P);
+        const { si, sw } = skinLikeBody(human, P, o.geometry.index.array);
         o.geometry.attributes.skinIndex.array.set(si); o.geometry.attributes.skinIndex.needsUpdate = true;
         o.geometry.attributes.skinWeight.array.set(sw); o.geometry.attributes.skinWeight.needsUpdate = true;
       }

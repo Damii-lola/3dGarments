@@ -15,16 +15,29 @@ the lab's box). The notes on garments/ below describe the old, switched-off syst
 (The old skin-pushed templates, web/src/templates/, were deleted.) With live.py running and the site on ?blender=1:
 `send.py -f tools/blender/sew/export_body.py` writes the site's rest body to ~/.3dg-sew; then headless
 `blender -b -P tools/blender/sew/tee.py` measures it, drafts the pattern (front/back + set-in sleeves, cap solved to the
-armhole), places the pieces round the body (arc length round draped cross-sections; above the armhole shrink-wrapped
-+ smoothed), closes the seams (presew), relaxes every edge to its FLAT-PATTERN length (no creases baked in), welds and
-drapes (cloth sim, jersey) → ~/.3dg-sew/tee.obj; `send.py -f sew/load.py` (STATE['load']) streams it to the site, which
-rigs it like the body (surface-smoothed weights) and hides the skin it covers. sewlib.py = pieces, seams, sim helpers.
+armhole), places the pieces round the body (arc length round REAL body cross-sections ALL THE WAY UP through the
+shoulder — envelope-smoothed over height to kill the deltoid/clavicle weight-paint wobble; clamping to one section at
+the armhole and patching upward with a nearest-point shrinkwrap made a boxy torso and a creased shoulder, both gone
+once the sections themselves follow the body), closes the seams (presew), relaxes every edge to its FLAT-PATTERN
+length (no creases baked in), welds and drapes (cloth sim, jersey, stiff enough in bending to settle into a few broad
+folds instead of many fine ones — "ironed", not pulled from a drawer) → ~/.3dg-sew/tee.obj; `send.py -f sew/load.py`
+(STATE['load']) streams it to the site, which rigs it like the body (surface-smoothed weights, THEN smoothed again
+across the GARMENT's own topology — a seam welds pieces placed independently, and the raw per-vertex nearest-body
+blend can jump right at that line) and hides the skin it covers. sewlib.py = pieces, seams, sim helpers.
 SEWN IN AN A-POSE (export_body.py also writes body_pose.obj/json: arms lowered 15° more, ~47° down — sewn with the
 arm out, a sleeve stands out stiffly once it hangs), then UNPOSED to the rest pose (sewlib.unpose: inverse skinning with
-surface-smoothed weights). Pattern lengths above the armhole are measured along the body (half the extra path: the full
-one left a fold across the chest). Rib neckband at 85 % of the neckline; sleeve cap asymmetric, each half = its own
-armhole, no ease; weld removes non-manifold faces + fills small holes; seams and open edges smoothed after the drape;
-no Solidify (its inner shell showed at seams).
+surface-smoothed weights) — unpose() blends each vertex's OWN k-nearest weights independently, so two vertices a mm
+apart in the drape can end up a hair's-width out of line with each other: invisible in the drape (it's smoothed there)
+but it catches the light as a thin bright crease once re-posed on the site. A SECOND light smoothing pass (sewlib.iron),
+run against the REST body after unposing (not the sewing-pose body the drape used), is what actually settles it — the
+same pass right after the drape doesn't reach this, since the noise is introduced by unposing itself, afterward.
+Pattern lengths above the armhole are measured along the body (half the extra path: the full one left a fold across
+the chest). Rib neckband at 85 % of the neckline; sleeve cap asymmetric, each half = its own armhole, no ease; weld
+removes non-manifold faces, fills small holes, AND recalculates consistent face winding (a seam joining pieces wound
+independently can leave one face backward right at the join — same bright-crack symptom as the unpose noise, different
+cause: check both if it comes back); seams and open edges smoothed after the drape; no Solidify (its inner shell showed
+at seams); the live mesh casts a shadow but doesn't receive one (self-shadow acne at a seam's sharp little fold reads
+as the same kind of crack).
 
 ## Layout
 ```

@@ -59,7 +59,7 @@ zU = zPit - 0.03                                             # the armhole's bot
 Gc, _ = girth(zPit - 0.04)                                   # chest
 zH = meta['L']['groin'] + 0.005                              # hem (cut a little long: sewing hoists it)
 Gh, _ = girth(zH + 0.02)                                     # hips at the hem
-zHold = zPit - 0.03                                          # above the armhole's bottom: shrink-wrapped (below)
+zHold = max(zHPS, zSP) + 0.03                                # above this: not needed (real body slices go all the way up)
 print(f'neck {Gneck:.3f}  chest {Gc:.3f}  hip {Gh:.3f}  armpit {zPit:.3f}  HPS {zHPS:.3f}  SP {zSP:.3f} at x {xSP:.3f}  hem {zH:.3f}')
 
 sC = max(Gc * 1.10, Gh * 1.08) / 4                           # regular fit: chest + 10 %, straight side seams
@@ -92,6 +92,21 @@ for zz in zs:
     if prev is not None and zz < zPit - 0.02:
         r = [max(r[k], prev[1][k] - 0.15 * 0.01) for k in range(NA)]
     _rad[zz] = r; _cen[zz] = c; prev = (c, r)
+# ABOVE THE ARMHOLE the slice touches the shoulder cap: some deltoid/clavicle-weighted skin is still counted as torso
+# there (the weight paint overlaps), so the raw radius wobbles (bulges, narrows, bulges again) going up to the neck —
+# an UPPER ENVELOPE over a height window (the widest nearby reading wins), then averaged smooth: the shoulder still
+# swells out from the neck down to its cap, with no little ripples in it
+zs_sorted = sorted(zs, reverse=True)
+def _envelope(win_env=3, win_avg=3):
+    n = len(zs_sorted)
+    arr = [_rad[zz] for zz in zs_sorted]
+    env = [[max(arr[j][k] for j in range(max(0, i - win_env), min(n, i + win_env + 1))) for k in range(NA)] for i in range(n)]
+    out = {}
+    for i, zz in enumerate(zs_sorted):
+        lo, hi = max(0, i - win_avg), min(n, i + win_avg + 1)
+        out[zz] = [sum(env[j][k] for j in range(lo, hi)) / (hi - lo) for k in range(NA)]
+    return out
+_rad = _envelope()
 # (the centres and, below, the ease smoothed over ±6 cm: a step in either is a ledge the cloth keeps)
 _c0 = dict(_cen)
 for zz in zs:
@@ -282,24 +297,16 @@ for p, nm in ((front, 'collar_front'), (back, 'collar_back')):
     kk = kF if p is front else kB
     G.groups[nm] = {G.vid(p, i) for i, uv in enumerate(p.uv) if uv[1] > zU + (zSP - 0.01 - zU) * kk}
 G.groups['collar'] = G.groups['collar_front'] | G.groups['collar_back']
-# above the armhole: shrink-wrapped onto the body (+ 1 cm), blended in over 6 cm — the shoulders slope, no slice
-# holds them; the drape restores the pattern's own lengths (it rests as the flat pattern)
-def wrap_upper(co_list):
-    for k, p in enumerate(co_list):
-        w = max(0.0, min(1.0, (p.z - (zU - 0.04)) / 0.06)); w = w * w * (3 - 2 * w)
-        if w <= 0: continue
-        loc, nrm, _, d = bvh.find_nearest(p)
-        if loc is None: continue
-        co_list[k] = p.lerp(loc + nrm * 0.01, w)
-wrap_upper(G.co)
-# smoothed as fabric (a wrap traces every muscle and the spine's groove), never closer than 8 mm to the body
+# the shoulder/chest is now placed on the body's own (envelope-smoothed) cross-sections, so it already sits close
+# and smooth; just a light Laplacian pass to settle the per-cm sampling noise, pushing out (never pulling toward a
+# single nearest point — that discontinuous jump near the collarbone/deltoid ridge is what made the crease before)
 nbr = [set() for _ in G.co]
 for f in G.faces:
     for k in range(3): a, b = f[k], f[(k + 1) % 3]; nbr[a].add(b); nbr[b].add(a)
 bandv = {G.vid(band, i) for i in range(len(band.uv))}
 up = [k for k, p in enumerate(G.co) if p.z > zU - 0.06 and nbr[k] and k not in bandv]
-for it in range(30):
-    new = {k: G.co[k].lerp(sum((G.co[j] for j in nbr[k]), Vector()) / len(nbr[k]), 0.5) for k in up}
+for it in range(8):
+    new = {k: G.co[k].lerp(sum((G.co[j] for j in nbr[k]), Vector()) / len(nbr[k]), 0.35) for k in up}
     for k, p in new.items():
         loc, nrm, _, d = bvh.find_nearest(p)
         G.co[k] = loc + nrm * 0.008 if loc is not None and (p - loc).dot(nrm) < 0.008 else p
@@ -316,12 +323,20 @@ S.write_obj(ob, os.path.join(D, 'tee_sewn.obj'), modifiers=False)
 S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200); S.run(120, 'settle')
 S.apply_cloth(ob)
 S.smooth_seams(ob, bvh)                                   # (a seam's crease the drape kept: smoothed once more)
+S.iron(ob, bvh)                                           # press out the fine ripples the sim left (keep the big folds)
 S.smooth_edges(ob)                                        # clean hem / sleeve-end / neckband lines
 S.write_obj(ob, os.path.join(D, 'tee_pose.obj'), modifiers=False)
 # back to the rest pose, where the site rigs it to the body
 rest = S.unpose([v.co.copy() for v in ob.data.vertices], meta)
 for v, c in zip(ob.data.vertices, rest): v.co = c
 ob.data.update()
+# unpose() blends each vertex's OWN k-nearest weights independently: two vertices a mm apart in the drape can end up
+# with slightly different blends, and after inverting, a hair's-width out of line with each other — invisible in the
+# drape (it's smoothed there) but it catches the light as a thin crease once re-posed. One more light pass, now
+# against the REST body, settles it
+body_r, meta_r, bvh_r = S.load_body(D, pose=False)
+S.iron(ob, bvh_r, iters=10, factor=0.3)
+body_r.hide_viewport = True
 
 # ------------------------------------------------------------------ 5. finish
 bpy.context.view_layer.objects.active = ob
