@@ -139,6 +139,42 @@ function skinLikeBody(human, P) {
   return { si, sw };
 }
 
+/** the body's skin a rest-space garment covers (Body.setHidden discards it): every skin vertex with a garment vertex
+ *  within 4 cm, lying outside it along the skin's normal — except near the garment's open edges (4 rings in); only skin within 2.5 cm of the fabric, where
+ *  the skin must still show (neckline, hems, sleeve ends) */
+function coveredSkin(human, P, idx) {
+  const g = human.active.mesh.geometry, R = restPositions(human), N = g.attributes.normal.array, part = g.attributes._part?.array;
+  const m = P.length / 3, S = 0.04, grid = new Map(), key = (x, y, z) => `${x},${y},${z}`;
+  // the garment's boundary, and two rings in from it
+  const ec = new Map();
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) {
+    const a = idx[t + e], b = idx[t + (e + 1) % 3], k = a < b ? `${a},${b}` : `${b},${a}`; ec.set(k, (ec.get(k) || 0) + 1);
+  }
+  const nbr = Array.from({ length: m }, () => []);
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = idx[t + e], b = idx[t + (e + 1) % 3]; nbr[a].push(b); nbr[b].push(a); }
+  let edge = new Set();
+  for (const [k, c] of ec) if (c === 1) for (const v of k.split(',')) edge.add(+v);
+  for (let r = 0; r < 4; r++) { const nx = new Set(edge); for (const v of edge) for (const u of nbr[v]) nx.add(u); edge = nx; }
+  for (let v = 0; v < m; v++) {
+    const k = key(Math.floor(P[v * 3] / S), Math.floor(P[v * 3 + 1] / S), Math.floor(P[v * 3 + 2] / S));
+    let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(v);
+  }
+  const hide = new Set(), n = R.length / 3;
+  for (let i = 0; i < n; i++) {
+    if (part && part[i] > 0.5) continue;
+    const x = R[i * 3], y = R[i * 3 + 1], z = R[i * 3 + 2], cx = Math.floor(x / S), cy = Math.floor(y / S), cz = Math.floor(z / S);
+    let best = -1, bd = 0.025 * 0.025;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const a = grid.get(key(cx + dx, cy + dy, cz + dz)); if (!a) continue;
+      for (const v of a) { const d = (P[v * 3] - x) ** 2 + (P[v * 3 + 1] - y) ** 2 + (P[v * 3 + 2] - z) ** 2; if (d < bd) { bd = d; best = v; } }
+    }
+    if (best < 0 || edge.has(best)) continue;
+    const out = (P[best * 3] - x) * N[i * 3] + (P[best * 3 + 1] - y) * N[i * 3 + 1] + (P[best * 3 + 2] - z) * N[i * 3 + 2];
+    if (out > -0.002) hide.add(i);
+  }
+  return hide;
+}
+
 /** a cheap fingerprint of everything that moves the body */
 function bodyKey(human) {
   const B = human.active, mesh = B.mesh;
@@ -172,7 +208,9 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       ? new THREE.MeshBasicMaterial({ color: new THREE.Color(...c), wireframe: true, transparent: true, opacity: 0.35 })
       : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), roughness: 0.92, metalness: 0, side: THREE.FrontSide });
   };
-  const drop = (id) => { const o = meshes.get(id); if (o) { o.removeFromParent(); o.geometry.dispose(); meshes.delete(id); } };
+  const hides = new Map();
+  const applyHide = () => { const all = new Set(); for (const h of hides.values()) for (const i of h) all.add(i); human.active.setHidden?.(all); };
+  const drop = (id) => { const o = meshes.get(id); if (o) { o.removeFromParent(); o.geometry.dispose(); meshes.delete(id); } if (hides.delete(id)) applyHide(); };
   const onMesh = (m) => {
     const rest = m.space === 'rest';
     let o = meshes.get(m.id);
@@ -190,6 +228,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
         geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
         geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
         o = new THREE.SkinnedMesh(geo, material(col));
+        hides.set(m.id, coveredSkin(human, P, idx)); applyHide();
         const body = human.active.mesh;
         o.bind(body.skeleton, body.bindMatrix);
         body.parent.add(o);

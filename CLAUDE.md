@@ -11,17 +11,14 @@ onWear, the cards' "Try on" button, prepareTryOn). Everything in web/src/garment
 What stays live: the body, its controls, the photo upload groups, and the BODYSUIT (?suit=1 / human.setSuit /
 the lab's box). The notes on garments/ below describe the old, switched-off system.
 
-## Garment templates (the new system, web/src/templates/)
-One template per garment type (catalog.js), men first. `wearTemplate(human, TEMPLATES[id])` (build.js). kind 'skin'
-(skinwear.js): the garment IS the body's skin surface — torso and sleeves one continuous piece — pushed out per vertex
-in rest space (shares the body's attributes/skinning/CPU morphs like the bodysuit): `tight(y)` = bodysuit-close (chest,
-shoulders; small hollows spanned by a smoothed mean-radius field), loose parts hang on an upper-envelope field
-(+`flare`, `fall` from `fallFrom`), sleeves tight at the shoulder flying out to a tube by the hem; loose fabric
-relaxed (x/z only, outward only); clear of the underwear (suitGap). Edges (neckline, hem, sleeve hems) = per-vertex
-signed distance `wearCut`, fragments < 0 discarded. Skin it covers isn't drawn (materials.js: _hide > 0.9 discards).
-Landmarks from measureBody are posed: shifted to rest space by the torso's mean offset. MEASURE, DON'T EYEBALL:
-scratchpad tools measure the reference photos (SegFormer upper-clothes mask + ViTPose; local models in
-web/public/_tmp/models) and the render (exact magenta mask, keypoints from a shirtless render) in shoulder widths.
+## Clothes are SEWN in Blender (tools/blender/sew/), the way KNOWLEDGE.md §1 says
+(The old skin-pushed templates, web/src/templates/, were deleted.) With live.py running and the site on ?blender=1:
+`send.py -f tools/blender/sew/export_body.py` writes the site's rest body to ~/.3dg-sew; then headless
+`blender -b -P tools/blender/sew/tee.py` measures it, drafts the pattern (front/back + set-in sleeves, cap solved to the
+armhole), places the pieces round the body (arc length round draped cross-sections; above the armhole shrink-wrapped
++ smoothed), closes the seams (presew), relaxes every edge to its FLAT-PATTERN length (no creases baked in), welds and
+drapes (cloth sim, jersey) → ~/.3dg-sew/tee.obj; `send.py -f sew/load.py` (STATE['load']) streams it to the site, which
+rigs it like the body (surface-smoothed weights) and hides the skin it covers. sewlib.py = pieces, seams, sim helpers.
 
 ## Layout
 ```
