@@ -4,11 +4,9 @@ import os, subprocess, sys, time
 D = os.path.dirname(os.path.abspath(__file__))
 SEND = os.path.join(D, '..', 'send.py')
 STEPS = ['0_landmarks', '1a_pants_blockout', '1b_pants_shrinkwrap', '1c_pants_shape', '1d_pants_grab',
-         '1e_shirt_blockout', '1f_shirt_shape', '2a_multires',
-         '2_b1_sleeve_front', '2_b2_sleeve_back', '2_b3_elbow', '2_b3b_elbow_back', '2_b4_hem_front', '2_b4b_hem_back',
-         '2_b4c_hem_side', '2_b5_armpit', '2_p1_bunch_front', '2_p2_bunch_back', '2_p3_bunch_side', '2_p4_knee',
-         '2_p5_crotch', '3a_multires_up', '3_d1_shirt_front', '3_d2_shirt_back', '3_d3_shirt_side', '3_d4_pants_front',
-         '3_d5_pants_side', '3_d6_pocket', '3_d8_neckrib', '4a_finalize', '4_solidify']
+         '1e_shirt_blockout', '1f_shirt_shape', '2a_multires', '2a_folds',
+         '2_p4_knee', '3a_multires_up', '3_d1_shirt_front', '3_d2_shirt_back', '3_d3_shirt_side', '3_d4_pants_front',
+         '3_d5_pants_side', '4a_finalize', '4b_details', '4_solidify']
 start = sys.argv[1] if len(sys.argv) > 1 else STEPS[0]
 for s in STEPS[STEPS.index(start):]:
     t = time.time(); f = os.path.join(D, s + '.py')

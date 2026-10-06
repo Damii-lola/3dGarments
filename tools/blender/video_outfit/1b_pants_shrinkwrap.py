@@ -19,7 +19,11 @@ bm = bmesh.new(); bm.from_mesh(ob.data)
 zt = max(v.co.z for v in bm.verts); zb = min(v.co.z for v in bm.verts)
 snapped = 0
 for v in bm.verts:
-    if v.is_boundary and abs(v.co.x) < 0.04 and zb + 0.01 < v.co.z < zt - 0.005:
+    if not (v.is_boundary and abs(v.co.x) < 0.04 and zb + 0.01 < v.co.z): continue
+    # only the centre seam: its open edges run up/down; the waist edge's run sideways (snapping those pinched the
+    # waistband into a V at the centre front)
+    be = [e for e in v.link_edges if e.is_boundary]
+    if all(abs((e.other_vert(v).co - v.co).z) > abs((e.other_vert(v).co - v.co).x) for e in be):
         v.co.x = 0.0; snapped += 1
 bm.to_mesh(ob.data); bm.free()
 print('centre seam vertices snapped to x = 0:', snapped)

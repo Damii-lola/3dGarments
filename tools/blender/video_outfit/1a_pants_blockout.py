@@ -4,7 +4,7 @@ from mathutils import Vector
 b = body(); kb = b.data.shape_keys.key_blocks['site_rest']; part = b.data.attributes['_PART'].data
 P = [kb.data[i].co for i in range(len(kb.data))]
 skin = [i for i in range(len(P)) if part[i].value < 0.5]
-L = STATE['L']; crotch = L['crotch']; bottom = L['bottom']
+L = STATE['L']; crotch = L['groin']; bottom = L['bottom']   # the real crotch (see 0_landmarks)
 def slab(z, dz, side=1):
     return [P[i] for i in skin if abs(P[i].z - z) < dz and P[i].x * side > 0.0 and abs(P[i].x) < 0.3]
 def leg_at(z):                       # the +X leg's box at height z: centre x/y, half widths

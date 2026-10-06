@@ -61,32 +61,102 @@ with bpy.context.temp_override(window=win, screen=win.screen, area=area, region=
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.modifier_apply(modifier='Mirror'); bpy.ops.object.modifier_apply(modifier='Shrinkwrap'); bpy.ops.object.modifier_apply(modifier='Subdivision')
 # CREW NECKLINE (the video: inset the neck, then shape it round): cut away the faces above a crew line around the
-# neck — 6 cm low at the front, ~1 cm at the back — and put the new edge exactly on that line
+# base of the neck and put the new edge exactly on that line. MEASURED: the neck's own column (above the trapezius
+# slope, ±6.6 cm wide) gives the centre and width; the line sits at the base of the neck, lowest at the front (the
+# notch between the collarbones), highest at the back (the nape), and lies on the skin + 6 mm (the rib's offset)
 import math
-nb = 1.545
-ring = [P[i] for i in skin if abs(P[i].z - nb) < 0.01 and abs(P[i].x) < 0.09]
-ncy = (min(p.y for p in ring) + max(p.y for p in ring)) / 2
-nrx = max(p.x for p in ring) + 0.014
-nryf = ncy - min(p.y for p in ring) + 0.014; nryb = max(p.y for p in ring) - ncy + 0.014
-def crew(th):
+from mathutils.bvhtree import BVHTree
+EDG = [(e.vertices[0], e.vertices[1]) for e in b.data.edges]
+def body_slice(z, xmax):
+    out = []
+    for i, j in EDG:
+        a_, c_ = P[i], P[j]
+        if (a_.z - z) * (c_.z - z) <= 0 and a_.z != c_.z:
+            t = (z - a_.z) / (c_.z - a_.z); x = a_.x + (c_.x - a_.x) * t
+            if abs(x) < xmax: out.append((x, a_.y + (c_.y - a_.y) * t))
+    return out
+col = body_slice(1.60, 0.12)                        # the neck column, clear of the trapezius
+ncy = (min(p[1] for p in col) + max(p[1] for p in col)) / 2
+nb = 1.585                                          # side height: where the neck meets the trapezius
+ZF, ZB = 1.515, 1.600                               # front (collarbone notch) and back (nape)
+rest_bvh = BVHTree.FromPolygons(P, [list(f.vertices) for f in b.data.polygons])
+def crew_z(th):
     c = math.cos(th)
-    ry = nryf if c > 0 else nryb
-    z = nb + 0.008 * (1 - abs(c)) - 0.062 * max(0.0, c) ** 1.6 - 0.01 * max(0.0, -c) ** 2
-    return Vector((math.sin(th) * nrx, ncy - c * ry, z))
+    return nb - (nb - ZF) * max(0.0, c) ** 0.9 + (ZB - nb) * max(0.0, -c) ** 2   # round at the front (a crew, not a V)
+def crew(th):
+    """the point of the neckline at angle th (0 = front) around the neck's axis: on the skin + 6 mm"""
+    z = crew_z(th); d = Vector((math.sin(th), -math.cos(th), 0.0))
+    o = Vector((0.0, ncy, z))
+    # from the neck's axis outwards, the LAST time the ray leaves the body within 10 cm: the outer skin (the mannequin's
+    # head shell dips inside the neck at the back, and its surface comes first)
+    last, s_ = None, 0.0
+    while s_ < 0.10:
+        hit = rest_bvh.ray_cast(o + d * (s_ + 1e-4), d, 0.10 - s_)
+        if hit[0] is None: break
+        r_ = (hit[0] - o).length
+        if hit[1].dot(d) > 0: last = hit[0]
+        s_ = r_ + 1e-4
+    if last is None: return o + d * 0.07
+    return last + d * 0.007
+def angle(p): return math.atan2(p.x, -(p.y - ncy))
+# seen from the front a crew neck is a U: an ellipse through the side points (half width XS at height nb) down to ZF
+XS = max(abs(crew(a_).x) for a_ in (1.45, 1.57, 1.69))
+def ell_z(x, front):
+    u = min(1.0, abs(x) / XS); k = (1 - u ** 3) ** (1 / 3)      # superellipse: flat-bottomed U
+    return nb - (nb - ZF) * k if front else nb + (ZB - nb) * k
 def above(p):
-    th = math.atan2(p.x, -(p.y - ncy))
-    q = crew(th)
-    r = math.hypot(p.x / nrx, (p.y - ncy) / (nryf if p.y < ncy else nryb))
-    return p.z > q.z and r < 1.6
+    return abs(p.x) < 0.2 and p.z > crew_z(angle(p)) - 0.004 and p.z > 1.45
 bm = bmesh.new(); bm.from_mesh(ob.data)
-bmesh.ops.delete(bm, geom=[f for f in bm.faces if above(f.calc_center_median())], context='FACES')
+# CUT EXACTLY ALONG THE CURVE (deleting whole faces left a stair-step edge whose neighbours folded into notches): split
+# every edge the crew line crosses at the crossing, join the new points across each face, then drop what's above
+def f_(p): return (p.z - ell_z(p.x, p.y < ncy)) if (abs(p.x) < XS + 0.03 and p.z > 1.45) else -1.0
+cross = [e for e in bm.edges if f_(e.verts[0].co) * f_(e.verts[1].co) < 0]
+newv = []
+for e in cross:
+    a_, c_ = e.verts
+    fa, fc = f_(a_.co), f_(c_.co)
+    t = fa / (fa - fc)
+    ne, nv = bmesh.utils.edge_split(e, a_, t)
+    newv.append(nv)
+# snap near-zero vertices onto the line as well (an existing vertex already on it)
+nset = set(newv)
+for f in list(bm.faces):
+    on = [v for v in f.verts if v in nset]
+    if len(on) == 2:
+        bmesh.ops.connect_verts(bm, verts=on)
+bmesh.ops.delete(bm, geom=[f for f in bm.faces if f_(f.calc_center_median()) > 0], context='FACES')
 bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+# tiny slivers next to the cut: merge points closer than 4 mm along the new edge
+bmesh.ops.remove_doubles(bm, verts=[v for v in bm.verts if v.is_boundary and v.co.z > 1.45], dist=0.004)
+# the new edge: walk its loop in order and spread its vertices EVENLY along the crew line (snapping each vertex by its
+# own angle bunched them into corners)
 edge = [v for v in bm.verts if v.is_boundary and v.co.z > 1.42 and abs(v.co.x) < 0.2]
-for v in edge:
-    v.co = crew(math.atan2(v.co.x, -(v.co.y - ncy)))
-for it in range(3):                          # even out the ring just under the new edge
-    bmesh.ops.smooth_vert(bm, verts=list({e.other_vert(v) for v in edge for e in v.link_edges if not e.other_vert(v).is_boundary}), factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+eset = set(edge); loop = [min(edge, key=lambda v: abs(angle(v.co)))]
+while True:
+    nxt = [e.other_vert(loop[-1]) for e in loop[-1].link_edges if e.is_boundary and e.other_vert(loop[-1]) in eset]
+    nxt = [v for v in nxt if v not in loop]
+    if not nxt: break
+    loop.append(nxt[0] if len(loop) > 1 or angle(nxt[0].co) > 0 or len(nxt) == 1 else nxt[-1])
+# loop direction: make the angle increase
+if len(loop) > 2 and math.sin(angle(loop[1].co) - angle(loop[0].co)) < 0: loop = [loop[0]] + loop[1:][::-1]
+n = len(loop)
+# the skin under it is lumpy (trapezius, nape): smooth the edge's distance from the neck's axis along the loop, but
+# never inside skin + 6 mm (smoothing the points themselves pulled the tight curve at the nape into the body)
+ths = [2 * math.pi * k / n for k in range(n)]
+def radial(th):
+    p_ = crew(th); return math.hypot(p_.x, p_.y - ncy)
+need = [radial(t) for t in ths]
+rad = list(need)
+for it in range(6):
+    rad = [max(need[k], (rad[k - 2] + rad[k - 1] * 2 + rad[k] * 3 + rad[(k + 1) % n] * 2 + rad[(k + 2) % n]) / 9) for k in range(n)]
+for v, th, r_ in zip(loop, ths, rad):
+    x_ = math.sin(th) * r_
+    v.co = Vector((x_, ncy - math.cos(th) * r_, ell_z(x_, math.cos(th) > 0)))
+for it in range(4):                          # even out the rings just under the new edge
+    ring = list({e.other_vert(v) for v in loop for e in v.link_edges if not e.other_vert(v).is_boundary})
+    bmesh.ops.smooth_vert(bm, verts=ring, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
 bm.to_mesh(ob.data); bm.free()
+print('neckline:', n, 'edge vertices, half width', round(max(abs(crew(t).x) for t in (1.3, 1.57, 1.8)), 3))
 STATE['crew'] = dict(nb=nb, ncy=ncy)
 STATE['shirt'] = dict(hem=hem, S=tuple(S), E=tuple(E), W=tuple(W))
 print('sweatshirt blockout', len(ob.data.vertices), 'verts; hem', round(hem, 3), 'chest half width', round(Wt, 3))

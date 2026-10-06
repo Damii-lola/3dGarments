@@ -5,7 +5,7 @@ from mathutils.bvhtree import BVHTree
 ob = bpy.data.objects['Pants']; b = body()
 dg = bpy.context.evaluated_depsgraph_get()
 bvh = BVHTree.FromObject(b, dg)
-L = STATE['L']; ankle = L['bottom'] + 0.075; crotch = L['crotch']
+L = STATE['L']; ankle = L['bottom'] + 0.075; crotch = L['groin']   # the real crotch (see 0_landmarks)
 top = max(v.co.z for v in ob.data.vertices)
 def sm(a, c, x):
     t = max(0.0, min(1.0, (x - a) / (c - a))); return t * t * (3 - 2 * t)
@@ -34,6 +34,11 @@ bm = bmesh.new(); bm.from_mesh(me)
 # all three axes (z too: else the knee's and shin's bony dents stay as horizontal creases), the waist and ankle
 # edges stay where they are; only a minimum distance is enforced, so the fabric bridges the body's hollows
 inner = [v for v in bm.verts if not (v.is_boundary and v.index not in seam)]
+# the waist edge's corners on the centre seam (front and back) stay put: smoothed, they have neighbours only below them
+# and sink (a V notch at the centre of the waistband)
+corner = {v for v in bm.verts if v.index in seam and v.co.z > crotch + 0.2
+          and any(e.is_boundary and abs((e.other_vert(v).co - v.co).x) > abs((e.other_vert(v).co - v.co).z) for e in v.link_edges)}
+inner = [v for v in inner if v not in corner]
 for it in range(24):
     bmesh.ops.smooth_vert(bm, verts=inner, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True,
                           mirror_clip_x=True, clip_dist=0.001)
@@ -101,7 +106,7 @@ for k in range(nz):
 def zsmooth(rows, r):
     return [[sum(rows[max(0, min(nz - 1, k + d))][j] for d in range(-r, r + 1)) / (2 * r + 1) for j in range(len(rows[0]))] for k in range(nz)]
 Rt = [[max(Rt[max(0, min(nz - 1, k + d))][j] for d in range(-3, 4)) for j in range(NA)] for k in range(nz)]   # upper envelope
-for it in range(6): Rt = zsmooth(Rt, 4)   # wide: the knee's bump must not leave a ledge
+for it in range(10): Rt = zsmooth(Rt, 5)   # wide: the knee's bump must not leave a ledge
 Rt = [[(r[(j - 1) % NA] + 2 * r[j] + r[(j + 1) % NA]) / 4 for j in range(NA)] for r in Rt]
 C = zsmooth(C, 4)
 def look_up(z, a):
@@ -114,7 +119,7 @@ def tube_at(z, a, sx):
     cx, cy, r = look_up(z, a)
     # the inseam side sits closer than the outside (real trousers: the ease goes to the front, back and outer leg),
     # so the two legs keep a gap between them instead of pressing together
-    r += offset(z) * (1 - 0.65 * max(0.0, -math.cos(a)) ** 2)
+    r += offset(z) * (1 - 0.82 * max(0.0, -math.cos(a)) ** 1.5)
     return Vector((sx * (cx + r * math.cos(a)), cy + r * math.sin(a), z))
 def param(co):
     cx, cy, _ = look_up(co.z, 0.0)
@@ -165,7 +170,7 @@ def hull_y(hp, x, front):                     # the outline's front (or back) y 
 HH = {}
 def bridge():
     for v in bm.verts:
-        if not (crotch - 0.07 < v.co.z < top - 0.03) or abs(v.co.x) > 0.08: continue
+        if not (crotch - 0.07 < v.co.z < top - 0.03) or abs(v.co.x) > 0.09: continue
         zk = round(v.co.z / 0.005) * 0.005
         if zk not in HH:
             hp = hip_hull(zk); HH[zk] = (hp, sum(p[1] for p in hp) / len(hp))
@@ -174,7 +179,7 @@ def bridge():
         hy = hull_y(hp, v.co.x, front)
         if hy is None: continue
         want = hy - offset(v.co.z) if front else hy + offset(v.co.z)
-        w = sm(crotch - 0.07, crotch + 0.03, v.co.z) * sm(0.08, 0.04, abs(v.co.x))
+        w = sm(crotch - 0.07, crotch - 0.01, v.co.z) * sm(0.09, 0.04, abs(v.co.x))   # across the bulge and the touching thighs below it
         if (front and v.co.y > want) or (not front and v.co.y < want):
             v.co.y += (want - v.co.y) * w
 bridge()
@@ -182,10 +187,11 @@ bridge()
 # them, no room for two layers of fabric, so the legs split below it (a Grab pull: down at the centre, fading out
 # 7 cm to the sides and 15 cm up and down)
 low = min(v.co.z for v in bm.verts if v.index in seam)
-drop = low - (crotch - 0.035)
+drop = low - (crotch - 0.015)          # the seam 1.5 cm under the groin (ease)
 if drop > 0:
     for v in bm.verts:
-        fx = sm(0.07, 0.0, abs(v.co.x)); fz = sm(low + 0.17, low, v.co.z) * sm(low - 0.15, low, v.co.z)
+        fx = math.cos(min(1.0, abs(v.co.x) / 0.11) * math.pi / 2) ** 1.5    # a wide round arch, not a tab
+        fz = sm(low + 0.20, low, v.co.z) * sm(low - 0.15, low, v.co.z)
         v.co.z -= drop * fx * fz
 print('crotch point lowered by', round(drop, 3))
 for it in range(6):
@@ -208,8 +214,8 @@ for it in range(20):
 # each leg stays on its own side of the centre: the two legs touch instead of passing into each other
 def centre_clamp():
     for v in bm.verts:
-        if v.co.z < crotch - 0.02 and v.index not in seam and abs(v.co.x) < 0.003:
-            v.co.x = math.copysign(0.003, v.co.x if v.co.x else 1)
+        if v.co.z < crotch - 0.02 and v.index not in seam and abs(v.co.x) < 0.0012:
+            v.co.x = math.copysign(0.0012, v.co.x if v.co.x else 1)
 # NOTHING OF THE BODY SHOWS: every point at least 5 mm outside the skin (the inner thigh next to the crotch is only
 # 1.4 cm from the centre), the points around a pushed one smoothed with it, three rounds
 MIN = 0.005
@@ -242,7 +248,14 @@ print('pushed out of the body in the last round:', len(push_out(bm.verts)))
 # only the centre seam's own edge lies on x = 0: an interior point there (mirror clipping snaps anything within 1 mm)
 # gets welded to its mirror image when the Mirror is applied, leaving a broken fin with a hole at the crotch
 for v in bm.verts:
-    if not v.is_boundary and v.co.x < 0.0035: v.co.x = 0.0035
+    # between the thighs, where they touch, the two legs' fabric presses together: close the slit (it showed the
+    # background and the inside through it as specks)
+    if v.is_boundary and abs(v.co.x) < 0.012 and v.co.z > ankle + 0.1:
+        # the centre seam's open edge goes back exactly onto the mirror plane (drifted ~1 mm, the Mirror didn't weld it:
+        # a split at the crotch); the waist edge's ends too
+        v.co.x = 0.0; continue
+    if v.co.z < crotch - 0.01 and abs(v.co.x) < 0.009: v.co.x = math.copysign(0.0012, v.co.x or 1)
+    if not v.is_boundary and v.co.x < 0.0012 and v.co.x >= 0: v.co.x = 0.0012   # 2.4 mm from its mirror: > the 1 mm merge distance
 bm.to_mesh(me); bm.free()
 for p in me.polygons: p.use_smooth = True
 me.update()

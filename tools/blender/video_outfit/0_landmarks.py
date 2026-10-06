@@ -27,7 +27,20 @@ while z > bottom + 0.06:
         cx = sum(p.x for p in r) / len(r); cy = sum(p.y for p in r) / len(r)
         leg.append((round(z, 3), round(cx, 3), round(cy, 3), round(max(p.x for p in r) - min(p.x for p in r), 3), round(max(p.y for p in r) - min(p.y for p in r), 3)))
     z -= 0.04
-STATE['L'] = dict(top=top, bottom=bottom, crotch=crotch, waist=waist, hip=hip, leg=leg)
+# GROIN (the real crotch, where the trousers' crotch seam goes): on this body the thighs touch each other from the
+# groin down ~15 cm, so the lowest skin between the legs (above) is inner thigh. The groin is the lowest height at
+# which a ray along the centre line still meets the front of the body ahead of the back (front and back meet there)
+from mathutils.bvhtree import BVHTree
+from mathutils import Vector
+_bvh = BVHTree.FromPolygons(P, [list(f.vertices) for f in b.data.polygons])
+groin = None; zz = 1.0
+while zz > crotch:
+    h = _bvh.ray_cast(Vector((0.0, -1.0, zz)), Vector((0.0, 1.0, 0.0)))
+    if h[0] is None or h[0].y > -0.03: groin = zz + 0.005; break
+    zz -= 0.0025
+groin = groin or crotch
+STATE['L'] = dict(top=top, bottom=bottom, crotch=crotch, groin=groin, waist=waist, hip=hip, leg=leg)
+print('groin (real crotch)', round(groin, 3), 'thighs part at', round(crotch, 3))
 print(json.dumps(dict(height=round(top - bottom, 3), crotch=round(crotch, 3), waist=waist, hip=hip)))
 for l in leg: print(l)
 win, area, region = view3d(); sp = area.spaces.active

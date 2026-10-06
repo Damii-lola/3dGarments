@@ -47,13 +47,52 @@ function restPositions(human) {
   return out;
 }
 
-/** skin a rest-space garment like the body under it: each vertex blends the bone weights of the 6 nearest body
- *  vertices (rest positions, 2 cm hash grid; inverse-square distance), keeps the 4 strongest bones, and the weights
- *  are then smoothed across the garment's own surface (one nearest vertex jumps between the arm and the side at the
- *  armpit and tears the fabric there when the arm moves) */
+/** the body's bone weights smoothed over the body's own surface (~5 cm): a garment stands off the skin, and the
+ *  skin's own weights change from torso to arm within a few cm — copied as they are, the fabric folds into a groove at
+ *  the shoulder when the arm comes down from the T-pose. Smoothed along the body's surface (never through space), so
+ *  the two thighs, close across the gap but far apart on the skin, never mix. */
+function softBodyWeights(human, rounds = 14) {
+  const g = human.active.mesh.geometry, n = g.attributes.position.count;
+  const BI = g.attributes.skinIndex.array, BW = g.attributes.skinWeight.array, idx = g.index.array;
+  const P = g.attributes.position.array;
+  // welded adjacency: split vertices (UV seams) at the same place count as one
+  const weld = new Int32Array(n), seen = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = `${Math.round(P[i * 3] * 2e4)},${Math.round(P[i * 3 + 1] * 2e4)},${Math.round(P[i * 3 + 2] * 2e4)}`;
+    const j = seen.get(k); if (j === undefined) { seen.set(k, i); weld[i] = i; } else weld[i] = j;
+  }
+  const nb = Array.from({ length: n }, () => new Set());
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = weld[idx[t]], b = weld[idx[t + 1]], c = weld[idx[t + 2]];
+    nb[a].add(b); nb[a].add(c); nb[b].add(a); nb[b].add(c); nb[c].add(a); nb[c].add(b);
+  }
+  let cur = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const m = new Map();
+    for (let k = 0; k < 4; k++) { const w = BW[i * 4 + k]; if (w > 0) m.set(BI[i * 4 + k], (m.get(BI[i * 4 + k]) || 0) + w); }
+    cur[i] = m;
+  }
+  for (let it = 0; it < rounds; it++) {
+    const nxt = new Array(n);
+    for (let i = 0; i < n; i++) {
+      if (weld[i] !== i) continue;
+      const ns = nb[i]; if (!ns.size) { nxt[i] = cur[i]; continue; }
+      const o = new Map(); for (const [b, x] of cur[i]) o.set(b, x * 0.5);
+      const f = 0.5 / ns.size;
+      for (const u of ns) for (const [b, x] of cur[u]) o.set(b, (o.get(b) || 0) + x * f);
+      nxt[i] = o;
+    }
+    for (let i = 0; i < n; i++) if (weld[i] !== i) nxt[i] = nxt[weld[i]];
+    cur = nxt;
+  }
+  return cur;
+}
+
+/** skin a rest-space garment like the body under it: each vertex blends the (surface-smoothed) bone weights of the
+ *  6 nearest body vertices (rest positions, 2 cm hash grid; inverse-square distance) and keeps the 4 strongest bones */
 const K = 6;
-function skinLikeBody(human, P, idx) {
-  const mesh = human.active.mesh, g = mesh.geometry;
+function skinLikeBody(human, P) {
+  const g = human.active.mesh.geometry;
   const R = restPositions(human), n = R.length / 3, S = 0.02, grid = new Map();
   const key = (x, y, z) => `${x},${y},${z}`;
   const part = g.attributes._part?.array;
@@ -62,9 +101,8 @@ function skinLikeBody(human, P, idx) {
     const k = key(Math.floor(R[i * 3] / S), Math.floor(R[i * 3 + 1] / S), Math.floor(R[i * 3 + 2] / S));
     let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(i);
   }
-  const BI = g.attributes.skinIndex.array, BW = g.attributes.skinWeight.array;
-  const m = P.length / 3;
-  const W = new Array(m);                                           // per vertex: Map bone → weight
+  const SW = softBodyWeights(human);
+  const m = P.length / 3, si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
   const bi = new Int32Array(K), bd = new Float64Array(K);
   for (let v = 0; v < m; v++) {
     const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
@@ -75,7 +113,11 @@ function skinLikeBody(human, P, idx) {
         if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue;
         const a = grid.get(key(cx + dx, cy + dy, cz + dz)); if (!a) continue;
         for (const i of a) {
-          const d = (R[i * 3] - x) ** 2 + (R[i * 3 + 1] - y) ** 2 + (R[i * 3 + 2] - z) ** 2;
+          // only the body on the garment vertex's own side of the centre line: where the trouser legs press together
+          // between the thighs, the other thigh is nearer than 1 cm, and its weights pulled the fabric across
+          const bx = R[i * 3];
+          if ((x > 0.0005 && bx < -0.003) || (x < -0.0005 && bx > 0.003)) continue;
+          const d = (bx - x) ** 2 + (R[i * 3 + 1] - y) ** 2 + (R[i * 3 + 2] - z) ** 2;
           if (d >= bd[K - 1]) continue;
           let j = K - 1; while (j > 0 && bd[j - 1] > d) { bd[j] = bd[j - 1]; bi[j] = bi[j - 1]; j--; }
           bd[j] = d; bi[j] = i;
@@ -88,35 +130,9 @@ function skinLikeBody(human, P, idx) {
     for (let j = 0; j < K; j++) {
       const i = bi[j]; if (i < 0) continue;
       const f = 1 / (bd[j] + 1e-6);
-      for (let k = 0; k < 4; k++) { const b = BI[i * 4 + k], wt = BW[i * 4 + k]; if (wt > 0) w.set(b, (w.get(b) || 0) + wt * f); }
+      for (const [b, x] of SW[i]) w.set(b, (w.get(b) || 0) + x * f);
     }
-    W[v] = w;
-  }
-  // smooth over the garment's edges (3 rounds, half own / half neighbours' mean)
-  if (idx) {
-    const nb = Array.from({ length: m }, () => new Set());
-    for (let t = 0; t < idx.length; t += 3) {
-      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
-      nb[a].add(b); nb[a].add(c); nb[b].add(a); nb[b].add(c); nb[c].add(a); nb[c].add(b);
-    }
-    const norm = (w) => { let s = 0; for (const x of w.values()) s += x; const o = new Map(); for (const [b, x] of w) o.set(b, x / (s || 1)); return o; };
-    let cur = W.map(norm);
-    for (let it = 0; it < 3; it++) {
-      const nxt = new Array(m);
-      for (let v = 0; v < m; v++) {
-        const o = new Map(); for (const [b, x] of cur[v]) o.set(b, x * 0.5);
-        const ns = nb[v]; if (!ns.size) { nxt[v] = cur[v]; continue; }
-        const f = 0.5 / ns.size;
-        for (const u of ns) for (const [b, x] of cur[u]) o.set(b, (o.get(b) || 0) + x * f);
-        nxt[v] = o;
-      }
-      cur = nxt;
-    }
-    for (let v = 0; v < m; v++) W[v] = cur[v];
-  }
-  const si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
-  for (let v = 0; v < m; v++) {
-    const top = [...W[v]].sort((p, q) => q[1] - p[1]).slice(0, 4);
+    const top = [...w].sort((p, q) => q[1] - p[1]).slice(0, 4);
     const s = top.reduce((t, e) => t + e[1], 0) || 1;
     top.forEach(([b, x], k) => { si[v * 4 + k] = b; sw[v * 4 + k] = x / s; });
   }
@@ -154,7 +170,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
     const c = m.color || [0.92, 0.92, 0.9];
     return m.style === 'wire'
       ? new THREE.MeshBasicMaterial({ color: new THREE.Color(...c), wireframe: true, transparent: true, opacity: 0.35 })
-      : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+      : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), roughness: 0.92, metalness: 0, side: THREE.FrontSide });
   };
   const drop = (id) => { const o = meshes.get(id); if (o) { o.removeFromParent(); o.geometry.dispose(); meshes.delete(id); } };
   const onMesh = (m) => {
@@ -170,7 +186,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       geo.setIndex(new THREE.BufferAttribute(idx, 1));
       if (rest) {
         // modelled on the rest-pose body: rigged like the body under it, so it wears the site's pose
-        const { si, sw } = skinLikeBody(human, P, idx);
+        const { si, sw } = skinLikeBody(human, P);
         geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
         geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
         o = new THREE.SkinnedMesh(geo, material(col));
@@ -192,7 +208,7 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       a.array.set(P);
       a.needsUpdate = true;
       if (rest) {
-        const { si, sw } = skinLikeBody(human, P, o.geometry.index.array);
+        const { si, sw } = skinLikeBody(human, P);
         o.geometry.attributes.skinIndex.array.set(si); o.geometry.attributes.skinIndex.needsUpdate = true;
         o.geometry.attributes.skinWeight.array.set(sw); o.geometry.attributes.skinWeight.needsUpdate = true;
       }
