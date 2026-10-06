@@ -71,7 +71,7 @@ def import_models():
     bpy.context.scene.gravity = (0, 0, -9.81)
 
 
-STATE = {'sex': None, 'body_version': 0}
+STATE = {'sex': None, 'body_version': 0, 'space': 'rest'}
 
 
 def body(sex=None):
@@ -96,9 +96,12 @@ def set_active(sex):
             b.modifiers.remove(col)
 
 
-def apply_site_body(sex, pos):
-    """The site's body as it stands (world positions, app coords) → shape key 'site' on the Blender body, with the
-    armature muted (the positions are already posed). Same vertex order, so it is an exact copy."""
+def apply_site_body(sex, pos, rest=None):
+    """The site's body → two shape keys on the Blender body (same vertices, same order: exact copies):
+    'site'      = as it stands on screen (world positions: pose, height, every slider);
+    'site_rest' = the same shape in the rig's rest pose (T-pose male / A-pose female; every slider, no pose, mesh space).
+    STATE['space'] picks which one is shown and modelled on: 'rest' (default, like sculpting in T-pose: the site rigs
+    the garment to its skeleton, so it follows any pose) or 'posed'. The armature is muted: the keys are final."""
     set_active(sex)
     b = body(sex)
     me = b.data
@@ -107,22 +110,36 @@ def apply_site_body(sex, pos):
         raise ValueError(f'site sent {len(pos) // 3} vertices, the {sex} body has {n}')
     if me.shape_keys is None:
         b.shape_key_add(name='Basis')
-    key = me.shape_keys.key_blocks.get('site') or b.shape_key_add(name='site', from_mix=False)
     inv = b.matrix_world.inverted()
-    co = array('f', [0.0]) * (n * 3)
-    for i in range(n):
-        v = inv @ Vector(to_blender(pos[i * 3:i * 3 + 3]))
-        co[i * 3], co[i * 3 + 1], co[i * 3 + 2] = v
-    key.data.foreach_set('co', co)
-    for k in me.shape_keys.key_blocks:
-        k.value = 1.0 if k.name == 'site' else 0.0
-    key.value = 1.0
-    me.shape_keys.use_relative = True
+    for name, src in (('site', pos), ('site_rest', rest)):
+        if src is None:
+            continue
+        key = me.shape_keys.key_blocks.get(name) or b.shape_key_add(name=name, from_mix=False)
+        co = array('f', [0.0]) * (n * 3)
+        for i in range(n):
+            v = inv @ Vector(to_blender(src[i * 3:i * 3 + 3]))
+            co[i * 3], co[i * 3 + 1], co[i * 3 + 2] = v
+        key.data.foreach_set('co', co)
+    show_space(STATE['space'], b)
     for m in b.modifiers:
         if m.type == 'ARMATURE':
             m.show_viewport = m.show_render = False
     me.update()
     STATE['body_version'] += 1
+
+
+def show_space(space, b=None):
+    """'rest' or 'posed': which of the site's two bodies Blender shows and models on"""
+    STATE['space'] = space
+    b = b or body()
+    ks = b.data.shape_keys
+    if not ks:
+        return
+    want = 'site_rest' if space == 'rest' and ks.key_blocks.get('site_rest') else 'site'
+    for k in ks.key_blocks:
+        k.value = 1.0 if k.name == want else 0.0
+    ks.use_relative = True
+    b.data.update()
 
 
 # ---------------------------------------------------------------- garments → the site
@@ -148,6 +165,7 @@ def garment_payload(ob, with_topology):
             col = ob.get('color') or (ob.active_material.diffuse_color[:3] if ob.active_material else (0.92, 0.92, 0.9))
             msg['color'] = [float(c) for c in col]
             msg['style'] = ob.get('style', 'cloth')
+        msg['space'] = STATE['space']            # 'rest': the site rigs it to its skeleton; 'posed': drawn as is
         return msg
     finally:
         ev.to_mesh_clear()
@@ -317,7 +335,11 @@ class Server:
         if t == 'body' and c.role == 'site':
             pos = array('f')
             pos.frombytes(base64.b64decode(m['pos']))
-            apply_site_body(m['sex'], pos)
+            rest = None
+            if m.get('rest'):
+                rest = array('f')
+                rest.frombytes(base64.b64decode(m['rest']))
+            apply_site_body(m['sex'], pos, rest)
             c.send({'t': 'status', 'msg': f'body received: {m["sex"]}, {len(pos) // 3} vertices'})
             self.push()                                     # anything built on the body follows it
             for o in self.clients:
@@ -392,13 +414,135 @@ def new_garment(name, mesh_data=None, color=(0.92, 0.92, 0.9)):
     return ob
 
 
+def view3d():
+    """(window, area, region) of the 3D viewport (UI mode): what sculpt brushes and the importer need as context"""
+    for win in bpy.context.window_manager.windows:
+        for area in win.screen.areas:
+            if area.type == 'VIEW_3D':
+                return win, area, next(r for r in area.regions if r.type == 'WINDOW')
+    return None, None, None
+
+
+def _start_ui():
+    """UI mode: runs once the window exists (a -P script runs before it, without a window context)"""
+    global SERVER
+    win, area, region = view3d()
+    with bpy.context.temp_override(window=win, area=area, region=region):
+        for o in list(bpy.data.objects):            # the startup scene's cube, light, camera
+            bpy.data.objects.remove(o)
+        import_models()
+        set_active('male')
+        sp = area.spaces.active
+        sp.shading.type = 'SOLID'
+        sp.shading.light = 'MATCAP'                 # as in the video: MatCap, garments coloured by object
+        sp.shading.color_type = 'OBJECT'
+    SERVER = Server()
+    SERVER.ns.update(view3d=view3d, close_splash=close_splash, look=look, sculpt_drag=sculpt_drag,
+                     object_mode=object_mode, show_space=show_space)
+    close_splash()
+    bpy.app.timers.register(lambda: (SERVER.poll(0), 0.05)[1], persistent=True)
+    return None
+
+
+# ---------------------------------------------------------------- sculpting with real brushes (UI mode)
+# Blender 4.5's replayed strokes (sculpt.brush_stroke(stroke=[...])) run but change nothing in this build; real mouse
+# input does. With --enable-event-simulate, Window.event_simulate feeds the event loop exactly what a hand on a mouse
+# would: press, drag, release, with Ctrl (subtract) / Shift (smooth). Events run after the exec that queued them
+# returns: the control client waits (send.py --wait-idle) before the next step.
+def close_splash():
+    bpy.context.preferences.view.show_splash = False
+    win, area, region = view3d()
+    for v in ('PRESS', 'RELEASE'):
+        win.event_simulate(type='ESC', value=v, x=region.x + 20, y=region.y + 20)
+
+
+def look(target, direction=(0, -1, 0), distance=1.2):
+    """point the 3D view at `target` (Blender coords) from `direction` (default: from the front, -Y), orthographic
+    off, so brush strokes land where a sculptor looking at that spot would put them"""
+    import mathutils
+    win, area, region = view3d()
+    rv3d = area.spaces.active.region_3d
+    d = Vector(direction).normalized()
+    rv3d.view_perspective = 'PERSP'
+    rv3d.view_location = Vector(target)
+    rv3d.view_rotation = (-d).to_track_quat('-Z', 'Y')
+    rv3d.view_distance = distance
+    rv3d.update()
+
+
+def sculpt_drag(ob, brush, points, radius=50, strength=None, ctrl=False, shift=False, stabilize=None, subdiv=None):
+    """one brush stroke on `ob` along `points` (Blender world coords, on or near its surface): the object goes into
+    Sculpt mode, the brush (an Essentials asset: 'Grab', 'Draw', 'Crease Polish', 'Clay Strips', 'Smooth', …) is
+    picked with the given radius (px) / strength, and a mouse drag through the projected points is queued"""
+    from bpy_extras.view3d_utils import location_3d_to_region_2d
+    win, area, region = view3d()
+    rv3d = area.spaces.active.region_3d
+    with bpy.context.temp_override(window=win, screen=win.screen, area=area, region=region):
+        if bpy.context.mode != 'OBJECT' and bpy.context.active_object is not ob:
+            bpy.ops.object.mode_set(mode='OBJECT')
+        for x in bpy.context.view_layer.objects:
+            x.select_set(x == ob)
+        bpy.context.view_layer.objects.active = ob
+        if bpy.context.mode != 'SCULPT':
+            bpy.ops.object.mode_set(mode='SCULPT')
+        bpy.ops.brush.asset_activate(asset_library_type='ESSENTIALS',
+                                     relative_asset_identifier=f'brushes/essentials_brushes-mesh_sculpt.blend/Brush/{brush}')
+        bpy.ops.wm.tool_set_by_id(name='builtin.brush')
+        ts = bpy.context.tool_settings
+        ups = ts.unified_paint_settings
+        ups.size = int(radius)
+        br = ts.sculpt.brush
+        if strength is not None:
+            if ups.use_unified_strength:
+                ups.strength = strength
+            br.strength = strength
+        if stabilize is not None:
+            br.use_smooth_stroke = bool(stabilize)
+    pts = []
+    for p in points:
+        q = location_3d_to_region_2d(region, rv3d, Vector(p))
+        if q is not None and 0 <= q.x < region.width and 0 <= q.y < region.height:
+            pts.append((int(region.x + q.x), int(region.y + q.y)))
+    if len(pts) < 2:
+        return 0
+    ev = dict(ctrl=ctrl, shift=shift)
+    if ctrl:
+        win.event_simulate(type='LEFT_CTRL', value='PRESS', x=pts[0][0], y=pts[0][1])
+    if shift:
+        win.event_simulate(type='LEFT_SHIFT', value='PRESS', x=pts[0][0], y=pts[0][1])
+    win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=pts[0][0], y=pts[0][1], **ev)
+    win.event_simulate(type='LEFTMOUSE', value='PRESS', x=pts[0][0], y=pts[0][1], **ev)
+    # in-between samples every ~4 px, like a real drag
+    last = pts[0]
+    for q in pts[1:]:
+        k = max(1, int(max(abs(q[0] - last[0]), abs(q[1] - last[1])) / 4))
+        for j in range(1, k + 1):
+            x = last[0] + (q[0] - last[0]) * j // k
+            y = last[1] + (q[1] - last[1]) * j // k
+            win.event_simulate(type='MOUSEMOVE', value='NOTHING', x=x, y=y, **ev)
+        last = q
+    win.event_simulate(type='LEFTMOUSE', value='RELEASE', x=last[0], y=last[1], **ev)
+    if shift:
+        win.event_simulate(type='LEFT_SHIFT', value='RELEASE', x=last[0], y=last[1])
+    if ctrl:
+        win.event_simulate(type='LEFT_CTRL', value='RELEASE', x=last[0], y=last[1])
+    return len(pts)
+
+
+def object_mode():
+    win, area, region = view3d()
+    with bpy.context.temp_override(window=win, screen=win.screen, area=area, region=region):
+        if bpy.context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+
 SERVER = None
 if __name__ == '__main__':
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    import_models()
-    set_active('male')
-    SERVER = Server()
     if bpy.app.background:
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        import_models()
+        set_active('male')
+        SERVER = Server()
         SERVER.serve()
     else:
-        bpy.app.timers.register(lambda: (SERVER.poll(0), 0.05)[1], persistent=True)
+        bpy.app.timers.register(_start_ui, first_interval=1.0)
