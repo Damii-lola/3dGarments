@@ -36,7 +36,7 @@ const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
  * continues in the same plane. More abduction, or a forearm angled forward relative to the upper
  * arm, creates a visible elbow kink and makes the arm look bent inward from the front.
  */
-const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.72, follow: 1, maxOut: 90, minOut: 6, upperGap: 0.025 } };
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.72, follow: 1, maxOut: 90, minOut: 6, upperGap: 0.045 } };
 const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
 /**
  * Armpit skinning fix. A model sculpted with raised arms (A-pose) has its lats and armpit skin
