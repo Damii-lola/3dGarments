@@ -467,14 +467,17 @@ for p, nm in ((front, 'collar_front'), (back, 'collar_back')):
                     if uv[1] > zU + (zSP - 0.01 - zU) * kk}
 G.groups['collar'] = G.groups['collar_front'] | G.groups['collar_back']
 
-# sleeves hang free from the shoulder seam — never wrapped/smoothed to the arm surface
-sleeve_verts = ({G.vid(sleeveL, i) for i in range(len(sleeveL.uv))} |
-                {G.vid(sleeveR, i) for i in range(len(sleeveR.uv))})
+# sleeve TUBE (hanging portion below the cap) hangs free — cap vertices still wrap so the
+# armhole seam aligns correctly; tube starts at its placed cylinder and drapes under gravity
+sleeve_tube_verts = (
+    {G.vid(sleeveL, i) for i, uv in enumerate(sleeveL.uv) if uv[1] >= capH * 0.95} |
+    {G.vid(sleeveR, i) for i, uv in enumerate(sleeveR.uv) if uv[1] >= capH * 0.95}
+)
 
-# above armhole: shrink-wrap onto body (+ 1 cm), blend over 6 cm; sleeves excluded
+# above armhole: shrink-wrap onto body (+ 1 cm), blend over 6 cm; sleeve tube excluded
 def wrap_upper(co_list):
     for k, p in enumerate(co_list):
-        if k in sleeve_verts: continue
+        if k in sleeve_tube_verts: continue
         w = max(0.0, min(1.0, (p.z - (zU - 0.04)) / 0.06)); w = w * w * (3 - 2 * w)
         if w <= 0: continue
         loc, nrm, _, d = bvh.find_nearest(p)
@@ -482,13 +485,13 @@ def wrap_upper(co_list):
         co_list[k] = p.lerp(loc + nrm * 0.01, w)
 wrap_upper(G.co)
 
-# smooth upper area — fabric spans muscle grooves, never < 8 mm from body; sleeves excluded
+# smooth upper area — fabric spans muscle grooves, never < 8 mm from body; sleeve tube excluded
 nbr = [set() for _ in G.co]
 for f_ in G.faces:
     for k in range(3): a, b = f_[k], f_[(k + 1) % 3]; nbr[a].add(b); nbr[b].add(a)
 bandv = {G.vid(band, i) for i in range(len(band.uv))}
 up_verts = [k for k, p in enumerate(G.co) if p.z > zU - 0.06 and nbr[k]
-            and k not in bandv and k not in sleeve_verts]
+            and k not in bandv and k not in sleeve_tube_verts]
 for it in range(30):
     new = {k: G.co[k].lerp(sum((G.co[j] for j in nbr[k]), Vector()) / len(nbr[k]), 0.5)
            for k in up_verts}
