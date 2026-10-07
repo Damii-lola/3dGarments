@@ -26,15 +26,17 @@ import { buildShape, SHAPE_TARGETS } from './shape.js';
 const HAND_CHAIN = /^(hand|thumb|index|middle|ring|pinky)_/;
 /**
  * How each model's arms hang (calibrated on front silhouettes against reference photos):
- *   lat     how much of the upper arm's radius must clear the chest / lats (less = rests further in)
- *   follow  forearm tilt relative to the upper arm, degrees (+ out, − back toward the thigh)
- *   maxOut  upper-arm tilt cap, degrees (a heavy body's arm rests into the soft tissue instead)
- *   minOut  upper-arm tilt floor, degrees: a visible gap under the armpit whatever the lats do
+ *   lat      how much of the upper arm's radius must clear the chest / lats (less = rests further in)
+ *   follow   forearm tilt relative to the upper arm, degrees (+ out, − back toward the thigh)
+ *   maxOut   upper-arm tilt cap, degrees (a heavy body's arm rests into the soft tissue instead)
+ *   minOut   upper-arm tilt floor, degrees: a visible gap under the armpit whatever the lats do
+ *   upperGap extra clearance (metres) the hang solver requires between the arm surface and torso;
+ *            default 0.002 (2 mm) — raise it to push the arm visibly away from the lat/chest skin
  * The male's upper arm hangs with a small clearance (≥ 6°) from the shoulder; the forearm
  * continues in the same plane. More abduction, or a forearm angled forward relative to the upper
  * arm, creates a visible elbow kink and makes the arm look bent inward from the front.
  */
-const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.72, follow: 1, maxOut: 90, minOut: 6 } };
+const ARM_FIT = { female: { lat: 0.48, follow: 1, maxOut: 90, minOut: 0 }, male: { lat: 0.72, follow: 1, maxOut: 90, minOut: 6, upperGap: 0.025 } };
 const armFit = (sex) => ({ ...ARM_FIT[sex], ...(globalThis.__armFit?.[sex] || {}) });
 /**
  * Armpit skinning fix. A model sculpted with raised arms (A-pose) has its lats and armpit skin
@@ -717,7 +719,7 @@ export class Human {
     let upper = 0;
     if (isHang(U)) {
       // (the arm may rest a little into the lats: soft tissue gives, so the radius is taken small)
-      while (upper < 50 && !this.#clear(shoulder, dir(upper, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat * 0.875, sg, 0.002, [0.6, 0.8, 1])) upper += 0.5;
+      while (upper < 50 && !this.#clear(shoulder, dir(upper, U.fwd || 0), A.upper, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat, (A.rUpper + B.armGrowth(s, 'upper')) * fit.lat * 0.875, sg, fit.upperGap ?? 0.002, [0.6, 0.8, 1])) upper += 0.5;
       upper = Math.max(fit.minOut, Math.min(upper, fit.maxOut)) + (U.out || 0);
       this.#aim(ua, dir(upper, U.fwd || 0), sg * (U.twist || 0), U.extra);
     }
