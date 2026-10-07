@@ -515,23 +515,27 @@ _bm.to_mesh(ob.data); _bm.free(); ob.data.update()
 S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200)
 S.run(120, 'settle')
 S.apply_cloth(ob)
-# re-fill the small 3-way seam corner holes left by pre-sim fill deletion; size threshold
-# keeps collar/hem/sleeves open (those have many more vertices than a 3-panel corner)
+# re-fill small 3-way seam corner holes left by pre-sim fill deletion; collar/hem/sleeves
+# are much larger loops and won't be touched by the ≤20-vertex threshold
 _bm = bmesh.new(); _bm.from_mesh(ob.data)
 _corner_loops = [l for l in S.boundary_loops(_bm) if len(l) <= 20]
 if _corner_loops:
     from sewlib import _cdt_fill_loop
+    _n_pre = len(_bm.faces)
     for _lp in _corner_loops:
         _cdt_fill_loop(_bm, _lp)
+    _bm.faces.ensure_lookup_table()
+    _new_fills = [f for f in list(_bm.faces)[_n_pre:] if f.is_valid]
+    if _new_fills:
+        # recalc only the new fill faces (not the whole mesh — that can flip good shirt faces)
+        bmesh.ops.recalc_face_normals(_bm, faces=_new_fills)
+        # per-face check against body surface: flip any fill face still pointing inward
+        for _f in _new_fills:
+            if not _f.is_valid: continue
+            _loc, _, _, _ = bvh.find_nearest(_f.calc_center_median())
+            if _loc is not None and (_f.calc_center_median() - _loc).dot(_f.normal) < 0:
+                bmesh.ops.reverse_faces(_bm, faces=[_f])
     print(f'  re-filled {len(_corner_loops)} corner holes post-sim', flush=True)
-    # enforce outward normals on re-filled faces using the body BVH
-    bmesh.ops.recalc_face_normals(_bm, faces=list(_bm.faces))
-    _sample = list(_bm.faces)[:40]
-    _agree = sum(1 for f in _sample
-                 if (lambda h: h[0] is not None and f.normal.dot(f.calc_center_median() - h[0]) > 0)
-                 (bvh.find_nearest(f.calc_center_median())))
-    if _agree < len(_sample) / 2:
-        bmesh.ops.reverse_faces(_bm, faces=list(_bm.faces))
     _bm.normal_update()
 _bm.to_mesh(ob.data); _bm.free(); ob.data.update()
 S.smooth_seams(ob, bvh)
@@ -542,6 +546,9 @@ S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_pose.obj'), modifiers=False)
 rest_co = S.unpose([v.co.copy() for v in ob.data.vertices], meta)
 for v, c in zip(ob.data.vertices, rest_co): v.co = c
 ob.data.update()
+# iron against REST body: unpose introduces per-vertex noise (nearby verts land slightly
+# differently after inverse skinning) that reads as thin bright creases once re-posed on site
+S.iron(ob, bvh_rest)
 
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob
