@@ -61,7 +61,7 @@ const isHang = (v) => !!(v && !Array.isArray(v) && v.hang);
  * the body's own geometry and skeleton (so it follows every pose and shape exactly), its skin pushed out along the
  * normals (suitGaps: 1.5 mm, and smoothly over the underwear). Invisible in normal use; shown for testing (?suit=1, human.setSuit(true), the lab's "suit" box).
  */
-const SUIT_GAP = 0.0005;   // m (0.5 mm) off the skin — thinner so garment seam verts rarely fall inside it
+const SUIT_GAP = 0.00015;  // m (0.15 mm) off the skin
 const SINK = 0.002;        // m: prepare.py sinks the skin under the underwear 2 mm (it can't poke through it)
 /**
  * Per-vertex gap (the `suitGap` attribute): 1.5 mm off the skin everywhere. The skin under the underwear was sunk
