@@ -17,7 +17,7 @@ Output: Male_Tee_Shirt.obj (the permanent garment template).
 4. Sew, weld, settle (soft jersey, 200 frames).
 5. Finish: smooth, unpose → rest pose, write tee.obj (Blender coords).
 """
-import bpy, json, math, os, sys
+import bpy, bmesh, json, math, os, sys
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 
@@ -501,10 +501,39 @@ S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_placed.obj'), modifiers=False)
 S.weld(ob, G.seams, bvh)
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_sewn.obj'), modifiers=False)
 
+# delete CDT fill triangles at 3-way seam corners BEFORE the cloth sim — they fly outward
+# during the sim (creating protrusions at armholes/collar/hem) and take adjacent faces with them
+_bm = bmesh.new(); _bm.from_mesh(ob.data)
+_fl = _bm.faces.layers.int.get('fill_tri')
+if _fl:
+    _del = [f for f in _bm.faces if f[_fl]]
+    print(f'  removing {len(_del)} CDT fill faces before sim → {len(_bm.faces) - len(_del)} remain', flush=True)
+    bmesh.ops.delete(_bm, geom=_del, context='FACES')
+_bm.to_mesh(ob.data); _bm.free(); ob.data.update()
+
 # drape: soft jersey, 200 frames
 S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200)
 S.run(120, 'settle')
 S.apply_cloth(ob)
+# re-fill the small 3-way seam corner holes left by pre-sim fill deletion; size threshold
+# keeps collar/hem/sleeves open (those have many more vertices than a 3-panel corner)
+_bm = bmesh.new(); _bm.from_mesh(ob.data)
+_corner_loops = [l for l in S.boundary_loops(_bm) if len(l) <= 20]
+if _corner_loops:
+    from sewlib import _cdt_fill_loop
+    for _lp in _corner_loops:
+        _cdt_fill_loop(_bm, _lp)
+    print(f'  re-filled {len(_corner_loops)} corner holes post-sim', flush=True)
+    # enforce outward normals on re-filled faces using the body BVH
+    bmesh.ops.recalc_face_normals(_bm, faces=list(_bm.faces))
+    _sample = list(_bm.faces)[:40]
+    _agree = sum(1 for f in _sample
+                 if (lambda h: h[0] is not None and f.normal.dot(f.calc_center_median() - h[0]) > 0)
+                 (bvh.find_nearest(f.calc_center_median())))
+    if _agree < len(_sample) / 2:
+        bmesh.ops.reverse_faces(_bm, faces=list(_bm.faces))
+    _bm.normal_update()
+_bm.to_mesh(ob.data); _bm.free(); ob.data.update()
 S.smooth_seams(ob, bvh)
 S.smooth_edges(ob)
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_pose.obj'), modifiers=False)

@@ -762,42 +762,54 @@ def _close_branch_vertices(bm, pv):
 
 
 def fill_small_holes(bm, protect=None):
-    """Close every remaining open boundary loop that isn't one of the garment's real openings (`protect`), then
-    bring the fill's triangle density up toward the surrounding mesh's own (see the subdivide pass below) —
-    otherwise cloth sees a few stiff, oversized triangles where its neighbours are fine ones, and crumples there
-    instead of draping."""
-    before = set(bm.faces)
+    """Close every remaining open boundary loop that isn't one of the garment's real openings (`protect`),
+    then subdivide the fill down toward the surrounding mesh density — without fine fill triangles the cloth
+    sim crumples the corners badly. Fill faces are tagged fill_tri=1 so tee.py can delete them after the
+    cloth sim (displacement into protrusions/holes is removed cleanly from the final mesh).
+    The _orig_mark layer approach is used instead of a Python set because any bmesh op (including
+    bm.faces.layers.int.new itself) can regenerate the Python wrappers, making 'f not in before' always
+    True even for original faces."""
+    n_before = len(bm.faces)
     pv = protect or set()
+    # mark all CURRENT faces as original before any additions — layer values survive wrapper regeneration
+    orig_layer = bm.faces.layers.int.new('_orig_mark')
+    for f in bm.faces:
+        f[orig_layer] = 1
     _close_branch_vertices(bm, pv)
     bad_loops = [l for l in boundary_loops(bm) if not all(v in pv for v in l)]
-    if not bad_loops: return len(bm.faces) - len(before)
+    if not bad_loops:
+        bm.faces.layers.int.remove(orig_layer)
+        return 0
     import statistics
-    sample = [f.calc_area() for f in before if f.is_valid] or [1e-4]
-    target = statistics.median(sample) * 2.5         # the mesh's own triangle size, give or take
+    sample = [f.calc_area() for f in bm.faces if f.is_valid and f[orig_layer]] or [1e-4]
+    target = statistics.median(sample) * 2.5
     for loop in bad_loops: _cdt_fill_loop(bm, loop)
-    # still far coarser than the mesh around it (a hole has no interior points to triangulate against, only its
-    # rim) — cloth sees a few stiff, oversized triangles where its neighbours are fine ones, and crumples there
-    # instead of draping. Subdivide the fill down toward the surrounding density. The region is seeded ONCE, right
-    # here, from exactly this hole's own new faces (never rescanned as "anything new in the whole mesh" — that let
-    # it cascade: subdividing a fill face's shared edge re-faces its non-fill neighbour too, and a blanket rescan
-    # would pick that neighbour up as fill and, if it were a touch large itself, keep going from there, sweeping
-    # arbitrarily far across the garment over several rounds)
-    region = {f for f in bm.faces if f not in before}
+    # fill region: all faces whose _orig_mark is 0 (added by CDT fill and branch vertex fans so far)
+    fill_set = {f for f in bm.faces if f.is_valid and f[orig_layer] == 0}
+    # subdivide fill faces to match surrounding density, but ONLY on fill-interior edges — edges
+    # shared with a garment face must not be subdivided: that splits the garment face, whose new
+    # fragments get orig_mark=0 and are incorrectly tagged as fill; also distorts garment topology
     for _ in range(5):
-        big = [f for f in region if f.is_valid and f.calc_area() > target]
+        big = [f for f in fill_set if f.is_valid and f.calc_area() > target]
         if not big: break
-        # never touch an edge that has a protected (real-opening) vertex on it — this must never nibble at the
-        # hem/neckline/cuffs, whatever shape the fill region turns out to be
-        edges = list({e for f in big for e in f.edges if e.verts[0] not in pv and e.verts[1] not in pv})
+        edges = list({e for f in big for e in f.edges
+                      if e.verts[0] not in pv and e.verts[1] not in pv
+                      and all(lf[orig_layer] == 0 for lf in e.link_faces)})
         if not edges: break
         res = bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True)
-        region = {f for f in region if f.is_valid} | {el for el in res['geom'] if isinstance(el, bmesh.types.BMFace)}
-    # closing one loop can turn a vertex that was still fine, right at its edge, into a new branch point (its own
-    # new triangle doesn't quite agree with what's already there) — the check at the top of this function can't
-    # see that, since it runs before any of the above; run it again now that the dust has settled
+        new_fill = {el for el in res['geom'] if isinstance(el, bmesh.types.BMFace) and el.is_valid}
+        for nf in new_fill:
+            nf[orig_layer] = 0
+        fill_set = {f for f in fill_set if f.is_valid} | new_fill
     _close_branch_vertices(bm, pv)
     bm.normal_update()
-    return len(bm.faces) - len(before)
+    # tag all fill faces via _orig_mark (catches faces the second _close_branch_vertices may have added)
+    fill_layer = bm.faces.layers.int.get('fill_tri') or bm.faces.layers.int.new('fill_tri')
+    for f in bm.faces:
+        if f.is_valid and f[orig_layer] == 0:
+            f[fill_layer] = 1
+    bm.faces.layers.int.remove(orig_layer)
+    return len(bm.faces) - n_before
 
 
 def iron(ob, bvh, iters=6, factor=0.25, out_gap=0.006, exclude_group=None, exclude_weight=0.15):
