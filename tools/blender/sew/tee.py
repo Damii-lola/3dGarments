@@ -222,7 +222,8 @@ for _ in range(50):
     if half_w(capH, armF) + half_w(capH, armB) > W: lo = capH
     else: hi = capH
 WF, WB = half_w(capH, armF), half_w(capH, armB)
-SL = capH + 0.10                                              # the underarm seam: 10 cm below the cap (a tee's sleeve)
+SL = capH + 0.035                                             # the hem: 3.5 cm below the underarm (a regular tee's short
+                                                               # sleeve ends on the upper bicep, not partway down the arm)
 print(f'sleeve: biceps {Gb:.3f}, width {W:.3f} (front {WF:.3f} / back {WB:.3f}), cap height {capH:.3f}, length {SL:.3f} (armhole {armF:.3f} + {armB:.3f})')
 def sleeve_edges():
     cf = cap_half(WF, capH, 1); cb = cap_half(WB, capH, -1)[::-1]
@@ -297,6 +298,36 @@ for p, nm in ((front, 'collar_front'), (back, 'collar_back')):
     kk = kF if p is front else kB
     G.groups[nm] = {G.vid(p, i) for i, uv in enumerate(p.uv) if uv[1] > zU + (zSP - 0.01 - zU) * kk}
 G.groups['collar'] = G.groups['collar_front'] | G.groups['collar_back']
+# REAL TEE WRINKLES, not random ones: two kinds of fold both tailoring and cloth-sim agree on —
+#  (1) diagonal DRAG LINES from each underarm, front and back: the set-in sleeve seam meets the torso right where
+#      the resting arm presses the fabric against the side, so it has to buckle there, running down and in;
+#  (2) soft folds across the upper BACK, below the shoulder blades: that panel bridges a surface curving two ways
+#      at once, and real tees (see reference photos) show a few soft diagonal folds radiating off the spine there.
+# A WEIGHTED vertex group (0..1): Blender's cloth shrink multiplies shrink_min by this weight per vertex, so the
+# fold is a real settled buckle (the fabric is a hair short there) rather than a hand-sculpted crease — and
+# everywhere else (chest, back centre, below the ribs) stays smooth, which is accurate too: jersey hangs flat
+# where nothing is compressing it.
+def _fold_weight(piece, back_):
+    w = {}
+    ax, ay = (-0.62, -0.78)                          # the drag line's own axis: down and in, off vertical
+    px, py = (-ay, ax)                                # its perpendicular (the line's width)
+    for i, (u, v) in enumerate(piece.uv):
+        au = abs(u); best = 0.0
+        du, dv = au - sC, v - zU                      # from the armhole's bottom corner (the underarm)
+        along = du * ax + dv * ay
+        if along > 0:
+            perp = du * px + dv * py
+            best = max(best, 0.70 * math.exp(-(along / 0.10) ** 2) * math.exp(-(perp / 0.026) ** 2))
+        if back_:                                     # shoulder-blade folds: broader, softer, upper back only
+            vb = (v - (zU + 0.095)) / 0.085
+            ub = au / (sC * 0.7)
+            best = max(best, 0.40 * math.exp(-vb ** 2) * math.exp(-ub ** 2) * min(1.0, au / (0.08 * sC) if sC else 0))
+        if best > 0.02: w[G.vid(piece, i)] = best
+    return w
+fold_w = {}
+fold_w.update(_fold_weight(front, False))
+fold_w.update(_fold_weight(back, True))
+print(f'fold zones: {len(fold_w)} verts weighted (underarm drag lines + back shoulder-blade folds)')
 # the shoulder/chest is now placed on the body's own (envelope-smoothed) cross-sections, so it already sits close
 # and smooth; just a light Laplacian pass to settle the per-cm sampling noise, pushing out (never pulling toward a
 # single nearest point — that discontinuous jump near the collarbone/deltoid ridge is what made the crease before)
@@ -313,17 +344,27 @@ for it in range(8):
 G.presew(bvh)
 G.relax_lengths(bvh)
 ob = G.build(bvh)
+fold_grp = ob.vertex_groups.new(name='fold')
+for i, w_ in fold_w.items(): fold_grp.add([i], w_, 'REPLACE')
 print(f'tee: {len(ob.data.vertices)} verts, {len(ob.data.polygons)} tris, {sum(len(s) for s in G.seams)} stitches')
 S.write_obj(ob, os.path.join(D, 'tee_placed.obj'), modifiers=False)
 
 # ------------------------------------------------------------------ 4. sew, weld, settle
-S.weld(ob, G.seams, bvh)                                  # one garment from here on
+# the garment's REAL open edges (hem, neckline, both cuffs): never sewn, so these vertices are never merged by
+# weld() and keep their ids — told apart from an accidental hole so weld's cleanup can close any stray gap it
+# finds (a non-manifold corner where front/back/sleeve meet, left by a small overlap in the pattern) without
+# risking the holes the garment is actually supposed to have
+keep_open = {G.vid(front, i) for i in front.edge('hem')} | {G.vid(back, i) for i in back.edge('hem')} \
+    | {G.vid(band, i) for i in band.edge('top')} \
+    | {G.vid(sleeveL, i) for i in sleeveL.edge('hem')} | {G.vid(sleeveR, i) for i in sleeveR.edge('hem')}
+S.weld(ob, G.seams, bvh, keep_open=keep_open)              # one garment from here on
 S.write_obj(ob, os.path.join(D, 'tee_sewn.obj'), modifiers=False)
-# drape: the soft jersey settles onto the shoulders and hangs
-S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200); S.run(120, 'settle')
+# drape: the soft jersey settles onto the shoulders and hangs — a LITTLE short (shrink) exactly at the fold zones,
+# so the sim buckles a real drag line there instead of hanging perfectly taut
+S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, shrink=0.05, shrink_group='fold', frames=200); S.run(120, 'settle')
 S.apply_cloth(ob)
 S.smooth_seams(ob, bvh)                                   # (a seam's crease the drape kept: smoothed once more)
-S.iron(ob, bvh)                                           # press out the fine ripples the sim left (keep the big folds)
+S.iron(ob, bvh, exclude_group='fold')                     # press out the fine ripples (keep the big folds AND the real drag lines)
 S.smooth_edges(ob)                                        # clean hem / sleeve-end / neckband lines
 S.write_obj(ob, os.path.join(D, 'tee_pose.obj'), modifiers=False)
 # back to the rest pose, where the site rigs it to the body
@@ -335,7 +376,7 @@ ob.data.update()
 # drape (it's smoothed there) but it catches the light as a thin crease once re-posed. One more light pass, now
 # against the REST body, settles it
 body_r, meta_r, bvh_r = S.load_body(D, pose=False)
-S.iron(ob, bvh_r, iters=10, factor=0.3)
+S.iron(ob, bvh_r, iters=10, factor=0.3, exclude_group='fold')
 body_r.hide_viewport = True
 
 # ------------------------------------------------------------------ 5. finish

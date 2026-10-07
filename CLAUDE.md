@@ -37,7 +37,23 @@ removes non-manifold faces, fills small holes, AND recalculates consistent face 
 independently can leave one face backward right at the join — same bright-crack symptom as the unpose noise, different
 cause: check both if it comes back); seams and open edges smoothed after the drape; no Solidify (its inner shell showed
 at seams); the live mesh casts a shadow but doesn't receive one (self-shadow acne at a seam's sharp little fold reads
-as the same kind of crack).
+as the same kind of crack). WRINKLES: a vertex group `fold` (tee.py `_fold_weight`, Gaussian-weighted in pattern
+(u,v) space) marks underarm drag-line + back shoulder-blade zones; `cloth()`'s `shrink`/`shrink_group` locally scales
+`vertex_group_shrink`, so the fold is a real settled cloth-sim buckle, not a sculpted crease (`iron()`'s
+`exclude_group` keeps these zones from being pressed flat). HOLE-FILLING after weld's face-removal cleanup
+(sewlib.fill_small_holes/_close_branch_vertices/_cdt_fill_loop): the corner where 3 pattern pieces meet (sleeve cap
++ front/back shoulder, or a cuff's hem + both underarm edges) can leave a vertex with 4+ boundary edges instead of
+2 — an hourglass, not a simple loop — which both of Blender's own hole-fill operators (holes_fill, triangle_fill)
+either skip outright or fill badly (sparse triangles too coarse for cloth to drape, crumpling into a jagged flap);
+fixed by a constrained-Delaunay fill per boundary loop (mathutils.geometry.delaunay_2d_cdt, the same routine Piece
+itself is built with) plus explicit fan-triangulation at any branch vertex. A vertex that's part of a REAL opening
+(hem/neckline/cuffs, `keep_open` in tee.py) must never get closed, however big the hole looks — protect it by
+object identity where the bmesh is still the one weld() built, but by a custom `bm.verts.layers.int` tag (created
+*before* capturing the reference set — adding a layer can itself invalidate existing element references) once a
+retry rebuilds the bmesh from the mesh datablock, since plain vertex indices silently point to the wrong vertex
+after any earlier weld_verts/delete reindexes everything. At a branch vertex that IS protected (a cuff corner:
+2 edges are the real hem curve, 2 are the accidental gap), only fan-close the edges whose other end ISN'T
+protected — never the whole vertex.
 
 ## Layout
 ```

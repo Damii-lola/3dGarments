@@ -404,13 +404,14 @@ class Garment:
 # ------------------------------------------------------------------------------------------------- simulation
 SOFT = dict(tension=15, compression=15, shear=5, bending=0.5, mass=0.3, air=1.0)
 # a men's tee: 160–190 g/m² cotton jersey — a little more body than opensew's SOFT (it falls off the chest instead of
-# showing every muscle), and stiff enough in bending that it settles into a few broad folds rather than many fine
-# ripples (a pressed, new-off-the-shelf tee, not one pulled from the bottom of a drawer)
-JERSEY = dict(tension=18, compression=18, shear=6, bending=4.0, mass=0.3, air=1.2)
+# showing every muscle). Stiff enough in bending that unforced areas settle smooth (not the fine all-over ripples a
+# very soft setting gives), but soft enough that the fold zones (shrink_group='fold' in tee.py) can still actually
+# buckle — too stiff and the shrink just stretches the fabric taut instead of folding it
+JERSEY = dict(tension=18, compression=18, shear=6, bending=1.8, mass=0.3, air=1.2)
 
 
 def cloth(ob, name, fabric=SOFT, quality=10, gravity=1.0, pin=None, pin_stiff=25, sewing=False, shrink=0.0,
-          frames=300, self_collision=False):
+          shrink_group=None, frames=300, self_collision=False):
     for m in list(ob.modifiers):
         if m.type == 'CLOTH': ob.modifiers.remove(m)
     cl = ob.modifiers.new(name, 'CLOTH'); s = cl.settings; cs = cl.collision_settings
@@ -422,6 +423,10 @@ def cloth(ob, name, fabric=SOFT, quality=10, gravity=1.0, pin=None, pin_stiff=25
     s.use_sewing_springs = sewing; s.sewing_force_max = 0
     if ob.data.shape_keys and 'flat' in ob.data.shape_keys.key_blocks: s.rest_shape_key = ob.data.shape_keys.key_blocks['flat']
     s.shrink_min = shrink
+    # a WEIGHTED vertex group (0..1 per vertex) scales shrink_min locally: where it's 1 the rest length shrinks by the
+    # full amount, fading to 0 does nothing — a soft, physically real way to put a drag-fold exactly where real tees
+    # get one (the fabric is a hair too short there, so it has to buckle), rather than hand-sculpting a crease
+    if shrink_group: s.vertex_group_shrink = shrink_group
     if pin: s.vertex_group_mass = pin; s.pin_stiffness = pin_stiff
     s.effector_weights.gravity = gravity
     cs.collision_quality = 6; cs.distance_min = 0.004; cs.impulse_clamp = 0.5
@@ -455,7 +460,7 @@ def apply_cloth(ob):
     ob.data.update()
 
 
-def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
+def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003, keep_open=None):
     """merge each seam's paired vertices at their midpoint (union-find over the seam pairs), drop the sewing edges"""
     me = ob.data
     parent = list(range(len(me.vertices)))
@@ -469,6 +474,16 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
             ra, rb = find(a), find(b)
             if ra != rb: parent[rb] = ra
     bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+    # captured HERE, as live BMVert references, before any merge/delete below renumbers bm.verts (weld_verts and
+    # the non-manifold cleanup both compact the array — grabbing these by index later picked up whatever vertices
+    # had since slid into those slots instead, so hem/neckline/cuffs went unprotected without any sign of it).
+    # ALSO written into a custom vertex layer, not just held as object references: a later bm.to_mesh()/from_mesh()
+    # round-trip (done below so a hole-fill pass that leaves the mesh a vertex short of manifold can retry on a
+    # clean bmesh) invalidates every object reference, but custom-data layers are copied through that round-trip,
+    # so the marker survives it and tells the next bmesh which vertices are protected
+    ptag = bm.verts.layers.int.new('_protected')          # adding a layer can itself invalidate existing refs,
+    protected = {bm.verts[i] for i in (keep_open or set()) if i < len(bm.verts)}   # so capture verts AFTER this
+    for v in protected: v[ptag] = 1
     groups = {}
     for i in range(len(bm.verts)): groups.setdefault(find(i), []).append(i)
     targetmap = {}
@@ -520,8 +535,26 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
     lv = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=lv, context='VERTS')
     if removed:
-        filled = fill_small_holes(bm)
-        print(f'  weld: {removed} extra faces removed (non-manifold edges), {filled} small holes filled', flush=True)
+        # keep_open names the garment's REAL open edges (hem, neckline, cuffs) by their original vertex ids, which
+        # weld never merges (they're never in a seam) so they keep those ids here. Any other hole left by the
+        # face-removal above is an accident (a small overlap where front/back/sleeve meet at a corner) and gets
+        # closed outright — no size cap, since the real openings are excluded by name rather than by being "too
+        # big to be a mistake", which a size cap can't tell apart from an unusually large accidental hole
+        filled = fill_small_holes(bm, protect=protected)
+        # a hole whose boundary isn't a single simple loop (a Y-junction corner where 3 pieces meet) is one
+        # holes_fill rightly declines rather than risk a bad fill — but it's usually just two boundary edges left
+        # a hair apart (the vertices on either side never got a seam pair of their own, only their neighbours
+        # did). Snap any (non-protected) boundary vertices still within a cm of each other
+        bedges = [e for e in bm.edges if e.is_boundary]
+        bverts = [v for v in {v for e in bedges for v in e.verts} if v not in protected]
+        snapped = 0
+        if bverts:
+            nv0 = len(bm.verts)
+            bmesh.ops.remove_doubles(bm, verts=bverts, dist=0.012)
+            snapped = nv0 - len(bm.verts)
+            if snapped:
+                filled += fill_small_holes(bm, protect=protected)
+        print(f'  weld: {removed} extra faces removed (non-manifold edges), {filled} small holes filled, {snapped} stray boundary verts snapped', flush=True)
     # a seam joins pieces that were each wound correctly on their own, but not always in agreement with each other —
     # a face wound backward right at the join reads as a bright crack (its vertex normals, averaged with its
     # correctly-wound neighbours, nearly cancel). Make every face agree with its neighbours, then check the whole
@@ -548,6 +581,15 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003):
         for v in bm.verts:
             loc, nrm, _, d = bvh.find_nearest(v.co)
             if loc is not None and (v.co - loc).dot(nrm) < 0.002: v.co = loc + nrm * out_gap
+    bm.to_mesh(me); bm.free(); me.update()
+    # a second, independent pass on a fresh bmesh: closing one small stray hole can leave the mesh right next to
+    # it a vertex short of manifold again (the CDT fill's own new triangle doesn't always agree edge-for-edge with
+    # its real neighbour), and that only ever showed up against a bmesh carried through many prior edits, never
+    # against one rebuilt clean from the mesh as it now stands
+    bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+    ptag = bm.verts.layers.int.get('_protected')
+    protected = {v for v in bm.verts if ptag and v[ptag]} if ptag else set()
+    fill_small_holes(bm, protect=protected)
     bm.to_mesh(me); bm.free(); me.update()
     print(f'  welded: {sum(len(s) for s in gseams)} pairs, {open_} were wider than {max_gap * 100:.1f} cm', flush=True)
 
@@ -635,26 +677,144 @@ def boundary_loops(bm):
     return loops
 
 
-def fill_small_holes(bm, max_sides=10):
-    n = 0
-    for loop in boundary_loops(bm):
-        if 3 <= len(loop) <= max_sides:
-            try:
-                f = bm.faces.new(loop); bmesh.ops.triangulate(bm, faces=[f]); n += 1
-            except ValueError:
-                pass
+def _cdt_fill_loop(bm, loop):
+    """Triangulate one closed boundary loop (BMVerts, in order) with the same constrained-Delaunay routine the
+    pattern pieces themselves are built with (Piece.__init__), instead of a Blender hole-fill operator: both
+    holes_fill (one flat n-gon, and silently refuses a loop it decides isn't simple enough — on this garment's own
+    non-convex, barely-planar corner holes it left some of them untouched at any size) and triangle_fill (filled
+    most of one hole but splintered the rest into several more small holes) turned out unreliable on this shape.
+    Newell's method gives a plane to project onto even though the loop isn't exactly flat (it sits on a curved
+    corner of the body) — the usual way to triangulate a near-planar 3D polygon; any new (Steiner) point CDT adds
+    is placed on that plane and pulled onto the body surface by weld()'s own final surface-snap, like every other
+    fill vertex."""
+    n = len(loop)
+    if n < 3: return []
+    pts = [v.co for v in loop]
+    centroid = sum(pts, Vector()) / n
+    normal = Vector()
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        normal += Vector(((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x), (a.x - b.x) * (a.y + b.y)))
+    if normal.length < 1e-12: return []
+    normal.normalize()
+    helper = Vector((1, 0, 0)) if abs(normal.x) < 0.9 else Vector((0, 1, 0))
+    u = (helper - normal * helper.dot(normal)).normalized(); v = normal.cross(u)
+    pts2d = [Vector(((p - centroid).dot(u), (p - centroid).dot(v))) for p in pts]
+    edges_c = [(i, (i + 1) % n) for i in range(n)]
+    vco, _, faces, orig_v, _, _ = delaunay_2d_cdt(pts2d, edges_c, [], 0, 1e-7)
+    remap = {}
+    for k, o in enumerate(orig_v):
+        if o: remap[k] = loop[o[0]]
+    for k in range(len(vco)):
+        if k not in remap:                            # a Steiner point CDT added: place it on the fitted plane
+            p3 = centroid + u * vco[k][0] + v * vco[k][1]
+            remap[k] = bm.verts.new(p3)
+    new_faces = []
+    for f in faces:
+        try: new_faces.append(bm.faces.new([remap[k] for k in f]))
+        except ValueError: pass
+    return new_faces
+
+
+def _close_branch_vertices(bm, pv):
+    """A boundary "vertex" here isn't always simple edges forming disjoint loops: the corner where three pattern
+    pieces meet (front, back, sleeve-cap at the armhole/shoulder point; hem, under_front and under_back at a
+    sleeve cuff's corner) can pinch to a single vertex shared by two separate missing wedges of fabric, four
+    boundary edges radiating from the one point instead of two — an hourglass, not a loop. boundary_loops()'s walk
+    picks an arbitrary branch at a vertex like that and splinters the hole into fragments instead of one or two
+    clean loops, which is what every hole-fill tried here (both Blender's own holes_fill/triangle_fill and this
+    file's own CDT fill) kept running into on this corner. A vertex ON one of the garment's real openings
+    (`pv`) can be a branch point too — the cuff corner is exactly this: 2 of its edges are the real hem curve
+    (protected) and should stay open, but the seam that was supposed to close the other 2 (under_front to
+    under_back) didn't fully weld right at that shared point. So a branch is handled by spoke, not wholesale: an
+    edge whose OTHER end is also protected is the real opening, left alone; every other edge at the vertex is the
+    accidental part, fan-triangulated away in true angular order (using the vertex's own normal as the fan's
+    axis) so only the genuine gap closes."""
     bm.normal_update()
-    return n
+    deg = {}
+    for e in bm.edges:
+        if e.is_boundary:
+            for v in e.verts: deg[v] = deg.get(v, 0) + 1
+    # a degree-1 vertex (one dangling boundary edge, not two) is the same kind of accident at the other extreme —
+    # a sliver face whose far corner never got a second neighbour — and reads as a thin crack against whatever is
+    # behind the garment. Collapse it onto its one boundary neighbour (never a protected one: a real opening's own
+    # ends are themselves degree-2, continuing the curve, never a whisker) and let the normal weld/cleanup above
+    # it in the pipeline absorb the now-degenerate sliver
+    for v in [v for v, d in deg.items() if d == 1 and v not in pv]:
+        if not v.is_valid: continue
+        other = next((e.other_vert(v) for e in v.link_edges if e.is_boundary), None)
+        if other is not None and other not in pv:
+            bmesh.ops.pointmerge(bm, verts=[v, other], merge_co=other.co)
+    for v in [v for v, d in deg.items() if d > 2]:
+        all_nbrs = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
+        nbrs = all_nbrs if v not in pv else [n for n in all_nbrs if n not in pv]
+        if len(nbrs) < 2: continue
+        n = v.normal if v.normal.length > 1e-6 else Vector((0, 0, 1))
+        helper = Vector((1, 0, 0)) if abs(n.x) < 0.9 else Vector((0, 1, 0))
+        u = (helper - n * helper.dot(n)).normalized(); w = n.cross(u)
+        nbrs.sort(key=lambda p: math.atan2((p.co - v.co).dot(w), (p.co - v.co).dot(u)))
+        for i in range(len(nbrs) - (1 if len(nbrs) < len(all_nbrs) else 0)):
+            a, b = nbrs[i], nbrs[(i + 1) % len(nbrs)]
+            if any(ed.other_vert(a) is b for ed in a.link_edges): continue  # already an edge: a real gap, no spoke
+            try: bm.faces.new([v, a, b])
+            except ValueError: pass
 
 
-def iron(ob, bvh, iters=6, factor=0.25, out_gap=0.006):
+def fill_small_holes(bm, protect=None):
+    """Close every remaining open boundary loop that isn't one of the garment's real openings (`protect`), then
+    bring the fill's triangle density up toward the surrounding mesh's own (see the subdivide pass below) —
+    otherwise cloth sees a few stiff, oversized triangles where its neighbours are fine ones, and crumples there
+    instead of draping."""
+    before = set(bm.faces)
+    pv = protect or set()
+    _close_branch_vertices(bm, pv)
+    bad_loops = [l for l in boundary_loops(bm) if not all(v in pv for v in l)]
+    if not bad_loops: return len(bm.faces) - len(before)
+    import statistics
+    sample = [f.calc_area() for f in before] or [1e-4]
+    target = statistics.median(sample) * 2.5         # the mesh's own triangle size, give or take
+    for loop in bad_loops: _cdt_fill_loop(bm, loop)
+    # still far coarser than the mesh around it (a hole has no interior points to triangulate against, only its
+    # rim) — cloth sees a few stiff, oversized triangles where its neighbours are fine ones, and crumples there
+    # instead of draping. Subdivide the fill down toward the surrounding density. The region is seeded ONCE, right
+    # here, from exactly this hole's own new faces (never rescanned as "anything new in the whole mesh" — that let
+    # it cascade: subdividing a fill face's shared edge re-faces its non-fill neighbour too, and a blanket rescan
+    # would pick that neighbour up as fill and, if it were a touch large itself, keep going from there, sweeping
+    # arbitrarily far across the garment over several rounds)
+    region = {f for f in bm.faces if f not in before}
+    for _ in range(5):
+        big = [f for f in region if f.is_valid and f.calc_area() > target]
+        if not big: break
+        # never touch an edge that has a protected (real-opening) vertex on it — this must never nibble at the
+        # hem/neckline/cuffs, whatever shape the fill region turns out to be
+        edges = list({e for f in big for e in f.edges if e.verts[0] not in pv and e.verts[1] not in pv})
+        if not edges: break
+        res = bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1, use_grid_fill=True)
+        region = {f for f in region if f.is_valid} | {el for el in res['geom'] if isinstance(el, bmesh.types.BMFace)}
+    # closing one loop can turn a vertex that was still fine, right at its edge, into a new branch point (its own
+    # new triangle doesn't quite agree with what's already there) — the check at the top of this function can't
+    # see that, since it runs before any of the above; run it again now that the dust has settled
+    _close_branch_vertices(bm, pv)
+    bm.normal_update()
+    return len(bm.faces) - len(before)
+
+
+def iron(ob, bvh, iters=6, factor=0.25, out_gap=0.006, exclude_group=None, exclude_weight=0.15):
     """a light whole-garment Laplacian pass after the drape: a few fine wrinkles the sim left (not the big folds —
     those span many vertices and barely move under a small-factor average) smoothed flat, like pressing the fabric;
     never pulled in past out_gap from the body, and the open edges (hem, sleeve ends, neckband) held still so the
-    silhouette doesn't shrink"""
+    silhouette doesn't shrink. `exclude_group`: a vertex group name (weight > exclude_weight) left untouched — a
+    real, deliberately-sewn-in drag fold stays exactly as the sim made it; only its neighbours, pulled by the
+    general smooth, are allowed to move. A vertex GROUP survives weld()'s reindexing (a raw index set wouldn't)."""
     me = ob.data; bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
     edge_v = {v for loop in boundary_loops(bm) for v in loop}
-    inner = [v for v in bm.verts if v not in edge_v]
+    ex = set()
+    if exclude_group and exclude_group in ob.vertex_groups:
+        gi = ob.vertex_groups[exclude_group].index
+        dl = bm.verts.layers.deform.active
+        if dl is not None:
+            ex = {v for v in bm.verts if v[dl].get(gi, 0.0) > exclude_weight}
+    inner = [v for v in bm.verts if v not in edge_v and v not in ex]
     for it in range(iters):
         bmesh.ops.smooth_vert(bm, verts=inner, factor=factor, use_axis_x=True, use_axis_y=True, use_axis_z=True)
         for v in inner:
