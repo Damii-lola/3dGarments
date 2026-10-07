@@ -619,34 +619,6 @@ if _all_lps:
 _bm_h.to_mesh(ob.data); _bm_h.free(); ob.data.update()
 S.smooth_edges(ob)
 
-# remove armhole junction fills: in rest pose they sit at shoulder height (~1.4–1.6 m z).
-# In display pose the arm hangs down, and mixed arm/torso skin weights pull these fill
-# vertices into the bodysuit space → black patch. A 1–3 mm hole at the seam corner is
-# invisible; leaving no fill avoids the skinning artifact entirely.
-_bm_af = bmesh.new(); _bm_af.from_mesh(ob.data)
-_fl_af = _bm_af.faces.layers.int.get('fill_tri')
-if _fl_af:
-    from collections import deque as _deque
-    _fills_af = {f for f in _bm_af.faces if f.is_valid and f[_fl_af]}
-    _visited_af = set(); _to_del = []
-    for _seed in list(_fills_af):
-        if _seed in _visited_af: continue
-        _comp = []; _q = _deque([_seed])
-        while _q:
-            _f = _q.popleft()
-            if _f in _visited_af or not _f.is_valid: continue
-            _visited_af.add(_f); _comp.append(_f)
-            for _e in _f.edges:
-                for _lf in _e.link_faces:
-                    if _lf in _fills_af and _lf not in _visited_af: _q.append(_lf)
-        _ctr_z = sum(f.calc_center_median().z for f in _comp) / len(_comp)
-        if len(_comp) >= 20 and 1.20 < _ctr_z < 1.55:
-            _to_del.extend(_comp)
-            print(f'  removing armhole fill island: {len(_comp)} faces at z={_ctr_z:.2f}m', flush=True)
-    if _to_del:
-        bmesh.ops.delete(_bm_af, geom=_to_del, context='FACES_ONLY')
-        _bm_af.to_mesh(ob.data); ob.data.update()
-_bm_af.free()
 
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob

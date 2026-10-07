@@ -343,7 +343,7 @@ async function boot() {
   stage.setSubjectHeight(human.heightM);
   stage.setView('front', { instant: true });
   // TRY-ON: tryOn = createTryOn({ human, stage });
-  if (params.get('suit') === '1') human.setSuit(true);      // testing: the black bodysuit over the whole body
+  human.setSuit(true);      // skin-coloured bodysuit: underlayer for garments, follows the skin slider
   // LIVE BLENDER (tools/blender/live.py): clothing modelled in Blender on this very body, streamed here live
   if (params.has('blender')) {
     const url = params.get('blender').startsWith('ws') ? params.get('blender') : 'ws://127.0.0.1:8790';
