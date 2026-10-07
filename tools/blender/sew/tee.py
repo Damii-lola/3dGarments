@@ -388,8 +388,8 @@ nNf, nNb   = max(6, round(lNf / H)), max(4, round(lNb / H))
 front  = S.Piece('front',   FE, H, {**common, 'arm_L': nF, 'arm_R': nF, 'neck': nNf})
 back   = S.Piece('back',    BE, H, {**common, 'arm_L': nB, 'arm_R': nB, 'neck': nNb})
 
-# neckband: 2 cm rib strip cut at 85 % of neckline, draws collar snug to the neck
-BH  = 0.02; Lb = 0.85 * (lNf + lNb); Lbf = Lb * lNf / (lNf + lNb)
+# neckband: 3 cm rib strip cut at 85 % of neckline — visible crew-neck band sitting snug to neck
+BH  = 0.03; Lb = 0.85 * (lNf + lNb); Lbf = Lb * lNf / (lNf + lNb)
 band = S.Piece('band',
                [('bottom_front', [(0, 0), (Lbf, 0)]),
                 ('bottom_back',  [(Lbf, 0), (Lb, 0)]),
@@ -467,9 +467,14 @@ for p, nm in ((front, 'collar_front'), (back, 'collar_back')):
                     if uv[1] > zU + (zSP - 0.01 - zU) * kk}
 G.groups['collar'] = G.groups['collar_front'] | G.groups['collar_back']
 
-# above armhole: shrink-wrap onto body (+ 1 cm), blend over 6 cm
+# sleeves hang free from the shoulder seam — never wrapped/smoothed to the arm surface
+sleeve_verts = ({G.vid(sleeveL, i) for i in range(len(sleeveL.uv))} |
+                {G.vid(sleeveR, i) for i in range(len(sleeveR.uv))})
+
+# above armhole: shrink-wrap onto body (+ 1 cm), blend over 6 cm; sleeves excluded
 def wrap_upper(co_list):
     for k, p in enumerate(co_list):
+        if k in sleeve_verts: continue
         w = max(0.0, min(1.0, (p.z - (zU - 0.04)) / 0.06)); w = w * w * (3 - 2 * w)
         if w <= 0: continue
         loc, nrm, _, d = bvh.find_nearest(p)
@@ -477,12 +482,13 @@ def wrap_upper(co_list):
         co_list[k] = p.lerp(loc + nrm * 0.01, w)
 wrap_upper(G.co)
 
-# smooth upper area — fabric spans muscle grooves, never < 8 mm from body
+# smooth upper area — fabric spans muscle grooves, never < 8 mm from body; sleeves excluded
 nbr = [set() for _ in G.co]
 for f_ in G.faces:
     for k in range(3): a, b = f_[k], f_[(k + 1) % 3]; nbr[a].add(b); nbr[b].add(a)
 bandv = {G.vid(band, i) for i in range(len(band.uv))}
-up_verts = [k for k, p in enumerate(G.co) if p.z > zU - 0.06 and nbr[k] and k not in bandv]
+up_verts = [k for k, p in enumerate(G.co) if p.z > zU - 0.06 and nbr[k]
+            and k not in bandv and k not in sleeve_verts]
 for it in range(30):
     new = {k: G.co[k].lerp(sum((G.co[j] for j in nbr[k]), Vector()) / len(nbr[k]), 0.5)
            for k in up_verts}
@@ -495,6 +501,27 @@ G.relax_lengths(bvh)
 ob = G.build(bvh)
 print(f'tee: {len(ob.data.vertices)} verts  {len(ob.data.polygons)} tris  '
       f'{sum(len(s) for s in G.seams)} stitches')
+
+# fold vertex group: Gaussian-weighted around each underarm corner (side seam × armhole bottom)
+# → shrink_group in cloth() creates a real buckle there; iron(exclude_group='fold') leaves it
+_SIGMA_FOLD = 0.06   # 6 cm radius
+_fold_w = {}
+for _p, _is_back in ((front, False), (back, True)):
+    for _i, _uv in enumerate(_p.uv):
+        _u, _v = _uv
+        for _sg in (-1.0, 1.0):
+            _du = abs(_u - _sg * sC)
+            _dv = _v - zU   # positive = above armhole (cap area), negative = below
+            if _dv > 0.04: continue   # well above armhole — not the drag-line zone
+            _w = math.exp(-(_du**2 + max(0.0, _dv)**2) / (2 * _SIGMA_FOLD**2))
+            if _w > 0.02:
+                _vid = G.vid(_p, _i)
+                _fold_w[_vid] = max(_fold_w.get(_vid, 0.0), _w)
+_fg = ob.vertex_groups.new(name='fold')
+for _vid, _w in _fold_w.items():
+    _fg.add([_vid], float(_w), 'REPLACE')
+print(f'  fold group: {len(_fold_w)} verts', flush=True)
+
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_placed.obj'), modifiers=False)
 
 # ── 4. sew, weld, settle ──────────────────────────────────────────────────────
@@ -511,8 +538,8 @@ if _fl:
     bmesh.ops.delete(_bm, geom=_del, context='FACES')
 _bm.to_mesh(ob.data); _bm.free(); ob.data.update()
 
-# drape: soft jersey, 200 frames
-S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200)
+# drape: soft jersey, 200 frames; fold zone shrinks 6 % → real buckle at underarm drag-lines
+S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200, shrink=0.06, shrink_group='fold')
 S.run(120, 'settle')
 S.apply_cloth(ob)
 # re-fill small 3-way seam corner holes left by pre-sim fill deletion; collar/hem/sleeves
@@ -529,12 +556,22 @@ if _corner_loops:
     if _new_fills:
         # recalc only the new fill faces (not the whole mesh — that can flip good shirt faces)
         bmesh.ops.recalc_face_normals(_bm, faces=_new_fills)
-        # per-face check against body surface: flip any fill face still pointing inward
+        # orient fill faces using neighbor garment normals (BVH is unreliable at collar/shoulder
+        # junction where neck proximity makes the distance vector nearly orthogonal to the normal)
+        _fill_set = set(_new_fills)
+        from mathutils import Vector
         for _f in _new_fills:
             if not _f.is_valid: continue
-            _loc, _, _, _ = bvh.find_nearest(_f.calc_center_median())
-            if _loc is not None and (_f.calc_center_median() - _loc).dot(_f.normal) < 0:
-                bmesh.ops.reverse_faces(_bm, faces=[_f])
+            _nbr = [lf.normal.copy() for e in _f.edges for lf in e.link_faces
+                    if lf.is_valid and lf not in _fill_set]
+            if _nbr:
+                _avg = sum(_nbr, Vector()) / len(_nbr)
+                if _avg.dot(_f.normal) < 0:
+                    bmesh.ops.reverse_faces(_bm, faces=[_f])
+            else:
+                _loc, _, _, _ = bvh.find_nearest(_f.calc_center_median())
+                if _loc is not None and (_f.calc_center_median() - _loc).dot(_f.normal) < 0:
+                    bmesh.ops.reverse_faces(_bm, faces=[_f])
     print(f'  re-filled {len(_corner_loops)} corner holes post-sim', flush=True)
     _bm.normal_update()
 _bm.to_mesh(ob.data); _bm.free(); ob.data.update()
@@ -548,7 +585,8 @@ for v, c in zip(ob.data.vertices, rest_co): v.co = c
 ob.data.update()
 # iron against REST body: unpose introduces per-vertex noise (nearby verts land slightly
 # differently after inverse skinning) that reads as thin bright creases once re-posed on site
-S.iron(ob, bvh_rest)
+# exclude_group='fold' keeps the armpit buckle — don't press out the deliberately sewn-in drag-line
+S.iron(ob, bvh_rest, exclude_group='fold')
 
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob
