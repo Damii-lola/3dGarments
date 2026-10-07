@@ -1,11 +1,13 @@
 """
-Men's plain crew-neck tee, sewn on the site's body (KNOWLEDGE.md §1, §3, §8.1):
+Male_Tee_Shirt template — men's plain crew-neck tee, sewn on the site's
+male body (KNOWLEDGE.md §1, §3, §8.1):
 
   blender -b -P tools/blender/sew/tee.py -- [outdir]
 
 Self-contained: imports web/public/body/male.glb directly, writes the body
 files on-the-fly (body_rest/pose .obj/.json), then runs the full sewlib
 cloth-sim pipeline — no separate export_body step needed.
+Output: Male_Tee_Shirt.obj (the permanent garment template).
 
 1. Import male.glb → measure + write body_rest.obj/json + body_pose.obj/json
 2. Draft the pattern: front + back (armhole, sloped shoulder, 6.5 cm deep
@@ -493,11 +495,11 @@ G.relax_lengths(bvh)
 ob = G.build(bvh)
 print(f'tee: {len(ob.data.vertices)} verts  {len(ob.data.polygons)} tris  '
       f'{sum(len(s) for s in G.seams)} stitches')
-S.write_obj(ob, os.path.join(D, 'tee_placed.obj'), modifiers=False)
+S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_placed.obj'), modifiers=False)
 
 # ── 4. sew, weld, settle ──────────────────────────────────────────────────────
 S.weld(ob, G.seams, bvh)
-S.write_obj(ob, os.path.join(D, 'tee_sewn.obj'), modifiers=False)
+S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_sewn.obj'), modifiers=False)
 
 # drape: soft jersey, 200 frames
 S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200)
@@ -505,7 +507,7 @@ S.run(120, 'settle')
 S.apply_cloth(ob)
 S.smooth_seams(ob, bvh)
 S.smooth_edges(ob)
-S.write_obj(ob, os.path.join(D, 'tee_pose.obj'), modifiers=False)
+S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_pose.obj'), modifiers=False)
 
 # unpose to rest pose (inverse skinning)
 rest_co = S.unpose([v.co.copy() for v in ob.data.vertices], meta)
@@ -515,5 +517,6 @@ ob.data.update()
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob
 for p in ob.data.polygons: p.use_smooth = True
-S.write_obj(ob, os.path.join(D, 'tee.obj'))
-print(f'[tee] done → {os.path.join(D, "tee.obj")}')
+OUT = os.path.join(D, 'Male_Tee_Shirt.obj')
+S.write_obj(ob, OUT)
+print(f'[tee] done → {OUT}')

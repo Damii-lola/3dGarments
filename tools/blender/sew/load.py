@@ -1,4 +1,4 @@
-# (live session) load the sewn tee OBJ into the Garments collection → streams to site.
+# (live session) load the Male_Tee_Shirt template OBJ into the Garments collection → streams to site.
 # STATE['load'] = list of (name, path, colour)
 import os
 for o in list(bpy.data.collections['Garments'].objects):
