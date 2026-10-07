@@ -193,7 +193,7 @@ while zHPS > Sh.z:
 xSP = Sh.x + 0.012; zSP = top_z(xSP, Sh.y)   # shoulder tip
 zU  = zPit - 0.03                              # armhole bottom = armpit + 3 cm
 Gc, _ = girth(zPit - 0.04)                    # chest girth
-zH  = meta['L']['groin'] + 0.005              # hem (cut long: sewing hoists it)
+zH  = meta['L']['groin'] - 0.025             # hem 2.5 cm below groin: clears the glutes so the back hem hangs free
 Gh, _ = girth(zH + 0.02)                      # hip girth
 
 zHold = zPit - 0.03
@@ -581,6 +581,27 @@ ob.data.update()
 # differently after inverse skinning) that reads as thin bright creases once re-posed on site
 # exclude_group='fold' keeps the armpit buckle — don't press out the deliberately sewn-in drag-line
 S.iron(ob, bvh_rest, exclude_group='fold')
+# hem straighten: iron() excludes all boundary verts, so the cloth-sim fold at the
+# back center (glutes push the hem outward on both sides, center back falls toward
+# the spine) survives unpose unchanged — push every open-edge vertex to ≥ 2 cm
+# from the body surface so the hem hangs clear all the way around
+S.smooth_edges(ob)
+_bm_h = bmesh.new(); _bm_h.from_mesh(ob.data)
+for _lp in S.boundary_loops(_bm_h):
+    if len(_lp) <= 10: continue
+    for _v in _lp:
+        _loc, _nrm, _, _ = bvh_rest.find_nearest(_v.co)
+        if _loc is None or _nrm is None: continue
+        # push HORIZONTALLY only (preserve Y) so a downward-tilted body surface
+        # normal at the groin doesn't spike the hem vertex below the hem plane
+        _nh = Vector((_nrm.x, 0.0, _nrm.z))
+        if _nh.length < 0.01: continue
+        _nh.normalize()
+        _gap = (_v.co - _loc).dot(_nh)
+        if _gap < 0.02:
+            _v.co = _v.co + _nh * (0.02 - _gap)
+_bm_h.to_mesh(ob.data); _bm_h.free(); ob.data.update()
+S.smooth_edges(ob)
 
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob
