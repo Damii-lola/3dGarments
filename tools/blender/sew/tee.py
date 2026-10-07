@@ -181,7 +181,7 @@ pitR = min((v for i, v in enumerate(VR) if skin(i) and dom[i] == 'upperarm_l' an
 zPit = pitR[2]
 
 Gneck, _ = girth(neck0.z + 0.035, lambda i: skin(i))
-rN = Gneck * 1.12 / (2 * math.pi)  # neckline radius: neck girth × 1.12
+rN = Gneck * 1.18 / (2 * math.pi)  # neckline radius: × 1.18 — wider opening, skin visible above band
 
 # high-point shoulder: last height where body width ≤ neckline width
 zHPS = neck0.z + 0.06
@@ -341,8 +341,8 @@ up0 = Vector((0, 0, 1))
 upv = (up0 - a_dir * up0.dot(a_dir)).normalized()
 fwv = a_dir.cross(upv).normalized()
 Gb  = S.perimeter(S.hull2([(q.dot(upv), q.dot(fwv)) for q in bic]))
-W_sl = Gb * 1.06 + 0.05   # tee sleeve: biceps × 1.06 + 5 cm
-Wh   = W_sl * 0.94
+W_sl = Gb * 1.20 + 0.05   # boxy tee sleeve: biceps × 1.20 + 5 cm — relaxed tube, visible opening
+Wh   = W_sl               # no taper: straight tube, cuff opening = full tube width
 
 def cap_half(w, capH, sgn):
     return [(sgn * w * t, capH * math.sin(math.pi * t / 2) ** 2)
@@ -362,7 +362,7 @@ for _ in range(50):
     if half_w(capH, armF) + half_w(capH, armB) > W_sl: lo = capH
     else: hi = capH
 WF, WB = half_w(capH, armF), half_w(capH, armB)
-SL = capH + 0.10   # underarm length: 10 cm below cap (short tee sleeve)
+SL = capH + 0.13   # underarm length: 13 cm below cap — enough to show the open cuff
 print(f'sleeve: biceps {Gb:.3f}  width {W_sl:.3f} (front {WF:.3f}/back {WB:.3f})'
       f'  cap {capH:.3f}  len {SL:.3f}  armhole {armF:.3f}+{armB:.3f}')
 
@@ -389,7 +389,7 @@ front  = S.Piece('front',   FE, H, {**common, 'arm_L': nF, 'arm_R': nF, 'neck': 
 back   = S.Piece('back',    BE, H, {**common, 'arm_L': nB, 'arm_R': nB, 'neck': nNb})
 
 # neckband: 3 cm rib strip cut at 85 % of neckline — visible crew-neck band sitting snug to neck
-BH  = 0.03; Lb = 0.85 * (lNf + lNb); Lbf = Lb * lNf / (lNf + lNb)
+BH  = 0.018; Lb = 0.85 * (lNf + lNb); Lbf = Lb * lNf / (lNf + lNb)
 band = S.Piece('band',
                [('bottom_front', [(0, 0), (Lbf, 0)]),
                 ('bottom_back',  [(Lbf, 0), (Lb, 0)]),
@@ -557,24 +557,15 @@ if _corner_loops:
     _bm.faces.ensure_lookup_table()
     _new_fills = [f for f in list(_bm.faces)[_n_pre:] if f.is_valid]
     if _new_fills:
-        # recalc only the new fill faces (not the whole mesh — that can flip good shirt faces)
-        bmesh.ops.recalc_face_normals(_bm, faces=_new_fills)
-        # orient fill faces using neighbor garment normals (BVH is unreliable at collar/shoulder
-        # junction where neck proximity makes the distance vector nearly orthogonal to the normal)
-        _fill_set = set(_new_fills)
-        from mathutils import Vector
+        # orient using the body surface normal at the nearest body point — far more reliable than
+        # a distance vector (which is near-orthogonal at the collar/shoulder junction where the
+        # fill triangle sits right on the neck) or neighbor averaging (neighbors can also be flipped)
         for _f in _new_fills:
             if not _f.is_valid: continue
-            _nbr = [lf.normal.copy() for e in _f.edges for lf in e.link_faces
-                    if lf.is_valid and lf not in _fill_set]
-            if _nbr:
-                _avg = sum(_nbr, Vector()) / len(_nbr)
-                if _avg.dot(_f.normal) < 0:
-                    bmesh.ops.reverse_faces(_bm, faces=[_f])
-            else:
-                _loc, _, _, _ = bvh.find_nearest(_f.calc_center_median())
-                if _loc is not None and (_f.calc_center_median() - _loc).dot(_f.normal) < 0:
-                    bmesh.ops.reverse_faces(_bm, faces=[_f])
+            _ctr = _f.calc_center_median()
+            _, _nrm, _, _ = bvh_rest.find_nearest(_ctr)
+            if _nrm is not None and _nrm.dot(_f.normal) < 0:
+                bmesh.ops.reverse_faces(_bm, faces=[_f])
     print(f'  re-filled {len(_corner_loops)} corner holes post-sim', flush=True)
     _bm.normal_update()
 _bm.to_mesh(ob.data); _bm.free(); ob.data.update()
