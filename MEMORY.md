@@ -103,6 +103,26 @@ Start the dev server first: `cd web && npm run dev`
 
 ---
 
+## Blender — runs IN the cloud container, no local machine needed
+
+**Blender is installed at `/usr/local/bin/blender` in the cloud session container.**
+Everything is done live — no local setup, no user running scripts manually.
+
+```bash
+# run a sewing script headless (outputs ~/.3dg-sew/tee.obj)
+blender -b -P tools/blender/sew/tee.py
+
+# export the site's current body pose to ~/.3dg-sew for Blender to read
+python3 tools/blender/send.py -f tools/blender/sew/export_body.py
+
+# stream the resulting mesh back to the live site
+python3 tools/blender/send.py -f tools/blender/sew/load.py
+```
+
+The live link (`?blender=1`) uses a WebSocket on `ws://127.0.0.1:8790` served by `live.py` — but for headless sewing work `tee.py` runs standalone with no WebSocket needed.
+
+---
+
 ## Commands
 
 ```bash
