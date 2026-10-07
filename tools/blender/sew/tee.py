@@ -593,33 +593,30 @@ S.iron(ob, bvh_rest, iters=12, exclude_group='fold')  # 12 iters: extra passes s
 # from the body surface so the hem hangs clear all the way around
 S.smooth_edges(ob)
 _bm_h = bmesh.new(); _bm_h.from_mesh(ob.data)
-for _lp in S.boundary_loops(_bm_h):
-    if len(_lp) <= 10: continue
-    for _v in _lp:
+# hem ONLY: there are four open loops (hem, left cuff, right cuff, neckband top).
+# The previous code applied push + tilt-fix to ALL loops → cuffs pushed 2 cm off
+# the arm (white fringe spikes) and neckband Z-clamped flat (jagged collar).
+# Fix: pick only the loop with the LOWEST average Z = the shirt hem.
+_all_lps = [lp for lp in S.boundary_loops(_bm_h) if len(lp) > 10]
+if _all_lps:
+    _hem_lp = min(_all_lps, key=lambda lp: sum(v.co.z for v in lp) / len(lp))
+    for _v in _hem_lp:
         _loc, _nrm, _, _ = bvh_rest.find_nearest(_v.co)
         if _loc is None or _nrm is None: continue
-        # push HORIZONTALLY only (preserve Y) so a downward-tilted body surface
-        # normal at the groin doesn't spike the hem vertex below the hem plane
+        # push HORIZONTALLY only — groin normal tilts downward and would spike the hem
         _nh = Vector((_nrm.x, 0.0, _nrm.z))
         if _nh.length < 0.01: continue
         _nh.normalize()
         _gap = (_v.co - _loc).dot(_nh)
         if _gap < 0.02:
             _v.co = _v.co + _nh * (0.02 - _gap)
-_bm_h.to_mesh(ob.data); _bm_h.free(); ob.data.update()
-S.smooth_edges(ob)
-# hem tilt fix: if any hem boundary vertex is higher than the median Z of the loop, it's
-# tilting up (inner face visible from behind); bring all outliers down to the median so
-# the hem hangs flat instead of forming an upward-facing bowl at the back center
-_bm_t = bmesh.new(); _bm_t.from_mesh(ob.data)
-for _lp in S.boundary_loops(_bm_t):
-    if len(_lp) <= 10: continue
-    _zs = sorted(v.co.z for v in _lp)
+    # hem tilt fix: clamp outliers to median Z so hem hangs flat
+    _zs = sorted(v.co.z for v in _hem_lp)
     _med = _zs[len(_zs) // 2]
-    for _v in _lp:
+    for _v in _hem_lp:
         if _v.co.z > _med + 0.005:
             _v.co.z = _med + 0.005
-_bm_t.to_mesh(ob.data); _bm_t.free(); ob.data.update()
+_bm_h.to_mesh(ob.data); _bm_h.free(); ob.data.update()
 S.smooth_edges(ob)
 
 # remove armhole junction fills: in rest pose they sit at shoulder height (~1.4–1.6 m z).
