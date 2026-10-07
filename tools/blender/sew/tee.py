@@ -531,44 +531,50 @@ S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_placed.obj'), modifiers=False)
 S.weld(ob, G.seams, bvh)
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_sewn.obj'), modifiers=False)
 
-# delete CDT fill triangles at 3-way seam corners BEFORE the cloth sim — they fly outward
-# during the sim (creating protrusions at armholes/collar/hem) and take adjacent faces with them
+# weld() has a second fill_small_holes pass that runs AFTER its own gap-push, so any Steiner
+# vertices it creates can sit inside the 1.5mm bodysuit. Push them outward using the body BVH
+# normal as direction, but as a DELTA (only adjusts depth along the normal, does not replace
+# position). Run 23 catastrophe used "v.co = _loc + nrm * 0.003" on all fill verts — that
+# replaced x/y position too and tore the collar/cuffs/hem apart. This delta only nudges depth.
+_bm_sp = bmesh.new(); _bm_sp.from_mesh(ob.data)
+_fl_sp = _bm_sp.faces.layers.int.get('fill_tri')
+if _fl_sp:
+    _fill_faces_sp = [f for f in _bm_sp.faces if f.is_valid and f[_fl_sp]]
+    _steiner_sp = {v for f in _fill_faces_sp for v in f.verts
+                   if all(lf.is_valid and lf[_fl_sp] for lf in v.link_faces)}
+    _pushed_sp = 0
+    for _v in _steiner_sp:
+        _loc, _nrm_b, _, _ = bvh.find_nearest(_v.co)
+        if _loc is None or _nrm_b.length < 0.1: continue
+        _gap = (_v.co - _loc).dot(_nrm_b)
+        if _gap < 0.003:
+            _v.co = _v.co + _nrm_b * (0.003 - _gap)
+            _pushed_sp += 1
+    if _pushed_sp:
+        _bm_sp.to_mesh(ob.data); ob.data.update()
+    print(f'  pushed {_pushed_sp} Steiner fill vert(s) to ≥ 3mm (body-normal delta push)', flush=True)
+_bm_sp.free()
+
+# pin CDT fill vertices during the cloth sim so they stay at weld()'s correctly-oriented,
+# correctly-positioned locations — previous approach of deleting + re-filling post-sim placed
+# new Steiner points on the Newell plane inside the body surface (showing the black bodysuit).
+# Pinning prevents them from flying outward while keeping their geometry exactly as weld left it.
 _bm = bmesh.new(); _bm.from_mesh(ob.data)
 _fl = _bm.faces.layers.int.get('fill_tri')
-if _fl:
-    _del = [f for f in _bm.faces if f[_fl]]
-    print(f'  removing {len(_del)} CDT fill faces before sim → {len(_bm.faces) - len(_del)} remain', flush=True)
-    bmesh.ops.delete(_bm, geom=_del, context='FACES')
-_bm.to_mesh(ob.data); _bm.free(); ob.data.update()
+_fill_verts_idx = list({v.index for f in _bm.faces if _fl and f[_fl] for v in f.verts})
+_bm.free()
+_fpg = ob.vertex_groups.new(name='fill_pins')
+if _fill_verts_idx:
+    _fpg.add(_fill_verts_idx, 1.0, 'REPLACE')
+print(f'  pinning {len(_fill_verts_idx)} fill vertices during sim', flush=True)
 
 # drape: soft jersey, 200 frames; fold zone shrinks 6 % → real buckle at underarm drag-lines
-S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200, shrink=0.06, shrink_group='fold')
+S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200, shrink=0.06, shrink_group='fold', pin='fill_pins')
 S.run(120, 'settle')
 S.apply_cloth(ob)
-# re-fill small 3-way seam corner holes left by pre-sim fill deletion; collar/hem/sleeves
-# are much larger loops and won't be touched by the ≤20-vertex threshold
-_bm = bmesh.new(); _bm.from_mesh(ob.data)
-_corner_loops = [l for l in S.boundary_loops(_bm) if len(l) <= 20]
-if _corner_loops:
-    from sewlib import _cdt_fill_loop
-    _n_pre = len(_bm.faces)
-    for _lp in _corner_loops:
-        _cdt_fill_loop(_bm, _lp)
-    _bm.faces.ensure_lookup_table()
-    _new_fills = [f for f in list(_bm.faces)[_n_pre:] if f.is_valid]
-    if _new_fills:
-        # orient using the body surface normal at the nearest body point — far more reliable than
-        # a distance vector (which is near-orthogonal at the collar/shoulder junction where the
-        # fill triangle sits right on the neck) or neighbor averaging (neighbors can also be flipped)
-        for _f in _new_fills:
-            if not _f.is_valid: continue
-            _ctr = _f.calc_center_median()
-            _, _nrm, _, _ = bvh_rest.find_nearest(_ctr)
-            if _nrm is not None and _nrm.dot(_f.normal) < 0:
-                bmesh.ops.reverse_faces(_bm, faces=[_f])
-    print(f'  re-filled {len(_corner_loops)} corner holes post-sim', flush=True)
-    _bm.normal_update()
-_bm.to_mesh(ob.data); _bm.free(); ob.data.update()
+
+# remove pin group — no longer needed after drape
+ob.vertex_groups.remove(ob.vertex_groups.get('fill_pins') or _fpg)
 S.smooth_seams(ob, bvh)
 S.smooth_edges(ob)
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_pose.obj'), modifiers=False)
@@ -580,7 +586,7 @@ ob.data.update()
 # iron against REST body: unpose introduces per-vertex noise (nearby verts land slightly
 # differently after inverse skinning) that reads as thin bright creases once re-posed on site
 # exclude_group='fold' keeps the armpit buckle — don't press out the deliberately sewn-in drag-line
-S.iron(ob, bvh_rest, exclude_group='fold')
+S.iron(ob, bvh_rest, iters=12, exclude_group='fold')  # 12 iters: extra passes settle back-panel unpose noise
 # hem straighten: iron() excludes all boundary verts, so the cloth-sim fold at the
 # back center (glutes push the hem outward on both sides, center back falls toward
 # the spine) survives unpose unchanged — push every open-edge vertex to ≥ 2 cm
@@ -602,6 +608,48 @@ for _lp in S.boundary_loops(_bm_h):
             _v.co = _v.co + _nh * (0.02 - _gap)
 _bm_h.to_mesh(ob.data); _bm_h.free(); ob.data.update()
 S.smooth_edges(ob)
+# hem tilt fix: if any hem boundary vertex is higher than the median Z of the loop, it's
+# tilting up (inner face visible from behind); bring all outliers down to the median so
+# the hem hangs flat instead of forming an upward-facing bowl at the back center
+_bm_t = bmesh.new(); _bm_t.from_mesh(ob.data)
+for _lp in S.boundary_loops(_bm_t):
+    if len(_lp) <= 10: continue
+    _zs = sorted(v.co.z for v in _lp)
+    _med = _zs[len(_zs) // 2]
+    for _v in _lp:
+        if _v.co.z > _med + 0.005:
+            _v.co.z = _med + 0.005
+_bm_t.to_mesh(ob.data); _bm_t.free(); ob.data.update()
+S.smooth_edges(ob)
+
+# remove armhole junction fills: in rest pose they sit at shoulder height (~1.4–1.6 m z).
+# In display pose the arm hangs down, and mixed arm/torso skin weights pull these fill
+# vertices into the bodysuit space → black patch. A 1–3 mm hole at the seam corner is
+# invisible; leaving no fill avoids the skinning artifact entirely.
+_bm_af = bmesh.new(); _bm_af.from_mesh(ob.data)
+_fl_af = _bm_af.faces.layers.int.get('fill_tri')
+if _fl_af:
+    from collections import deque as _deque
+    _fills_af = {f for f in _bm_af.faces if f.is_valid and f[_fl_af]}
+    _visited_af = set(); _to_del = []
+    for _seed in list(_fills_af):
+        if _seed in _visited_af: continue
+        _comp = []; _q = _deque([_seed])
+        while _q:
+            _f = _q.popleft()
+            if _f in _visited_af or not _f.is_valid: continue
+            _visited_af.add(_f); _comp.append(_f)
+            for _e in _f.edges:
+                for _lf in _e.link_faces:
+                    if _lf in _fills_af and _lf not in _visited_af: _q.append(_lf)
+        _ctr_z = sum(f.calc_center_median().z for f in _comp) / len(_comp)
+        if len(_comp) >= 20 and 1.20 < _ctr_z < 1.55:
+            _to_del.extend(_comp)
+            print(f'  removing armhole fill island: {len(_comp)} faces at z={_ctr_z:.2f}m', flush=True)
+    if _to_del:
+        bmesh.ops.delete(_bm_af, geom=_to_del, context='FACES_ONLY')
+        _bm_af.to_mesh(ob.data); ob.data.update()
+_bm_af.free()
 
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob
