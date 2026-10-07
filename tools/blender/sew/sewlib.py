@@ -746,6 +746,7 @@ def _close_branch_vertices(bm, pv):
         if other is not None and other not in pv:
             bmesh.ops.pointmerge(bm, verts=[v, other], merge_co=other.co)
     for v in [v for v, d in deg.items() if d > 2]:
+        if not v.is_valid: continue
         all_nbrs = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
         nbrs = all_nbrs if v not in pv else [n for n in all_nbrs if n not in pv]
         if len(nbrs) < 2: continue
@@ -771,7 +772,7 @@ def fill_small_holes(bm, protect=None):
     bad_loops = [l for l in boundary_loops(bm) if not all(v in pv for v in l)]
     if not bad_loops: return len(bm.faces) - len(before)
     import statistics
-    sample = [f.calc_area() for f in before] or [1e-4]
+    sample = [f.calc_area() for f in before if f.is_valid] or [1e-4]
     target = statistics.median(sample) * 2.5         # the mesh's own triangle size, give or take
     for loop in bad_loops: _cdt_fill_loop(bm, loop)
     # still far coarser than the mesh around it (a hole has no interior points to triangulate against, only its
