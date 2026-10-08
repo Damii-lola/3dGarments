@@ -507,7 +507,7 @@ print(f'tee: {len(ob.data.vertices)} verts  {len(ob.data.polygons)} tris  '
 
 # fold vertex group: Gaussian-weighted around each underarm corner (side seam × armhole bottom)
 # → shrink_group in cloth() creates a real buckle there; iron(exclude_group='fold') leaves it
-_SIGMA_FOLD = 0.06   # 6 cm radius
+_SIGMA_FOLD = 0.03   # 3 cm radius — tighter zone avoids side-seam collapse
 _fold_w = {}
 for _p, _is_back in ((front, False), (back, True)):
     for _i, _uv in enumerate(_p.uv):
@@ -537,6 +537,40 @@ _keep_open = {v.index for v in _bm_ko.verts if v.is_boundary and v.index not in 
 _bm_ko.free()
 print(f'  keep_open: {len(_keep_open)} verts protected from fill', flush=True)
 S.weld(ob, G.seams, bvh, keep_open=_keep_open)
+
+# Armhole junction hole closer: the 3-piece corner (front+back+sleeve cap) leaves a small
+# all-keep_open boundary loop that fill_small_holes skips.  Trace closed boundary loops
+# entirely in the shoulder zone (z > 1.2) and fill each with bm.faces.new() — bypasses
+# the keep_open protection check, since this is gap-close not enlargement.
+from collections import defaultdict as _dd
+_bm_ah = bmesh.new(); _bm_ah.from_mesh(ob.data)
+_bdeg_ah = _dd(list)
+for _e in _bm_ah.edges:
+    if _e.is_boundary:
+        _bdeg_ah[_e.verts[0]].append(_e.verts[1])
+        _bdeg_ah[_e.verts[1]].append(_e.verts[0])
+_ah_closed = 0; _ah_visited = set()
+for _sv in list(_bdeg_ah.keys()):
+    if _sv in _ah_visited or _sv.co.z <= 1.2: continue
+    _lp = [_sv]; _lvis = {_sv}; _cur = _sv; _prv = None
+    while True:
+        _nxt = next((n for n in _bdeg_ah[_cur] if n is not _prv and n not in _lvis and n.co.z > 1.2), None)
+        if _nxt is None: break
+        _lp.append(_nxt); _lvis.add(_nxt); _prv = _cur; _cur = _nxt
+    _ah_visited |= _lvis
+    if len(_lp) < 3 or _lp[0] not in _bdeg_ah[_lp[-1]]: continue
+    try: _bm_ah.faces.new(_lp); _ah_closed += 1
+    except ValueError: pass
+if _ah_closed:
+    bmesh.ops.recalc_face_normals(_bm_ah, faces=list(_bm_ah.faces))
+    _bm_ah.to_mesh(ob.data); ob.data.update()
+# diagnostics: boundary vert degrees in z>1.2 zone
+_sh_verts = [(v, len([n for n in _bdeg_ah[v]])) for v in _bdeg_ah if v.co.z > 1.2]
+print(f'  armhole check: {_ah_closed} shoulder loops closed  ({len(_sh_verts)} bdry verts z>1.2)', flush=True)
+for _v, _d in sorted(_sh_verts, key=lambda t: -t[0].co.z)[:12]:
+    print(f'    vert z={_v.co.z:.3f} x={_v.co.x:.3f} y={_v.co.y:.3f}  bdry_deg={_d}', flush=True)
+_bm_ah.free()
+
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_sewn.obj'), modifiers=False)
 
 # weld() has a second fill_small_holes pass that runs AFTER its own gap-push, so any Steiner
@@ -570,14 +604,17 @@ _bm_sp.free()
 _bm = bmesh.new(); _bm.from_mesh(ob.data)
 _fl = _bm.faces.layers.int.get('fill_tri')
 _fill_verts_idx = list({v.index for f in _bm.faces if _fl and f[_fl] for v in f.verts})
+# pin CDT fill verts only (NOT the hem zone) — pinning the hem zone holds verts in their
+# placed positions which follow the body's curved surface at groin level, creating the
+# crumpled look. Letting the hem fall freely under gravity settles it flat naturally.
 _bm.free()
 _fpg = ob.vertex_groups.new(name='fill_pins')
 if _fill_verts_idx:
     _fpg.add(_fill_verts_idx, 1.0, 'REPLACE')
-print(f'  pinning {len(_fill_verts_idx)} fill vertices during sim', flush=True)
+print(f'  pinning {len(_fill_verts_idx)} fill verts during sim (hem zone free to settle)', flush=True)
 
 # drape: soft jersey, 200 frames; fold zone shrinks 6 % → real buckle at underarm drag-lines
-S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200, shrink=0.06, shrink_group='fold', pin='fill_pins')
+S.cloth(ob, 'settle', fabric=S.JERSEY, gravity=1.0, frames=200, shrink=0.03, shrink_group='fold', pin='fill_pins')
 S.run(120, 'settle')
 S.apply_cloth(ob)
 
@@ -592,41 +629,114 @@ rest_co = S.unpose([v.co.copy() for v in ob.data.vertices], meta)
 for v, c in zip(ob.data.vertices, rest_co): v.co = c
 ob.data.update()
 # iron against REST body: unpose introduces per-vertex noise (nearby verts land slightly
-# differently after inverse skinning) that reads as thin bright creases once re-posed on site
-# exclude_group='fold' keeps the armpit buckle — don't press out the deliberately sewn-in drag-line
-S.iron(ob, bvh_rest, iters=12, exclude_group='fold')  # 12 iters: extra passes settle back-panel unpose noise
-# hem straighten: iron() excludes all boundary verts, so the cloth-sim fold at the
-# back center (glutes push the hem outward on both sides, center back falls toward
-# the spine) survives unpose unchanged — push every open-edge vertex to ≥ 2 cm
-# from the body surface so the hem hangs clear all the way around
+# differently after inverse skinning) that reads as thin bright creases once re-posed on site.
+# no_iron group: fold drag-lines (keep buckle) + lower 15 cm of shirt (z < zH+15cm).
+# Without this exclusion, iron's clearance-push against glute/hip normals creates 23 cm XY
+# scatter in the near-hem zone. 15 cm keeps iron away from the waist and below entirely.
+_fg_fold  = ob.vertex_groups.get('fold')
+_fg_noi   = ob.vertex_groups.new(name='no_iron')
+_bm_ni    = bmesh.new(); _bm_ni.from_mesh(ob.data)
+_dl_ni    = _bm_ni.verts.layers.deform.active
+_noi_idx  = []
+for _v in _bm_ni.verts:
+    _is_fold = _fg_fold and _dl_ni and _v[_dl_ni].get(_fg_fold.index, 0.0) > 0.15
+    _is_hem  = _v.co.z < zH + 0.15
+    if _is_fold or _is_hem: _noi_idx.append(_v.index)
+_bm_ni.free()
+if _noi_idx: _fg_noi.add(_noi_idx, 1.0, 'REPLACE')
+print(f'  no_iron: {len(_noi_idx)} verts excluded (fold + lower 15 cm)', flush=True)
+S.iron(ob, bvh_rest, iters=12, exclude_group='no_iron')
+# hem fix: boundary loop snap + near-hem smooth (no iron distortion below zH+15cm,
+# so unpose jitter there is only ≤2mm — smooth_edges + a light 10-iter Laplacian is enough)
 S.smooth_edges(ob)
 _bm_h = bmesh.new(); _bm_h.from_mesh(ob.data)
-# hem ONLY: there are four open loops (hem, left cuff, right cuff, neckband top).
-# The previous code applied push + tilt-fix to ALL loops → cuffs pushed 2 cm off
-# the arm (white fringe spikes) and neckband Z-clamped flat (jagged collar).
-# Fix: pick only the loop with the LOWEST average Z = the shirt hem.
 _all_lps = [lp for lp in S.boundary_loops(_bm_h) if len(lp) > 10]
 if _all_lps:
     _hem_lp = min(_all_lps, key=lambda lp: sum(v.co.z for v in lp) / len(lp))
+    # push hem ring to ≥ 2 cm off body, then snap all to the median z
     for _v in _hem_lp:
         _loc, _nrm, _, _ = bvh_rest.find_nearest(_v.co)
-        if _loc is None or _nrm is None: continue
-        # push HORIZONTALLY only — groin normal tilts downward and would spike the hem
-        _nh = Vector((_nrm.x, 0.0, _nrm.z))
-        if _nh.length < 0.01: continue
-        _nh.normalize()
-        _gap = (_v.co - _loc).dot(_nh)
-        if _gap < 0.02:
-            _v.co = _v.co + _nh * (0.02 - _gap)
-    # hem tilt fix: clamp outliers to median Z so hem hangs flat
+        if _loc is not None and _nrm is not None:
+            _nh = Vector((_nrm.x, 0.0, _nrm.z))
+            if _nh.length > 0.01:
+                _nh.normalize()
+                _gap = (_v.co - _loc).dot(_nh)
+                if _gap < 0.02: _v.co = _v.co + _nh * (0.02 - _gap)
     _zs = sorted(v.co.z for v in _hem_lp)
     _med = _zs[len(_zs) // 2]
-    for _v in _hem_lp:
-        if _v.co.z > _med + 0.005:
-            _v.co.z = _med + 0.005
+    for _v in _hem_lp: _v.co.z = _med
+    # Near-hem zone fix: the z-variation in the first rows above the hem comes from the body
+    # cross-section geometry at groin level (present even in the placed OBJ before any sim).
+    # BFS from the snapped hem ring outward, force each topological row to z = _med + row*H
+    # (mesh spacing H=0.015m), then blend back to the natural cloth shape above 4 rows.
+    _hem_vid_set = {v.index for v in _hem_lp}
+    import collections as _col
+    _bfs_q = _col.deque([(v, 0) for v in _hem_lp])
+    _bfs_dist = {v: 0 for v in _hem_lp}
+    while _bfs_q:
+        _cv, _cd = _bfs_q.popleft()
+        for _ce in _cv.link_edges:
+            _nb = _ce.other_vert(_cv)
+            if _nb not in _bfs_dist and _nb.co.z - _med < 0.07:
+                _bfs_dist[_nb] = _cd + 1; _bfs_q.append((_nb, _cd + 1))
+    _FIX_ROWS = 4  # snap rows 1-4 (0-6 cm) to exactly _med + row*H
+    _H_MESH = H   # mesh spacing from tee.py (0.015 m)
+    for _v, _d in _bfs_dist.items():
+        if _d == 0: continue  # hem ring already snapped
+        if _d <= _FIX_ROWS:
+            _v.co.z = _med + _d * _H_MESH  # hard snap to flat row
+        else:
+            # blend from flat back to natural: fade over 2 extra rows
+            _fade = min(1.0, (_d - _FIX_ROWS) / 2.0)
+            _v.co.z = (1.0 - _fade) * (_med + _d * _H_MESH) + _fade * _v.co.z
 _bm_h.to_mesh(ob.data); _bm_h.free(); ob.data.update()
 S.smooth_edges(ob)
 
+
+# ── 4b. close any residual shoulder-junction gap ──────────────────────────────
+# After unpose + iron + BFS snap, the 3-piece seam corner (front + back + sleeve cap)
+# can still have a small open boundary that fill_small_holes skipped because it shares
+# verts with keep_open, and _close_branch_vertices couldn't close it (all nbrs protected).
+# Strategy: find every connected boundary component in the shoulder zone (z > 1.1).
+# The intentional armhole openings are large (> 20 verts each); any small component
+# (< 20 verts) is an accidental gap — close it with a fan from the centroid.
+_bm_sg = bmesh.new(); _bm_sg.from_mesh(ob.data)
+_sg_adj = {}
+for _e in _bm_sg.edges:
+    if _e.is_boundary and _e.verts[0].co.z > 1.1 and _e.verts[1].co.z > 1.1:
+        a, b = _e.verts
+        _sg_adj.setdefault(a, []).append(b); _sg_adj.setdefault(b, []).append(a)
+_sg_visited = set(); _sg_filled = 0
+for _sv in list(_sg_adj):
+    if _sv in _sg_visited: continue
+    # BFS to collect the connected component
+    _comp = []; _q = [_sv]; _sg_visited.add(_sv)
+    while _q:
+        _cv = _q.pop(); _comp.append(_cv)
+        for _nb in _sg_adj[_cv]:
+            if _nb not in _sg_visited: _sg_visited.add(_nb); _q.append(_nb)
+    if len(_comp) >= 20: continue  # intentional armhole/neckband opening — leave alone
+    # small component: fan-fill from centroid
+    _ctr = sum((v.co for v in _comp), Vector()) / len(_comp)
+    _new_v = _bm_sg.verts.new(_ctr)
+    _bm_sg.verts.ensure_lookup_table()
+    # sort component verts by angle around centroid so faces wind consistently
+    _n = sum((v.normal for v in _comp), Vector()).normalized() or Vector((0, 0, 1))
+    _h = Vector((1, 0, 0)) if abs(_n.x) < 0.9 else Vector((0, 1, 0))
+    _u = (_h - _n * _h.dot(_n)).normalized(); _w = _n.cross(_u)
+    _comp.sort(key=lambda v: math.atan2((v.co - _ctr).dot(_w), (v.co - _ctr).dot(_u)))
+    _added = 0
+    for _i in range(len(_comp)):
+        try:
+            _bm_sg.faces.new([_new_v, _comp[_i], _comp[(_i + 1) % len(_comp)]])
+            _added += 1
+        except ValueError: pass
+    if _added: _sg_filled += 1
+if _sg_filled:
+    bmesh.ops.recalc_face_normals(_bm_sg, faces=list(_bm_sg.faces))
+    _bm_sg.to_mesh(ob.data); ob.data.update()
+print(f'  shoulder gap fill: closed {_sg_filled} small boundary component(s) in shoulder zone', flush=True)
+_bm_sg.free()
 
 # ── 5. finish ─────────────────────────────────────────────────────────────────
 bpy.context.view_layer.objects.active = ob

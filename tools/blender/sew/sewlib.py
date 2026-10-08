@@ -407,7 +407,7 @@ SOFT = dict(tension=15, compression=15, shear=5, bending=0.5, mass=0.3, air=1.0)
 # showing every muscle). Stiff enough in bending that unforced areas settle smooth (not the fine all-over ripples a
 # very soft setting gives), but soft enough that the fold zones (shrink_group='fold' in tee.py) can still actually
 # buckle — too stiff and the shrink just stretches the fabric taut instead of folding it
-JERSEY = dict(tension=18, compression=18, shear=6, bending=1.8, mass=0.3, air=1.2)
+JERSEY = dict(tension=18, compression=18, shear=6, bending=2.2, mass=0.3, air=1.2)
 
 
 def cloth(ob, name, fabric=SOFT, quality=10, gravity=1.0, pin=None, pin_stiff=25, sewing=False, shrink=0.0,
@@ -429,7 +429,7 @@ def cloth(ob, name, fabric=SOFT, quality=10, gravity=1.0, pin=None, pin_stiff=25
     if shrink_group: s.vertex_group_shrink = shrink_group
     if pin: s.vertex_group_mass = pin; s.pin_stiffness = pin_stiff
     s.effector_weights.gravity = gravity
-    cs.collision_quality = 6; cs.distance_min = 0.004; cs.impulse_clamp = 0.5
+    cs.collision_quality = 6; cs.distance_min = 0.006; cs.impulse_clamp = 0.5
     cs.use_self_collision = self_collision; cs.self_distance_min = 0.002; cs.self_friction = 2
     scn = bpy.context.scene
     cl.point_cache.frame_start = scn.frame_current; cl.point_cache.frame_end = scn.frame_current + frames
@@ -590,6 +590,14 @@ def weld(ob, gseams, bvh=None, max_gap=0.045, out_gap=0.003, keep_open=None):
     ptag = bm.verts.layers.int.get('_protected')
     protected = {v for v in bm.verts if ptag and v[ptag]} if ptag else set()
     fill_small_holes(bm, protect=protected)
+    # recalc normals on second pass too — CDT fill on the fresh bmesh may add faces
+    # whose winding wasn't harmonised against the weld-pass recalc
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    if bvh:
+        sample2 = bm.faces[:40] if len(bm.faces) > 40 else list(bm.faces)
+        ctr2 = sum((f.calc_center_median() for f in sample2), Vector()) / len(sample2)
+        test2 = bm.faces[0]; n2 = test2.normal; c2 = test2.calc_center_median()
+        if (c2 - ctr2).dot(n2) < 0: bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
     bm.to_mesh(me); bm.free(); me.update()
     print(f'  welded: {sum(len(s) for s in gseams)} pairs, {open_} were wider than {max_gap * 100:.1f} cm', flush=True)
 
@@ -756,7 +764,11 @@ def _close_branch_vertices(bm, pv):
         nbrs.sort(key=lambda p: math.atan2((p.co - v.co).dot(w), (p.co - v.co).dot(u)))
         for i in range(len(nbrs) - (1 if len(nbrs) < len(all_nbrs) else 0)):
             a, b = nbrs[i], nbrs[(i + 1) % len(nbrs)]
-            if any(ed.other_vert(a) is b for ed in a.link_edges): continue  # already an edge: a real gap, no spoke
+            # skip ONLY if a face covering this wedge already exists — an existing a-b edge alone is not
+            # proof the gap is intentional: at the armhole junction the non-manifold cleanup removes faces
+            # whose a-b edge is part of the garment, leaving a hole that still needs this spoke
+            ab_edge = next((ed for ed in a.link_edges if ed.other_vert(a) is b), None)
+            if ab_edge is not None and any(v in f.verts for f in ab_edge.link_faces): continue
             try: bm.faces.new([v, a, b])
             except ValueError: pass
 
