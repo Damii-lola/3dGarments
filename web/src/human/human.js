@@ -515,8 +515,9 @@ export class Human {
     this.suitOn = !!on;
     for (const b of Object.values(this.bodies)) {
       b.suit.visible = this.suitOn;
-      // the body inside isn't drawn while the suit is shown, nor is its underwear
-      b.material.visible = b.clothMaterial.visible = !this.suitOn;
+      // the body skin inside isn't drawn while the suit is shown; underwear stays visible
+      b.material.visible = !this.suitOn;
+      b.clothMaterial.visible = true;
     }
   }
   get body() { return this.active.mesh; }

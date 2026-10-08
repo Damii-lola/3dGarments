@@ -528,7 +528,15 @@ print(f'  fold group: {len(_fold_w)} verts', flush=True)
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_placed.obj'), modifiers=False)
 
 # ── 4. sew, weld, settle ──────────────────────────────────────────────────────
-S.weld(ob, G.seams, bvh)
+# keep_open: boundary verts that are NOT seam verts = hem, neckband top, cuffs.
+# Without this, fill_small_holes (inside weld) fills every loop including intentional
+# openings, creating jagged cap triangles at the collar, sleeve ends and hem.
+_seam_vids = {v for seam in G.seams for (a, b) in seam for v in (a, b)}
+_bm_ko = bmesh.new(); _bm_ko.from_mesh(ob.data)
+_keep_open = {v.index for v in _bm_ko.verts if v.is_boundary and v.index not in _seam_vids}
+_bm_ko.free()
+print(f'  keep_open: {len(_keep_open)} verts protected from fill', flush=True)
+S.weld(ob, G.seams, bvh, keep_open=_keep_open)
 S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_sewn.obj'), modifiers=False)
 
 # weld() has a second fill_small_holes pass that runs AFTER its own gap-push, so any Steiner

@@ -169,6 +169,80 @@ function skinLikeBody(human, P, idx) {
   return { si, sw };
 }
 
+/** Build a SkinnedMesh that covers the armhole zone using the body's own skin triangles.
+ *  The shirt cloth sim leaves an uncovered crescent at each back-armhole junction; this
+ *  patch reuses the body geometry (correct skinning, correct normals) and colors it to
+ *  match the shirt.  Zone: y ∈ [1.10, 1.54] m, |x| > 0.08 m, z < 0.08 m (back + side). */
+function addArmholePatches(human, col) {
+  const body = human.active.mesh;
+  const bGeo = body.geometry;
+  const R    = restPositions(human);
+  const bIdx = bGeo.index.array;
+  const part = bGeo.attributes._part?.array;
+  const bNrm = bGeo.attributes.normal?.array;
+  const bSI  = bGeo.attributes.skinIndex?.array;
+  const bSW  = bGeo.attributes.skinWeight?.array;
+
+  // skin triangles in the back-armhole zone (both sides)
+  const patchTris = [];
+  for (let t = 0; t < bIdx.length; t += 3) {
+    const [a, b, c] = [bIdx[t], bIdx[t + 1], bIdx[t + 2]];
+    if (part && (part[a] > 0.5 || part[b] > 0.5 || part[c] > 0.5)) continue;
+    let ok = true;
+    for (const v of [a, b, c]) {
+      const vy = R[v * 3 + 1], vx = R[v * 3], vz = R[v * 3 + 2];
+      // back panel only: z < −0.05 excludes the arm (z ≈ 0 in A-pose), max |x| < 0.20 keeps off the arm
+      if (vy < 1.15 || vy > 1.50 || Math.abs(vx) < 0.08 || Math.abs(vx) > 0.20 || vz > -0.05) { ok = false; break; }
+    }
+    if (ok) patchTris.push(a, b, c);
+  }
+  if (!patchTris.length) return null;
+
+  // compact to unique verts
+  const vertSet = new Set(patchTris);
+  const verts   = [...vertSet];
+  const reIdx   = new Map(verts.map((v, i) => [v, i]));
+  const m = verts.length;
+  const P   = new Float32Array(m * 3);
+  const nrm = new Float32Array(m * 3);
+  const si  = bSI ? new Uint16Array(m * 4)  : null;
+  const sw  = bSW ? new Float32Array(m * 4) : null;
+  const OFFSET = 0.003; // 3 mm outside bodysuit
+
+  for (let i = 0; i < m; i++) {
+    const v  = verts[i];
+    const nx = bNrm ? bNrm[v * 3]     : 0;
+    const ny = bNrm ? bNrm[v * 3 + 1] : 0;
+    const nz = bNrm ? bNrm[v * 3 + 2] : 0;
+    P[i * 3]     = R[v * 3]     + nx * OFFSET;
+    P[i * 3 + 1] = R[v * 3 + 1] + ny * OFFSET;
+    P[i * 3 + 2] = R[v * 3 + 2] + nz * OFFSET;
+    nrm[i * 3] = nx; nrm[i * 3 + 1] = ny; nrm[i * 3 + 2] = nz;
+    if (si) si.set(bSI.subarray(v * 4, v * 4 + 4), i * 4);
+    if (sw) sw.set(bSW.subarray(v * 4, v * 4 + 4), i * 4);
+  }
+  const remapped = new Uint32Array(patchTris.map(v => reIdx.get(v)));
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position',  new THREE.BufferAttribute(P,   3));
+  geo.setAttribute('normal',    new THREE.BufferAttribute(nrm, 3));
+  if (si) geo.setAttribute('skinIndex',  new THREE.Uint16BufferAttribute(si, 4));
+  if (sw) geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  geo.setIndex(new THREE.BufferAttribute(remapped, 1));
+
+  const c = col?.color || [0.92, 0.92, 0.9];
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace),
+    roughness: 0.92, metalness: 0, side: THREE.DoubleSide, shadowSide: THREE.FrontSide,
+  });
+  const mesh = new THREE.SkinnedMesh(geo, mat);
+  mesh.bind(body.skeleton, body.bindMatrix);
+  mesh.castShadow = true; mesh.receiveShadow = false; mesh.frustumCulled = false;
+  body.parent.add(mesh);
+  console.log(`[blender] armhole patch: ${m} verts ${patchTris.length / 3} tris`);
+  return mesh;
+}
+
 /** the body's skin a rest-space garment covers (Body.setHidden discards it): every skin vertex with a garment vertex
  *  within 4 cm, — except near the garment's open edges (4 rings in); only skin within 4 cm of the fabric, where
  *  the skin must still show (neckline, hems, sleeve ends) */
@@ -238,8 +312,13 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
       : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), roughness: 0.92, metalness: 0, side: THREE.DoubleSide, shadowSide: THREE.FrontSide });
   };
   const hides = new Map();
+  const armholePatches = new Map();
   const applyHide = () => { const all = new Set(); for (const h of hides.values()) for (const i of h) all.add(i); human.active.setHidden?.(all); };
-  const drop = (id) => { const o = meshes.get(id); if (o) { o.removeFromParent(); o.geometry.dispose(); meshes.delete(id); } if (hides.delete(id)) applyHide(); };
+  const drop = (id) => {
+    const o = meshes.get(id); if (o) { o.removeFromParent(); o.geometry.dispose(); meshes.delete(id); }
+    const p = armholePatches.get(id); if (p) { p.removeFromParent(); p.geometry.dispose(); armholePatches.delete(id); }
+    if (hides.delete(id)) applyHide();
+  };
   const onMesh = (m) => {
     const rest = m.space === 'rest';
     let o = meshes.get(m.id);
@@ -261,6 +340,8 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
         const body = human.active.mesh;
         o.bind(body.skeleton, body.bindMatrix);
         body.parent.add(o);
+        const patch = addArmholePatches(human, col);
+        if (patch) armholePatches.set(m.id, patch);
       } else {
         o = new THREE.Mesh(geo, material(col));
         group.add(o);
