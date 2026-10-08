@@ -529,19 +529,14 @@ S.write_obj(ob, os.path.join(D, 'Male_Tee_Shirt_placed.obj'), modifiers=False)
 
 # ── 4. sew, weld, settle ──────────────────────────────────────────────────────
 # keep_open: boundary verts that are NOT seam verts = hem, neckband top, cuffs.
-# Without this, fill_small_holes (inside weld) fills every loop including intentional
-# openings, creating jagged cap triangles at the collar, sleeve ends and hem.
-_seam_vids = {v for seam in G.seams for (a, b) in seam for v in (a, b)}
+# Protect ALL boundary verts from fill_small_holes.  The openings we want to keep (hem,
+# neckband, cuffs) all live on the mesh boundary.  Seam corner verts sit at the junction
+# of a sewn seam and an intentional opening; excluding them (as the old _seam_vids filter
+# did) left one unprotected vert in each opening loop, which caused fill_small_holes to
+# CDT-fill the entire opening.  Real weld-artifact holes to fill have NO boundary verts,
+# so protecting all boundary verts leaves those fillable while guarding every opening.
 _bm_ko = bmesh.new(); _bm_ko.from_mesh(ob.data)
-_keep_open = {v.index for v in _bm_ko.verts if v.is_boundary and v.index not in _seam_vids}
-# The side-seam corner verts sit at the intersection of the hem AND a seam, so they are
-# excluded from _keep_open above (they're in _seam_vids).  But fill_small_holes fills any
-# boundary loop that isn't FULLY protected, so one unprotected corner makes the entire hem
-# loop get CDT-filled with 20+ large cap faces.  Force-add every boundary vert at or near
-# the hem z so the hem loop is fully protected regardless of seam membership.
-for _v in _bm_ko.verts:
-    if _v.is_boundary and _v.co.z <= zH + 0.02:
-        _keep_open.add(_v.index)
+_keep_open = {v.index for v in _bm_ko.verts if v.is_boundary}
 _bm_ko.free()
 print(f'  keep_open: {len(_keep_open)} verts protected from fill', flush=True)
 S.weld(ob, G.seams, bvh, keep_open=_keep_open)
