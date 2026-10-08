@@ -86,8 +86,8 @@ const withHands = (pose, left = 'relaxed', right = left) => {
 // arm stays beside the body (never swung behind it or sunk into it); soft elbow, palm to thigh
 const armsDown = {
   clavicle: [0, 0, -4],
-  upperarm: { hang: true, fwd: 8 },
-  lowerarm: { hang: true, fwd: 10, twist: 16 },   // palm to the thigh, rolled ~15° back (a relaxed forearm)
+  upperarm: { hang: true, fwd: 0 },
+  lowerarm: { hang: true, fwd: 0, twist: 16 },   // palm to the thigh, rolled ~15° back (a relaxed forearm)
   hand: [-18, 0, -4],                                // hand in line with the forearm, a very slight inward bend seen from the front
 };
 // hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
