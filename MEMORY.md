@@ -6,11 +6,11 @@
 
 ## What this project is
 
-A **3D fashion try-on studio** for clothing shops. Three stages, shown one at a time:
+An embeddable 3D **Virtual Fitting Room** for e-commerce (B2B SaaS). Merchants add a script tag; the widget replaces the last static image in a product gallery with a 3D mannequin the shopper shapes to their own measurements, to judge fit before buying (fewer sizing returns, longer sessions, pre-order validation with digital twins of garments).
 
-1. **Try-on (free, current)** — pick male/female mannequin, set skin/height/weight/body shape; upload garment photos → clothes appear on the model.
-2. **Style (paid, not built yet)** — pose the dressed model, add backdrop/furniture, AI prompt sets scene + pose.
-3. **Photoshoot (paid, not built yet)** — product shots up to 4K / transparent PNG.
+Planned: Next.js/React merchant dashboard (garment upload, subscription, analytics) · lazy-loaded iframe/script widget · Blender-exported compressed `.glb` garments with chest/waist/height driven by morph targets in JS (no server re-render) · pricing by widget loads (Starter $29 / 5k, Growth $79 / 25k, Scale $199 unlimited + white-label + sizing analytics) · go-to-market via cold outreach to streetwear labels, boutiques and mid-sized Shopify merchants with a custom prototype of their own clothing; 5–10 pilot merchants, then return-rate case studies.
+
+**Removed from scope:** the old "Style" (pose / backdrop / scene) and "Photoshoot" (4K / transparent export) stages. The code for them (HDRIs, backdrop images, `stage.capture`, the pose library) was deleted. Do not re-add it.
 
 **Live site:** `https://damii-lola.github.io/3dGarments` (served from `main` branch via GitHub Pages)
 **Live API:** `https://threedgarments.onrender.com` (Render free tier)
@@ -67,16 +67,16 @@ supabase/
 
 web/                      Vite + three.js SPA → GitHub Pages
   public/body/            BUILT rigged models: male.glb female.glb (from tools/body/prepare.py)
-  src/main.js             Stage 1 UI (the whole panel: sex, skin, measurements, body controls)
+  src/main.js             fitting-room UI (the whole panel: sex, skin, measurements, body controls)
   src/human/
     human.js              Human class — loads GLBs, arm hang solver, armpit fix, pose engine
     body.js               ModelController, RANGES, BUILDS, SKIN_STOPS, ABDOMEN, LIMITS, measurements
     shape.js              morph targets built at load from the mesh (belly, waist, bust, etc.)
     materials.js          body material: grey clay / skin tone (SSS wrap, sheen, micro-texture)
-    poses.js              pose + hand library, composePose(), armsDown constant
+    poses.js              standing pose (+ T/A reference poses), composePose(), armsDown constant
     rig.js                POSE ZERO — the limb directions every pose is authored against
     assets.js             model URLs
-  src/scene/stage.js      renderer, studio rig (cyclorama + lights), HDRIs, views, capture
+  src/scene/stage.js      renderer, studio rig (cyclorama + lights), camera views
   src/uploads/
     groups.js             garment photo upload groups UI
     store.js              Supabase storage + IndexedDB fallback
@@ -246,7 +246,7 @@ Clothing copies nearest skin vertex weights (inverse-square), so skin-tight garm
 
 ---
 
-## Stage 1 UI (web/src/main.js)
+## Fitting-room UI (web/src/main.js)
 
 One panel, one 3D preview:
 - Sex picker → switches the model (each sex keeps its own saved settings)
@@ -262,7 +262,7 @@ One panel, one 3D preview:
 
 Settings saved to `localStorage` (key `3dg.tryon.v3`) and synced to Supabase `body_profiles.settings` per device — the newer copy wins at boot.
 
-URL shortcuts: `?model=male|female&pose=hips&scene=city&view=three`
+URL shortcuts: `?model=male|female&tone=0..1`
 Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applyShape, buildPanel }`
 
 ---
@@ -273,8 +273,7 @@ Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applySha
 - `stage.invalidate(n, live)` — schedules n frames; `live=true` while a slider is dragged
 - LOW_POWER tier (touch / small screen / ≤4 cores): pixel ratio ≤1.5, 1K shadows, half-res AO
 - N8AO ambient occlusion on `ao.beautyRenderTarget`; MSAA lives there too
-- No `preserveDrawingBuffer` → capture calls `toBlob` in the same task as the draw
-- Mobile CSS: no `backdrop-filter`; crop dim is a `clip-path` hole (not a 100vmax box-shadow)
+- Mobile CSS: no `backdrop-filter`
 
 ---
 
@@ -419,7 +418,7 @@ The previous session fixed these but the fixes were on the deleted branch. Re-ap
 ## Current state of the repo (commit a60c6de)
 
 - ✅ Male + female mannequin models fully rigged and built (`web/public/body/*.glb`)
-- ✅ Stage 1 UI: body controls, skin tone, measurements, photo upload groups
+- ✅ Fitting-room UI: body controls, skin tone, measurements, photo upload groups
 - ✅ Express API: garments, groups, me, health routes
 - ✅ Supabase schema + RLS + storage bucket
 - ✅ Cloudflare vision pipeline
@@ -428,7 +427,7 @@ The previous session fixed these but the fixes were on the deleted branch. Re-ap
 - ⏳ Garment 3D builder (`web/src/garments/`) — files exist but NOT wired into the UI
 - ❌ Blender sewing pipeline — **deleted, needs to be rebuilt from scratch**
 - ❌ Try-on UI (wearing clothes on the model) — **commented out / not built yet**
-- ❌ Stage 2 (Style) and Stage 3 (Photoshoot) — **not built yet**
+- ❌ Embeddable widget, Next.js merchant dashboard, billing/usage metering — **not built yet**
 
 ---
 

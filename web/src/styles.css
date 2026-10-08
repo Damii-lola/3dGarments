@@ -63,12 +63,6 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 }
 .brand-name { font: 700 19px/1 var(--display); letter-spacing: -0.02em; }
 .brand-name b { color: var(--accent); font-weight: 700; }
-.step {
-  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; font-weight: 600; color: var(--text);
-  padding: 5px 12px 5px 5px; border-radius: 99px; border: 1px solid var(--line-2); background: var(--card);
-}
-.step b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; }
 
 .panel {
   grid-area: panel;

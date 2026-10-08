@@ -1,8 +1,8 @@
 # 3dGarments
 
-**A 3D model studio for fashion shops**, in three stages. **1 · Try-on (free):** pick a male or female mannequin and shape it to real measurements — skin tone, height, weight (from the body's volume), body type, abdomen & waist, bust & chest, shoulders & posture, glutes & thighs, with live bust / waist / hip / thigh girths and bra size — then try clothes on it. **2 · Style** (pose, backdrop, furniture, AI scene set-up) and **3 · Photoshoot** (product shots up to 4K, transparent cut-outs) are paid and come next.
+**An embeddable 3D Virtual Fitting Room for e-commerce.** Merchants add a script tag and the widget replaces the last static image in a product gallery with an interactive 3D mannequin. Shoppers match the mannequin to their own proportions (height, weight, bust, waist, hips, thighs, shoulders …, with live girth readouts) to see how a garment will sit on a body like theirs — fewer sizing guesses, fewer returns, longer time on the product page. Brands can also show a digital twin of a garment before it is manufactured (pre-order validation).
 
-Next: upload the **front, side and back** of a garment and it goes onto the model.
+Today the repo holds the fitting-room core: male and female mannequins with real-measurement shape controls, garment photo upload and the garment-processing pipeline. The embeddable widget, the merchant dashboard and billing are what comes next.
 
 The bodies are the models in `assets/` (FBX), turned into rigged web models (`web/public/body/*.glb`) by `tools/body/`.
 
@@ -16,7 +16,7 @@ The bodies are the models in `assets/` (FBX), turned into rigged web models (`we
                Supabase (Postgres + private Storage)
 ```
 
-The studio runs entirely in the browser and needs no backend. The API and Supabase back the garment pipeline (cut-out, measurement, AI description) that clothing upload builds on.
+The fitting room runs entirely in the browser and needs no backend. The API and Supabase back the garment pipeline (cut-out, measurement, AI description) that clothing upload builds on.
 
 ## One-time setup (about 10 minutes)
 
@@ -51,7 +51,7 @@ The web app already points to the Render API by default.
 cd server && npm i && npm run dev    # needs the same 4 env vars exported in your shell
 cd web && npm i && npm run dev       # http://localhost:5173
 ```
-URL shortcuts: `?model=male|female`, `?pose=hips` (any key of `POSES`), `?scene=city` (any HDRI), `?view=three`.
+URL shortcuts: `?model=male|female`, `?tone=0..1` (skin tone). The lab also takes `?view=front|three|side|back`.
 
 Rebuild the body models (only after changing `assets/` or `tools/body/`): start the lab (`cd test && npm run dev`), then `node tools/body/extract.mjs && python3 tools/body/prepare.py` (needs `pip install numpy scipy`).
 

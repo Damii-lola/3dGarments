@@ -1,6 +1,6 @@
 /**
  * The studio's human: the rigged body models in public/body (male.glb, female.glb — built by
- * tools/body/prepare.py from assets/*.fbx), with real-measurement shape controls and the pose library.
+ * tools/body/prepare.py from assets/*.fbx), with real-measurement shape controls and the standing pose.
  *
  *   const human = await Human.load();
  *   scene.add(human.object);
@@ -12,7 +12,7 @@
  *
  * Bone frames: y runs head → tail, x = y × (+z), so a positive x rotation swings a limb FORWARD;
  * hand and finger bones use the palm (+x curls toward it). Limb bones are re-based on "pose zero"
- * (rig.js) — the stance the pose library was authored against — whatever the model's bind pose.
+ * (rig.js) — the stance the standing pose was authored against — whatever the model's bind pose.
  * Poses are authored for the left side; the right side is the mirror (x, −y, −z).
  */
 import * as THREE from 'three';

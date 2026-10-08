@@ -1,7 +1,7 @@
 /**
  * "Pose zero" for the limbs: the direction each bone points when every pose angle is 0.
  *
- * The pose library (poses.js) was authored and calibrated against this rest stance (arms ~48°
+ * The poses (poses.js) were authored and calibrated against this rest stance (arms ~48°
  * down, soft elbows, legs slightly apart). Each body model has its own bind pose (T-pose,
  * arms down …); Human re-bases its limb bones onto these directions, so every pose means
  * the same thing on every model. Body space: metres, y up, facing +z, left = +x.

@@ -1,48 +1,22 @@
 /**
- * Photo studio: renderer, camera, lights, environments/backdrops and hi-res capture.
+ * Viewer stage: renderer, camera, studio lights, camera views and post (ambient occlusion).
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { N8AOPass } from 'n8ao';
 
-/** CC0 Poly Haven HDRIs, bundled by @pmndrs/assets (loaded on demand). */
-export const HDRIS = {
-  studio: { label: 'Photo studio', load: () => import('@pmndrs/assets/hdri/studio.exr.js') },
-  apartment: { label: 'Apartment', load: () => import('@pmndrs/assets/hdri/apartment.exr.js') },
-  lobby: { label: 'Hotel lobby', load: () => import('@pmndrs/assets/hdri/lobby.exr.js') },
-  hall: { label: 'Hall', load: () => import('@pmndrs/assets/hdri/hall.exr.js') },
-  warehouse: { label: 'Warehouse', load: () => import('@pmndrs/assets/hdri/warehouse.exr.js') },
-  workshop: { label: 'Workshop', load: () => import('@pmndrs/assets/hdri/workshop.exr.js') },
-  city: { label: 'City street', load: () => import('@pmndrs/assets/hdri/city.exr.js') },
-  venice: { label: 'Venice', load: () => import('@pmndrs/assets/hdri/venice.exr.js') },
-  esplanade: { label: 'Esplanade', load: () => import('@pmndrs/assets/hdri/esplanade.exr.js') },
-  bridge: { label: 'Bridge', load: () => import('@pmndrs/assets/hdri/bridge.exr.js') },
-  park: { label: 'Park', load: () => import('@pmndrs/assets/hdri/park.exr.js') },
-  forest: { label: 'Forest', load: () => import('@pmndrs/assets/hdri/forest.exr.js') },
-  sky: { label: 'Open sky', load: () => import('@pmndrs/assets/hdri/sky.exr.js') },
-  dawn: { label: 'Dawn', load: () => import('@pmndrs/assets/hdri/dawn.exr.js') },
-  sunrise: { label: 'Sunrise', load: () => import('@pmndrs/assets/hdri/sunrise.exr.js') },
-  sunset: { label: 'Sunset', load: () => import('@pmndrs/assets/hdri/sunset.exr.js') },
-  night: { label: 'Night', load: () => import('@pmndrs/assets/hdri/night.exr.js') },
-};
-
 export const LIGHTING = {
   soft: { label: 'Soft box', key: 3.0, fill: 0.45, rim: 1.4, env: 0.38, keyAz: 34, keyEl: 52 },
-  bright: { label: 'High key', key: 1.8, fill: 1.5, rim: 0.8, env: 0.95, keyAz: 20, keyEl: 30 },
-  dramatic: { label: 'Dramatic', key: 3.4, fill: 0.15, rim: 2.2, env: 0.18, keyAz: 60, keyEl: 30 },
-  rim: { label: 'Rim light', key: 1.2, fill: 0.4, rim: 3.6, env: 0.35, keyAz: -25, keyEl: 25 },
-  natural: { label: 'Environment only', key: 0, fill: 0, rim: 0, env: 1, keyAz: 35, keyEl: 45 },
 };
 
 const deg = THREE.MathUtils.degToRad;
 
 /**
  * Phones and small tablets get a lighter live view (lower pixel density, half-res AO, smaller
- * shadow map, less MSAA). Exported shots always render at full quality.
+ * shadow map, less MSAA).
  */
 export const LOW_POWER = typeof window !== 'undefined' && (
   window.matchMedia?.('(pointer: coarse)').matches
@@ -50,7 +24,7 @@ export const LOW_POWER = typeof window !== 'undefined' && (
   || (navigator.hardwareConcurrency || 8) <= 4);
 
 export function createStage(container) {
-  // no preserveDrawingBuffer: it costs a full-frame copy per frame on phones (capture reads the canvas in the same task)
+  // no preserveDrawingBuffer: it costs a full-frame copy per frame on phones
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   const REST_RATIO = Math.min(window.devicePixelRatio || 1, LOW_POWER ? 1.5 : 2);
   renderer.setPixelRatio(REST_RATIO);
@@ -88,7 +62,7 @@ export function createStage(container) {
   key.shadow.blurSamples = LOW_POWER ? 8 : 16;
   const fill = new THREE.DirectionalLight(0xe8f0ff, 0.9);
   const rim = new THREE.DirectionalLight(0xffffff, 1.1);
-  // the studio rig (backdrop + lights) turns with the camera, like a photographer's set
+  // the studio rig (backdrop + lights) turns with the camera
   const rig = new THREE.Group();
   rig.add(key, key.target, fill, rim);
   scene.add(rig);
@@ -123,56 +97,18 @@ export function createStage(container) {
   const draw = (full = false) => (aoEnabled && (full || !cheap) ? composer.render() : renderer.render(scene, camera));
 
   const state = {
-    env: { kind: 'studio', color: '#e9e6e1', hdri: 'studio', blur: 0.35, rotation: 0, intensity: 1, image: null },
+    env: { color: '#e9e6e1' },
     light: { preset: 'soft', rotation: 0, intensity: 1 },
   };
-  const hdrCache = new Map();
-  let imageTex = null;
 
-  async function hdrTexture(name) {
-    if (!hdrCache.has(name)) {
-      hdrCache.set(name, (async () => {
-        const url = (await HDRIS[name].load()).default;
-        const tex = await new EXRLoader().loadAsync(url);
-        tex.mapping = THREE.EquirectangularReflectionMapping;
-        return { bg: tex, env: pmrem.fromEquirectangular(tex).texture };
-      })());
-    }
-    return hdrCache.get(name);
-  }
-
-  let envToken = 0;
-  async function setEnvironment(patch) {
-    Object.assign(state.env, patch);
-    const e = state.env;
-    const token = ++envToken;
-    let env = roomEnv, bg = null;
-    if (e.kind === 'hdri') {
-      const t = await hdrTexture(e.hdri);
-      if (token !== envToken) return;
-      env = t.env; bg = t.bg;
-    }
-    if (e.kind === 'image' && e.image) {
-      if (!imageTex || imageTex.userData.src !== e.image) {
-        imageTex?.dispose();
-        imageTex = await new THREE.TextureLoader().loadAsync(e.image);
-        imageTex.colorSpace = THREE.SRGBColorSpace;
-        imageTex.userData.src = e.image;
-        if (token !== envToken) return;
-      }
-      bg = imageTex;
-    }
-    scene.environment = env;
-    scene.environmentRotation.y = deg(e.rotation);
-    scene.backgroundRotation.y = deg(e.rotation);
-    scene.backgroundBlurriness = e.kind === 'hdri' ? e.blur : 0;
-    scene.backgroundIntensity = e.kind === 'hdri' ? e.intensity : 1;
-    scene.background = e.kind === 'color' ? new THREE.Color(e.color) : bg;
-    cyc.visible = e.kind === 'studio';
-    cyc.material.color.set(e.color);
-    catcher.visible = e.kind !== 'studio';
+  /** Studio backdrop colour (the only environment the fitting room needs). */
+  function setEnvironment(patch = {}) {
+    if (patch.color) state.env.color = patch.color;
+    scene.environment = roomEnv;
+    cyc.visible = true;
+    cyc.material.color.set(state.env.color);
+    catcher.visible = false;
     applyLighting();
-    fitImageBackground();
     invalidate(6);
   }
 
@@ -196,19 +132,7 @@ export function createStage(container) {
     key.intensity = L.key * k;
     fill.intensity = L.fill * k;
     rim.intensity = L.rim * k;
-    const hdri = state.env.kind === 'hdri';
-    scene.environmentIntensity = (hdri ? Math.max(L.env, 0.6) : L.env) * (hdri ? state.env.intensity : 1) * k;
-    catcher.material.opacity = hdri ? 0.42 : 0.3;
-  }
-
-  // image backgrounds: emulate background-size: cover
-  function fitImageBackground(canvasAspect = camera.aspect) {
-    const t = scene.background;
-    if (!t || !t.isTexture || t.mapping === THREE.EquirectangularReflectionMapping || !t.image) return;
-    const imgAspect = t.image.width / t.image.height;
-    t.matrixAutoUpdate = false;
-    const [sx, sy] = canvasAspect > imgAspect ? [1, imgAspect / canvasAspect] : [canvasAspect / imgAspect, 1];
-    t.matrix.setUvTransform((1 - sx) / 2, (1 - sy) / 2, sx, sy, 0, 0, 0);
+    scene.environmentIntensity = L.env * k;
   }
 
   /* ---------------- camera views ---------------- */
@@ -335,7 +259,6 @@ export function createStage(container) {
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    fitImageBackground();
     resizeSubs.forEach((fn) => fn());
     invalidate(4);
     if (immediate) allocate();
@@ -357,66 +280,15 @@ export function createStage(container) {
     lost = false;
     pmrem = new THREE.PMREMGenerator(renderer);
     roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
-    hdrCache.clear();
     resize(true);
     setEnvironment({});
   });
-
-  /* ---------------- capture ---------------- */
-  /** The largest rect of `aspect` (w/h) centred in the viewport, in CSS px — what a shot will contain. */
-  function cropRect(aspect) {
-    const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
-    const pad = 0.94;
-    let w = cw * pad, h = w / aspect;
-    if (h > ch * pad) { h = ch * pad; w = h * aspect; }
-    return { x: (cw - w) / 2, y: (ch - h) / 2, w, h, cw, ch };
-  }
-
-  /**
-   * Render a still of exactly the crop frame, at any resolution.
-   * @returns Promise<Blob>
-   */
-  async function capture({ aspect = 4 / 5, longEdge = 2048, transparent = false, shadow = true, type = 'image/png', quality = 0.94 } = {}) {
-    const r = cropRect(aspect);
-    const maxSize = Math.min(renderer.capabilities.maxTextureSize, 8192);
-    const L = Math.min(longEdge, maxSize);
-    const width = Math.round(aspect >= 1 ? L : L * aspect);
-    const height = Math.round(aspect >= 1 ? L / aspect : L);
-    const prev = {
-      size: renderer.getSize(new THREE.Vector2()), ratio: renderer.getPixelRatio(),
-      bg: scene.background, cyc: cyc.visible, catcher: catcher.visible, alpha: renderer.getClearAlpha(),
-      shadowSize: key.shadow.mapSize.x,
-    };
-    if (transparent) { scene.background = null; cyc.visible = false; catcher.visible = shadow; renderer.setClearAlpha(0); }
-    const setShadow = (n) => { key.shadow.mapSize.set(n, n); key.shadow.map?.dispose(); key.shadow.map = null; };
-    setShadow(4096);
-    renderer.setPixelRatio(1);
-    renderer.setSize(width, height, false);
-    composer.setPixelRatio(1);
-    composer.setSize(width, height);
-    camera.aspect = r.cw / r.ch;
-    camera.setViewOffset(r.cw, r.ch, r.x, r.y, r.w, r.h);
-    camera.updateProjectionMatrix();
-    fitImageBackground(width / height);
-    draw(true);
-    // toBlob must be called in the same task as the draw (no preserveDrawingBuffer)
-    const blob = await new Promise((res) => renderer.domElement.toBlob(res, transparent ? 'image/png' : type, quality));
-    // restore
-    camera.clearViewOffset();
-    scene.background = prev.bg; cyc.visible = prev.cyc; catcher.visible = prev.catcher;
-    renderer.setClearAlpha(prev.alpha);
-    setShadow(prev.shadowSize);
-    renderer.setPixelRatio(REST_RATIO);
-    renderer.setSize(prev.size.x, prev.size.y, false);
-    resize(true);
-    return { blob, width, height };
-  }
 
   setEnvironment({});
 
   return {
     renderer, scene, camera, controls, root, key,
-    setView, setEnvironment, setLighting, capture, cropRect, onResize(fn) { resizeSubs.add(fn); },
+    setView, setEnvironment, setLighting, onResize(fn) { resizeSubs.add(fn); },
     get environment() { return { ...state.env }; },
     get lighting() { return { ...state.light }; },
     setSubjectHeight(h) { subjectHeight = h; },

@@ -1,5 +1,5 @@
 /**
- * Pose library.
+ * Standing and reference poses (relaxed stand, T-pose, A-pose).
  *
  * Angles are degrees in each bone's anatomical frame (see human.js):
  *   x  flex:  + swings a limb / the spine forward, + curls fingers into the palm, − bends the knee
@@ -67,10 +67,6 @@ const hand = (curl, spread = 0, thumb = [0, 0, 0]) => {
 
 export const HANDS = {
   relaxed: { label: 'Relaxed', pose: hand([5, 12, 7, 3], -1.2, [10, 6, -46]) },  // a hanging hand: fingers nearly straight, a little more curl toward the pinky; thumb resting along the index
-  soft: { label: 'Soft', pose: hand([10, 18, 10, 3.5], -1, [12, 10, -44]) },  // a little more curl than relaxed; thumb along the index
-  open: { label: 'Open', pose: hand([2, 3, 2, 0], 5, [-5, 2, 10]) },
-  fist: { label: 'Fist', pose: hand([80, 95, 60, 3], 0, [25, 40, -10]) },
-  point: { label: 'Point', pose: { ...hand([80, 95, 60, 3], 0, [25, 40, -10]), index_01: [0, 0, 0], index_02: [2, 0, 0], index_03: [2, 0, 0] } },
 };
 
 const withHands = (pose, left = 'relaxed', right = left) => {
@@ -90,75 +86,14 @@ const armsDown = {
   lowerarm: { hang: true, fwd: 10, twist: 16 },   // palm to the thigh, rolled ~15° back (a relaxed forearm)
   hand: [-18, 0, -4],                                // hand in line with the forearm, a very slight inward bend seen from the front
 };
-// hand on the hip: abducted, rotated inward, elbow back — calibrated in the lab
-const onHip = { clavicle: [0, 0, -3], upperarm: [-25, 85, -3], lowerarm: [58, 0, 0], hand: [0, 0, -20] };
-
 export const POSES = {
   stand: {
     label: 'Relaxed',
     pose: withHands({ both: { ...armsDown, thigh: [0, 0, -6] } }),
   },
-  catalog: {
-    label: 'Catalogue',
-    pose: withHands({ both: { ...armsDown, upperarm: { hang: true, fwd: 2, out: 2 }, lowerarm: { hang: true, fwd: 10, out: 2, twist: 18 }, thigh: [0, 0, 1.5] } }, 'soft'),
-  },
-  contrapposto: {
-    label: 'Contrapposto',
-    pose: withHands({
-      c: { pelvis: [0, -4, 5], spine_01: [0, 1, -2], spine_02: [0, 3, -3], spine_03: [0, 2, -2], neck_01: [0, 0, -2], head: [-2, 4, 4] },
-      l: { ...armsDown, thigh: [0, 0, -6], calf: [0, 0, 0], foot: [0, 0, 0] },
-      r: { ...armsDown, lowerarm: { hang: true, fwd: 16, twist: 16 }, thigh: [9, -6, -2], calf: [-16, 0, 0], foot: [4, 0, 0] },
-    }, 'relaxed', 'soft'),
-  },
-  hips: {
-    label: 'Hands on hips',
-    pose: withHands({
-      c: { spine_03: [-2, 0, 0], head: [-2, 0, 0] },
-      both: { ...onHip, thigh: [0, 0, 3] },
-    }, 'soft'),
-  },
-  onehip: {
-    label: 'One hand on hip',
-    pose: withHands({
-      c: { pelvis: [0, -3, 4], spine_02: [0, 3, -3], spine_03: [0, 2, -2], head: [-3, 6, 5] },
-      l: { ...onHip, thigh: [0, 0, -5] },
-      r: { ...armsDown, thigh: [7, -5, -1], calf: [-12, 0, 0], foot: [3, 0, 0] },
-    }, 'soft', 'relaxed'),
-  },
-  walk: {
-    label: 'Walking',
-    pose: withHands({
-      c: { pelvis: [0, 6, 0], spine_02: [2, -4, 0], spine_03: [0, -3, 0], head: [-2, 1, 0] },
-      l: { upperarm: [-30, -12, -40], lowerarm: [14, 40, 0], thigh: [26, 0, 0], calf: [-8, 0, 0], foot: [-6, 0, 0] },
-      r: { upperarm: [10, -18, -39], lowerarm: [28, 40, 0], thigh: [-16, 0, 0], calf: [-22, 0, 0], foot: [14, 0, 0] },
-    }, 'relaxed'),
-  },
-  stride: {
-    label: 'Power stance',
-    pose: withHands({
-      c: { spine_03: [-3, 0, 0], head: [-3, 0, 0] },
-      both: { ...onHip, thigh: [0, 0, 9], calf: [0, 0, 0], foot: [0, 0, -6] },
-    }, 'fist'),
-  },
-  thinking: {
-    label: 'Hand to chin',
-    pose: withHands({
-      c: { spine_02: [3, 0, 0], head: [4, -4, 3] },
-      l: { upperarm: [5, 40, -42], lowerarm: [95, 30, 0], hand: [0, 0, 0] },
-      r: { upperarm: [55, 30, -28], lowerarm: [135, 0, 0], hand: [-15, 0, 10], thigh: [4, 0, -2] },
-    }, 'soft', 'soft'),
-  },
-  shoulder: {
-    label: 'Over the shoulder',
-    pose: withHands({
-      c: { pelvis: [0, -8, 0], spine_01: [0, -6, 0], spine_02: [0, -8, 0], spine_03: [0, -8, 0], neck_01: [0, -15, 0], head: [-2, -25, -3] },
-      both: { ...armsDown },
-      r: { ...armsDown, thigh: [6, 0, 0], calf: [-10, 0, 0] },
-    }),
-  },
   tpose: {
     label: 'T-pose',
-    pose: withHands({ both: { upperarm: [0, 0, 44], lowerarm: [0, 0, 0] } }, 'open'),
+    pose: withHands({ both: { upperarm: [0, 0, 44], lowerarm: [0, 0, 0] } }),
   },
   apose: { label: 'A-pose', pose: {} },
 };

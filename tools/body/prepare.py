@@ -7,7 +7,7 @@ Turn the studio's body models (assets/*.fbx) into web-ready rigged GLBs.
 
 - welds the mesh (one vertex per position → smooth shading, no texture seams), metres, feet on
   y = 0, centred, facing +z
-- skeleton renamed to the pose library's bone names (pelvis, spine_01…, upperarm_l, thumb_01_l …)
+- skeleton renamed to the bone names poses.js uses (pelvis, spine_01…, upperarm_l, thumb_01_l …)
   from the models' own Character Creator rigs, keeping their
   skin weights; helper bones (twist, share, breast, face, toes) fold into their parents
 - several meshes (body, eyes, teeth, underwear …) merge into one skinned mesh; each vertex is

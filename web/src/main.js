@@ -1,6 +1,6 @@
 /**
- * 3dGarments — stage 1: try-on. Build the model (sex, skin, measurements, body shape) on a live
- * 3D preview. Stages 2 (pose + scene) and 3 (photoshoot) come later and show nothing here.
+ * 3dGarments — virtual fitting room. Build the model (sex, skin, measurements, body shape) on a live
+ * 3D preview.
  */
 import './styles.css';
 import { createStage } from './scene/stage.js';
@@ -284,7 +284,7 @@ function buildPanel() {
 
 async function boot() {
   stage.setLighting({ preset: 'soft', rotation: 0, intensity: 1 });
-  await stage.setEnvironment({ kind: 'studio', color: '#e9e6e1' });
+  await stage.setEnvironment({ color: '#e9e6e1' });
 
   human = await Human.load();
   model = new ModelController(human, M);

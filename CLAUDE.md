@@ -1,9 +1,10 @@
 # 3dGarments: notes for Claude Code
 
-A 3D model studio for fashion shops, in three stages, each shown alone (no UI of a later stage until the user reaches it):
-1. **Try-on (free, current UI):** pick the male/female mannequin (the owner's FBX models in `assets/`), set skin, height, weight and body shape; next: upload a garment's front/side/back and it goes onto the model (the server's photo → cut-out → measurement pipeline is the base).
-2. **Style (paid, not built yet):** pose the dressed model, backdrop, furniture, an AI prompt that sets up scene + pose (stage.js HDRIs/lighting and poses.js already exist).
-3. **Photoshoot (paid, not built yet):** product shots up to 4K / transparent PNG (stage.capture exists).
+An embeddable 3D **Virtual Fitting Room** for e-commerce (B2B SaaS). Merchants drop in a script tag; the widget replaces the last static image in a product gallery with a 3D mannequin the shopper shapes to their own measurements, so they can judge fit and size before buying (fewer returns, longer sessions, pre-order validation with digital twins of garments). Planned: a Next.js/React merchant dashboard (garment upload, subscription, analytics), a lazy-loaded iframe/script widget, garments exported from Blender as compressed `.glb` with chest/waist/height driven by morph targets in JS (no server re-render), and tiered pricing by widget loads (Starter $29 / 5k, Growth $79 / 25k, Scale $199 unlimited).
+
+Current repo: the fitting-room core: the male/female mannequins (the owner's FBX models in `assets/`) with skin, height, weight and body-shape controls, garment photo upload, and the server's photo → cut-out → measurement pipeline. Clothing on the model, the embeddable widget and the dashboard are not built yet.
+
+Out of scope, removed: pose library, backdrops/HDRIs, scene set-up and photo export. Do not add them back.
 
 ## Layout
 ```
@@ -53,15 +54,14 @@ web/                    Vite + three.js SPA (GitHub Pages)
                         orthographic silhouette of the skinned arm, not bone angles)
   src/human/rig.js      POSE ZERO: the limb directions every pose in poses.js is authored against
   src/human/materials.js  body material: grey clay / skin tone (SSS wrap, sheen, procedural micro-texture)
-  src/human/poses.js    pose + hand library, composePose()
-  src/scene/stage.js    renderer, studio rig (cyclorama + lights follow camera), HDRIs, views, WYSIWYG capture
+  src/human/poses.js    the standing pose (+ T/A reference poses), composePose()
+  src/scene/stage.js    renderer, studio rig (cyclorama + lights follow camera), camera views
                         renders ON DEMAND: after changing anything in the scene call stage.invalidate(n, live) (live = a slider is
                         being dragged; main.js does it for shape, look, pose). LOW_POWER tier (touch / small screen / ≤4 cores):
                         pixel ratio ≤1.5, 1K shadows, half-res AO; while anything moves it skips AO and renders at an adaptive
                         pixel ratio, then draws one full frame when it settles. Resizes reallocate only once the size settles
-                        (iOS rotation); a lost WebGL context rebuilds the PMREM environments. No preserveDrawingBuffer (capture
-                        calls toBlob in the same task as the draw). N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget.
-                        Mobile CSS has no backdrop-filter, and the crop dim is a clip-path hole (not a 100vmax box-shadow)
+                        (iOS rotation); a lost WebGL context rebuilds the PMREM environments. No preserveDrawingBuffer. N8AO renders the scene itself, so MSAA lives on ao.beautyRenderTarget.
+                        Mobile CSS has no backdrop-filter
   src/services/         api/auth/local/wardrobe: garment-pipeline client, waiting for the clothing phase (not wired in main.js)
 test/                   🧪 LAB: human / rig / pose workbench (imports web/src directly, serves web/public)
 supabase/migrations/    schema, RLS, private "garments" bucket
@@ -74,7 +74,7 @@ render.yaml             Render blueprint
 - **All keys live in Render's env only** (none in GitHub): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, CLOUDFLARE_*. The static web app gets the public ones (URL + anon key) at runtime from `GET /api/public-config` (services/config.js, cached in localStorage; a cold Render start is waited for once, then it falls back to local mode).
 - Database: paste `supabase/setup.sql` (all migrations concatenated, idempotent) into the Supabase SQL editor. Regenerate it when adding a migration. Anonymous sign-ins must be enabled in Supabase Auth for uploads to reach the cloud.
 - Web: `cd web && npm i && npm run dev` (port 5173). `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` override the Render config for local development; with neither it runs in **local mode** (everything in the browser).
-- URL shortcuts: `?model=male|female&pose=hips&scene=city&view=three`. `window.__3dg` exposes `{stage, human, state, takeShot}`.
+- URL shortcuts: `?model=male|female&tone=0..1` (the lab also takes `&view=three`). `window.__3dg` exposes `{stage, human, model, state, profile}`.
 - Lab: `cd test && npm i && npm run dev` (port 5174). Do all human/rig/pose work here: it has skeleton, wireframe, weight views, a bone editor and stats. `window.__lab` is exposed.
 - Rebuild the body models (after changing assets/ or tools/body): with the lab dev server running, `node tools/body/extract.mjs && python3 tools/body/prepare.py` (pip: numpy scipy). Commit web/public/body/*.glb.
 - Tests: `cd server && npm test`

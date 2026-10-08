@@ -21,7 +21,7 @@ cd test && npm i && npm run dev      # http://localhost:5174   (?gender=male, ?v
 | Models, skeleton, weights, width morph | `assets/*.fbx` → `tools/body/prepare.py` (then rebuild the GLBs) |
 | Pose zero, pose application, hang solver, width/height, feet-on-floor | `web/src/human/human.js`, `web/src/human/rig.js` |
 | Body material (clay / skin) | `web/src/human/materials.js` |
-| Pose library, hands | `web/src/human/poses.js` |
-| Lights, backdrops, HDRIs, camera views, capture | `web/src/scene/stage.js` |
+| Standing pose, hands | `web/src/human/poses.js` |
+| Lights, studio backdrop, camera views | `web/src/scene/stage.js` |
 
 `window.__lab` exposes `{ stage, human, THREE, composePose, POSES, setPose }`.
