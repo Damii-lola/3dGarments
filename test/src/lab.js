@@ -4,10 +4,12 @@
  */
 import './lab.css';
 import * as THREE from 'three';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { createStage } from '@web/scene/stage.js';
 import { Human } from '@web/human/human.js';
 import { ModelController, RANGES, fmtIn, IN, DEFAULT_TONE } from '@web/human/body.js';
 import { POSES, composePose } from '@web/human/poses.js';
+import { skinLikeBody } from '@web/live/blender.js';
 
 const $ = (s) => document.querySelector(s);
 const stage = createStage($('#view'));
@@ -165,3 +167,72 @@ let frames = 0, fpsT = performance.now();
 })();
 
 window.__lab = { stage, human, model, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };
+
+/* ------------------------------------------------ templates */
+const templates = new Map(); // id -> THREE.SkinnedMesh currently loaded
+
+async function loadTemplate(id, url) {
+  const loader = new OBJLoader();
+  const group = await loader.loadAsync(url);
+  const geom = group.children[0]?.geometry;
+  if (!geom) throw new Error(`no geometry in ${url}`);
+  geom.computeVertexNormals();
+  const P = geom.attributes.position.array;
+  const idx = geom.index?.array ?? (() => { const a = new Uint32Array(P.length / 3); for (let i = 0; i < a.length; i++) a[i] = i; return a; })();
+  const { si, sw } = skinLikeBody(human, P, idx);
+  geom.setAttribute('skinIndex',  new THREE.Uint16BufferAttribute(si, 4));
+  geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  const mat = new THREE.MeshStandardMaterial({ color: 0xf0eeeb, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+  const mesh = new THREE.SkinnedMesh(geom, mat);
+  const body = human.active.mesh;
+  mesh.bind(body.skeleton, body.bindMatrix);
+  mesh.castShadow = true;
+  mesh.frustumCulled = false;
+  body.parent.add(mesh);
+  templates.set(id, mesh);
+  stage.invalidate(2);
+}
+
+function unloadTemplate(id) {
+  const mesh = templates.get(id);
+  if (!mesh) return;
+  mesh.removeFromParent();
+  mesh.geometry.dispose();
+  templates.delete(id);
+  stage.invalidate(2);
+}
+
+const TEMPLATE_DEFS = {
+  'tpl-male-basic-tee': { sex: 'male', url: './garments/male_basic_tee.obj' },
+};
+
+document.querySelectorAll('#templates button').forEach((btn) => {
+  const def = TEMPLATE_DEFS[btn.id];
+  if (!def) return;
+  btn.addEventListener('click', async () => {
+    if (templates.has(btn.id)) {
+      unloadTemplate(btn.id);
+      btn.classList.remove('on');
+    } else {
+      if (def.sex && M.sex !== def.sex) {
+        model.setSex(def.sex); model.apply(); human.setPose(pose);
+        stage.setSubjectHeight(human.heightM); markSex(); buildBody(); fillBones();
+        helper.removeFromParent();
+        helper = new THREE.SkeletonHelper(human.active.root);
+        helper.visible = dbg.skeleton;
+        stage.scene.add(helper);
+      }
+      btn.textContent = 'Loading…';
+      btn.disabled = true;
+      try {
+        await loadTemplate(btn.id, def.url);
+        btn.classList.add('on');
+      } catch (e) {
+        console.error(e);
+      } finally {
+        btn.textContent = 'Male_Basic_Tee';
+        btn.disabled = false;
+      }
+    }
+  });
+});

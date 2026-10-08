@@ -116,7 +116,7 @@ function smoothGarmentWeights(maps, idx, rounds = 10) {
   }
   return cur;
 }
-function skinLikeBody(human, P, idx) {
+export function skinLikeBody(human, P, idx) {
   const g = human.active.mesh.geometry;
   const R = restPositions(human), n = R.length / 3, S = 0.02, grid = new Map();
   const key = (x, y, z) => `${x},${y},${z}`;
