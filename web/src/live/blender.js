@@ -192,9 +192,9 @@ function addArmholePatches(human, col) {
     for (const v of [a, b, c]) {
       const vy = R[v * 3 + 1], ax = Math.abs(R[v * 3]), vz = R[v * 3 + 2];
       // zone 1: back shoulder crescent (z < −0.05 keeps off the arm)
-      const inBack     = vy >= 1.10 && vy <= 1.55 && ax >= 0.08 && ax <= 0.22 && vz < -0.05;
-      // zone 2: front/top shoulder + chest junction (covers front and back armhole cap area)
-      const inJunction = vy >= 1.10 && vy <= 1.78 && ax >= 0.07 && ax <= 0.30 && (vz > 0.04 || vy >= 1.35);
+      const inBack     = vy >= 1.15 && vy <= 1.50 && ax >= 0.08 && ax <= 0.20 && vz < -0.05;
+      // zone 2: front/top shoulder junction (wider y + x bands cover the cap area)
+      const inJunction = vy >= 1.35 && vy <= 1.78 && ax >= 0.07 && ax <= 0.30;
       if (!inBack && !inJunction) { ok = false; break; }
     }
     if (ok) patchTris.push(a, b, c);
@@ -343,8 +343,6 @@ export function connectBlender({ human, stage, url = 'ws://127.0.0.1:8790' }) {
         const body = human.active.mesh;
         o.bind(body.skeleton, body.bindMatrix);
         body.parent.add(o);
-        const patch = addArmholePatches(human, col);
-        if (patch) armholePatches.set(m.id, patch);
       } else {
         o = new THREE.Mesh(geo, material(col));
         group.add(o);
