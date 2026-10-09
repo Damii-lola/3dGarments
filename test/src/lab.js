@@ -9,6 +9,8 @@ import { Human } from '@web/human/human.js';
 import { ModelController, RANGES, fmtIn, IN, DEFAULT_TONE } from '@web/human/body.js';
 import { POSES, composePose } from '@web/human/poses.js';
 import { TemplateGarment } from '@web/garments/template.js';
+import { BodyGarment } from '@web/garments/bodygarment.js';
+import { BODY_TEMPLATES } from '@web/garments/bodytemplates.js';
 import { listTemplates } from '@web/services/templates.js';
 
 const $ = (s) => document.querySelector(s);
@@ -167,8 +169,11 @@ let frames = 0, fpsT = performance.now();
 
 /* ------------------------------------------------ templates (garment models from Supabase) */
 let worn = null, wornId = null;
+let easeMm = null;
+const ease = (spec) => (easeMm == null ? spec.ease ?? 0.008 : easeMm / 1000);
 const tplInfo = () => {
   if (!worn) { $('#tpl-info').textContent = ''; return; }
+  if (worn instanceof BodyGarment) { const st = worn.stats; $('#tpl-info').textContent = `${st.vertices.toLocaleString()} verts · ${st.triangles.toLocaleString()} tris\npanels: ${st.panels.join(', ')}\nsame rig + morphs as the body`; return; }
   const f = worn.fitInfo, st = worn.stats;
   $('#tpl-info').textContent = `scale ×${f.scale.toFixed(3)}  fit ${st.fitMs?.toFixed(0)} ms\nfollow ${st.followMs?.toFixed(1) ?? '–'} ms`;
 };
@@ -176,7 +181,9 @@ async function wear(t) {
   $('#tpl-info').textContent = 'fitting…';
   worn?.dispose(); worn = null;
   try {
-    worn = await TemplateGarment.load(t.url, human, { color: $('#tpl-color').value });
+    const spec = t.kind === 'body' ? t.spec : t.meta?.kind === 'body' ? t.meta.spec : null;
+    worn = spec ? BodyGarment.build(human, { ...spec, ease: ease(spec) }, { color: $('#tpl-color').value }) : await TemplateGarment.load(t.url, human, { color: $('#tpl-color').value });
+    worn.template = t;
     wornId = t.id;
     $('#template-controls').hidden = false;
     stage.invalidate(4);
@@ -195,20 +202,27 @@ function drawTemplates() {
 }
 {
   const host = $('#tpl-sliders');
-  slider(host, { label: 'Looseness', min: 0, max: 80, step: 1, value: 30, fmt: (v) => `${v} mm` }, (v) => { if (worn) { worn.setSlack(v / 1000); stage.invalidate(4); tplInfo(); } });
+  slider(host, { label: 'Looseness (gap to skin)', min: 2, max: 60, step: 1, value: 8, fmt: (v) => `${v} mm` }, (v) => {
+    if (!worn) return;
+    if (worn instanceof BodyGarment) { easeMm = v; wear(worn.template); } else { worn.setSlack(v / 1000); stage.invalidate(4); tplInfo(); }
+  });
 }
+$('#tpl-checker').addEventListener('change', (e) => { worn?.showChecker?.(e.target.checked); stage.invalidate(); });
+$('#tpl-uv').addEventListener('click', () => { if (!worn?.uvCanvas) return; const a = document.createElement('a'); a.download = 'template-uv-layout.png'; a.href = worn.uvCanvas(2048).toDataURL('image/png'); a.click(); });
 $('#tpl-color').addEventListener('input', (e) => { worn?.setColor(e.target.value); stage.invalidate(); });
 $('#tpl-remove').addEventListener('click', () => { worn?.dispose(); worn = null; wornId = null; $('#template-controls').hidden = true; markTemplates(); tplInfo(); stage.invalidate(4); window.__lab.worn = null; });
 $('#templates').addEventListener('click', (e) => { const t = templateList.find((x) => x.id === e.target.dataset.t); if (t) wear(t); });
-$('#presets').addEventListener('click', () => { if (worn) { worn.dispose(); worn = null; wornId = null; $('#template-controls').hidden = true; } setTimeout(drawTemplates); });
+$('#presets').addEventListener('click', () => { const t = worn?.template; if (worn) { worn.dispose(); worn = null; wornId = null; $('#template-controls').hidden = true; } setTimeout(() => { drawTemplates(); if (t && (t.kind === 'body' || t.meta?.kind === 'body')) wear(t); }); });
 (async () => {
-  try { templateList = await listTemplates(); } catch (e) { $('#templates').innerHTML = `<span class="note">${e.message}</span>`; }
+  templateList = [...BODY_TEMPLATES];
+  try { templateList.push(...await listTemplates()); } catch (e) { console.warn('templates:', e.message); }
   // dev: ?template=<url to a .glb> adds a local entry (the lab works before anything is in Supabase)
   const local = params.get('template');
   if (local) templateList.unshift({ id: 'local', name: 'Local test', category: 'top', sex: 'unisex', url: local });
-  if (templateList.length || local) drawTemplates();
-  else if (!$('#templates .note')) $('#templates').innerHTML = '<span class="note">none published yet</span>';
-  if (local && params.get('wear') != null) wear(templateList[0]);
+  drawTemplates();
+  const w = params.get('wear');
+  if (local && w != null) wear(templateList[0]);
+  else if (w) { const t = templateList.find((x) => x.id === w); if (t) wear(t); }
 })();
 
 window.__lab = { stage, human, model, M, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };

@@ -15,5 +15,5 @@ export async function listTemplates() {
   });
   if (!res.ok) throw new Error(`templates: ${res.status} ${await res.text().catch(() => '')}`.slice(0, 200));
   const pub = (p) => `${base}/storage/v1/object/public/templates/${p.split('/').map(encodeURIComponent).join('/')}`;
-  return (await res.json()).map((r) => ({ id: r.id, name: r.name, category: r.category, sex: r.sex, url: pub(r.glb_path), thumb: r.thumb_path ? pub(r.thumb_path) : null, meta: r.meta || {} }));
+  return (await res.json()).map((r) => ({ id: r.id, name: r.name, category: r.category, sex: r.sex, url: r.glb_path ? pub(r.glb_path) : null, thumb: r.thumb_path ? pub(r.thumb_path) : null, meta: r.meta || {} }));
 }
