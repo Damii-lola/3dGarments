@@ -24,12 +24,15 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 /** bones whose skin the garment may rest on (torso + upper limbs + neck) */
 const SURFACE_BONES = new Set([
   'pelvis', 'spine_01', 'spine_02', 'spine_03', 'clavicle_l', 'clavicle_r',
-  'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r', 'neck_01',
+  'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r', 'neck_01', 'thigh_l', 'thigh_r',
 ]);
 
 export const FIT_DEFAULTS = {
   snug: 0.004,        // m: gap between the skin and the garment's inner face
-  slack: 0.03,        // m: how far the garment may stand off the skin (looseness)
+  slack: 0.03,        // m: how far the body of the garment may stand off the skin (looseness)
+  slackArm: 0.010,    // m: sleeves hug the arm (no balloon sleeves)
+  slackHem: 0.008,    // m: the bottom hem hugs the hips (no flared corners)
+  hemBelow: -0.40,    // model units: vertices below this height belong to the hem
   thickness: 0.0078,  // garment wall thickness in the model's own units (measured on the source mesh)
   shoulderEase: 1.08, // garment shoulder seam width = shoulder-joint distance × this
   seamHalf: 0.29,     // model units: half width of the shoulder seam (where the sleeve starts)
@@ -76,8 +79,8 @@ function frame(P, a, b, c, E) {
 
 /** the skin as a triangle soup with a uniform grid for closest-point queries */
 class Surface {
-  constructor(P, tri, cell = 0.02) {
-    this.P = P; this.tri = tri; this.cell = cell;
+  constructor(P, tri, cell = 0.02, region = null) {
+    this.P = P; this.tri = tri; this.cell = cell; this.region = region; // region[t]: 1 = arm triangle
     const n = P.length / 3;
     this.N = new Float32Array(n * 3);
     this.#normals();
@@ -225,6 +228,13 @@ export class TemplateGarment {
 
   /* -------------------------------------------------------------- the skin */
 
+  /** 1 for triangles on the arms (their dominant bone is an arm bone), else 0 */
+  #regions(tri, ids) {
+    const B = this.human.active, names = B.bones.map((b) => b.name), r = new Uint8Array(tri.length / 3);
+    for (let t = 0; t < r.length; t++) { const nm = names[B.dom[ids[tri[t * 3]]]]; r[t] = nm.startsWith('upperarm') || nm.startsWith('lowerarm') ? 1 : 0; }
+    return r;
+  }
+
   /** the skin triangles the garment may rest on, with their current (skinned + morphed) positions */
   #skin() {
     const { human } = this;
@@ -268,7 +278,7 @@ export class TemplateGarment {
     const slot = this.slot;
     const tri = Uint32Array.from(this.tri, (v) => slot.get(v));      // triangles in slot space
     this.fitP = P;                                                    // skin at fit time (slot space)
-    const skin = new Surface(P, tri);
+    const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
 
     /* ---- 1. align: uniform scale + height + depth ---- */
     const bp = (n) => human.bonePosition(n, new THREE.Vector3());
@@ -313,6 +323,8 @@ export class TemplateGarment {
 
     /* ---- 2. wrap, 3. bind ---- */
     this.thick = opts.thickness * best.s;
+    this.hem = new Uint8Array(n);
+    for (let i = 0; i < n; i++) this.hem[i] = base[i * 3 + 1] < opts.hemBelow ? 1 : 0;
     this.inner = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
       if (!skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.25)) continue;
@@ -342,7 +354,9 @@ export class TemplateGarment {
         if (!skin.query(x, y, z, 0.25)) continue;
         skin.point(pt);
         const sd = (x - pt[0]) * skin.nx + (y - pt[1]) * skin.ny + (z - pt[2]) * skin.nz;
-        const lo = opts.snug + (inner[i] ? 0 : thick), hi = lo + opts.slack;
+        const lo = opts.snug + (inner[i] ? 0 : thick);
+        const slack = this.hem[i] ? Math.min(opts.slack, opts.slackHem) : skin.region?.[skin.t] ? Math.min(opts.slack, opts.slackArm) : opts.slack;
+        const hi = lo + slack;
         const want = sd < lo ? lo : sd > hi ? hi : sd;
         D[i * 3] += skin.nx * (want - sd); D[i * 3 + 1] += skin.ny * (want - sd); D[i * 3 + 2] += skin.nz * (want - sd);
       }
@@ -390,7 +404,7 @@ export class TemplateGarment {
     this.update();
     const { ids, P } = this.#skin();
     const slot = this.slot, tri = Uint32Array.from(this.tri, (v) => slot.get(v));
-    const skin = new Surface(P, tri);
+    const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
     const G = Float32Array.from(this.geometry.attributes.position.array);
     this.#wrap(G, skin, [3, 0]);
     this.#bind(G, skin, P, tri, ids);
