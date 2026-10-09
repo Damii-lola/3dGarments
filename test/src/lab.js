@@ -8,6 +8,8 @@ import { createStage } from '@web/scene/stage.js';
 import { Human } from '@web/human/human.js';
 import { ModelController, RANGES, fmtIn, IN, DEFAULT_TONE } from '@web/human/body.js';
 import { POSES, composePose } from '@web/human/poses.js';
+import { TemplateGarment } from '@web/garments/template.js';
+import { listTemplates } from '@web/services/templates.js';
 
 const $ = (s) => document.querySelector(s);
 const stage = createStage($('#view'));
@@ -162,4 +164,51 @@ let frames = 0, fpsT = performance.now();
   requestAnimationFrame(tick);
 })();
 
-window.__lab = { stage, human, model, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };
+
+/* ------------------------------------------------ templates (garment models from Supabase) */
+let worn = null, wornId = null;
+const tplInfo = () => {
+  if (!worn) { $('#tpl-info').textContent = ''; return; }
+  const f = worn.fitInfo, st = worn.stats;
+  $('#tpl-info').textContent = `scale ×${f.scale.toFixed(3)}  fit ${st.fitMs?.toFixed(0)} ms\nfollow ${st.followMs?.toFixed(1) ?? '–'} ms`;
+};
+async function wear(t) {
+  $('#tpl-info').textContent = 'fitting…';
+  worn?.dispose(); worn = null;
+  try {
+    worn = await TemplateGarment.load(t.url, human, { color: $('#tpl-color').value });
+    wornId = t.id;
+    $('#template-controls').hidden = false;
+    stage.invalidate(4);
+  } catch (e) { $('#tpl-info').textContent = `could not load: ${e.message}`; wornId = null; }
+  markTemplates();
+  tplInfo();
+  window.__lab.worn = worn;
+}
+let templateList = [];
+function markTemplates() { $('#templates').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.t === wornId)); }
+function drawTemplates() {
+  const host = $('#templates');
+  const ok = templateList.filter((t) => t.sex === 'unisex' || t.sex === M.sex);
+  host.innerHTML = ok.length ? ok.map((t) => `<button data-t="${t.id}">${t.name}</button>`).join('') : `<span class="note">no ${M.sex} templates yet</span>`;
+  markTemplates();
+}
+{
+  const host = $('#tpl-sliders');
+  slider(host, { label: 'Looseness', min: 0, max: 80, step: 1, value: 30, fmt: (v) => `${v} mm` }, (v) => { if (worn) { worn.setSlack(v / 1000); stage.invalidate(4); tplInfo(); } });
+}
+$('#tpl-color').addEventListener('input', (e) => { worn?.setColor(e.target.value); stage.invalidate(); });
+$('#tpl-remove').addEventListener('click', () => { worn?.dispose(); worn = null; wornId = null; $('#template-controls').hidden = true; markTemplates(); tplInfo(); stage.invalidate(4); window.__lab.worn = null; });
+$('#templates').addEventListener('click', (e) => { const t = templateList.find((x) => x.id === e.target.dataset.t); if (t) wear(t); });
+$('#presets').addEventListener('click', () => { if (worn) { worn.dispose(); worn = null; wornId = null; $('#template-controls').hidden = true; } setTimeout(drawTemplates); });
+(async () => {
+  try { templateList = await listTemplates(); } catch (e) { $('#templates').innerHTML = `<span class="note">${e.message}</span>`; }
+  // dev: ?template=<url to a .glb> adds a local entry (the lab works before anything is in Supabase)
+  const local = params.get('template');
+  if (local) templateList.unshift({ id: 'local', name: 'Local test', category: 'top', sex: 'unisex', url: local });
+  if (templateList.length || local) drawTemplates();
+  else if (!$('#templates .note')) $('#templates').innerHTML = '<span class="note">none published yet</span>';
+  if (local && params.get('wear') != null) wear(templateList[0]);
+})();
+
+window.__lab = { stage, human, model, M, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };

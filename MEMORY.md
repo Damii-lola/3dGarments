@@ -10,6 +10,8 @@ An embeddable 3D **Virtual Fitting Room** for e-commerce (B2B SaaS). Merchants a
 
 Planned: Next.js/React merchant dashboard (garment upload, subscription, analytics) · lazy-loaded iframe/script widget · Blender-exported compressed `.glb` garments with chest/waist/height driven by morph targets in JS (no server re-render) · pricing by widget loads (Starter $29 / 5k, Growth $79 / 25k, Scale $199 unlimited + white-label + sizing analytics) · go-to-market via cold outreach to streetwear labels, boutiques and mid-sized Shopify merchants with a custom prototype of their own clothing; 5–10 pilot merchants, then return-rate case studies.
 
+**Template garments (new):** own `.glb` models in Supabase (`garment_templates` + public `templates` bucket). `web/src/garments/template.js` fits a static mesh to the mannequin and follows body changes; the lab's *Templates* section lists them. First model: `Male/M_CrewNeckTee.glb` (AI-generated, decimated by `tools/garments/prepare_template.py`). Known limits: ~7 s fit and ~1.3 s settle in headless software rendering (measure on a real device), lumpy cloth surface, hem flanges at the hip, single static pose assumption.
+
 **Removed from scope:** the old "Style" (pose / backdrop / scene) and "Photoshoot" (4K / transparent export) stages. The code for them (HDRIs, backdrop images, `stage.capture`, the pose library) was deleted. Do not re-add it.
 
 **Live site:** `https://damii-lola.github.io/3dGarments` (served from `main` branch via GitHub Pages)

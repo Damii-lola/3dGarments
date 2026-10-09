@@ -4,6 +4,8 @@ An embeddable 3D **Virtual Fitting Room** for e-commerce (B2B SaaS). Merchants d
 
 Current repo: the fitting-room core: the male/female mannequins (the owner's FBX models in `assets/`) with skin, height, weight and body-shape controls, garment photo upload, and the server's photo → cut-out → measurement pipeline. Clothing on the model, the embeddable widget and the dashboard are not built yet.
 
+Template garments: our own `.glb` models live in Supabase (`garment_templates` table + public `templates` bucket, migration `20261009000000_garment_templates.sql`). `tools/garments/prepare_template.py` decimates a raw model (~30k tris, <1 MB). `web/src/garments/template.js` fits a static mesh to the mannequin (align → wrap with ease → bind to skin triangles) and makes it follow every shape/pose change (`update()` while sliders move, `settle()` ~180 ms after). The lab (`test/`) has a Templates section; `?template=<glb url>&wear` loads a local model.
+
 Out of scope, removed: pose library, backdrops/HDRIs, scene set-up and photo export. Do not add them back.
 
 ## Layout
