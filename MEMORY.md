@@ -23,7 +23,7 @@ Planned: Next.js/React merchant dashboard (garment upload, subscription, analyti
 
 ## Ground rules — never break these
 
-- **Never push to `main` directly** — create a feature branch, work there, merge only when done.
+- **Push straight to `main`** (the owner prefers it over feature branches and merges). Pushing to `main` deploys the site, runs the Supabase migrations and CI, so build and test first.
 - **Never commit `.env` files.** All secrets live only in Render's env vars.
 - `KAGGLE_API_TOKEN` only ever in the shell — never in files.
 - API always uses the **service-role key** → every Supabase query MUST filter by `user_id`.
