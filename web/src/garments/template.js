@@ -99,9 +99,22 @@ class Surface {
             l.push(t / 3);
           }
     }
+    if (region) this.#split();
     // result of the last query()
     this.t = -1; this.d2 = Infinity; this.u = 0; this.v = 0; this.w = 0;
     this.nx = 0; this.ny = 0; this.nz = 1;
+  }
+
+  /** one lookup structure per body part (region 0 = torso etc., 1 = arms), so a part-restricted query never walks the other part's triangles */
+  #split() {
+    const { tri, region } = this;
+    this.sub = [0, 1].map((r) => {
+      const sel = [], map = [];
+      for (let t = 0; t < region.length; t++) if (region[t] === r) { sel.push(tri[t * 3], tri[t * 3 + 1], tri[t * 3 + 2]); map.push(t); }
+      const S = new Surface(this.P, Uint32Array.from(sel), this.cell, null);
+      S.map = Int32Array.from(map);
+      return S;
+    });
   }
 
   static key(x, y, z) { return ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512); }
@@ -123,6 +136,12 @@ class Surface {
 
   /** closest skin point to p; fills this.{t,d2,u,v,w,nx,ny,nz}; returns false when nothing is within `reach` */
   query(px, py, pz, reach = 0.16) {
+    if (this.regionOnly >= 0 && this.sub) {
+      const S = this.sub[this.regionOnly];
+      if (!S.map.length || !S.query(px, py, pz, reach)) { this.t = -1; return false; }
+      this.t = S.map[S.t]; this.d2 = S.d2; this.u = S.u; this.v = S.v; this.w = S.w; this.nx = S.nx; this.ny = S.ny; this.nz = S.nz;
+      return true;
+    }
     const { P, tri, grid, cell } = this;
     const cx = Math.floor(px / cell), cy = Math.floor(py / cell), cz = Math.floor(pz / cell);
     const maxR = Math.ceil(reach / cell);
@@ -404,6 +423,7 @@ export class TemplateGarment {
       }
       this.pieceRegion = Int8Array.from(arm, (a, k) => (a / Math.max(1, cnt[k]) > 0.5 ? 1 : 0));
     }
+    this.armW = this.#armWeights(G);
     this.fitInfo = { prefit: true, scale: 1, pieces: Array.from(this.pieceRegion) };
     this.inner = new Uint8Array(G.length / 3).fill(1);   // single-layer garment: its surface IS the cloth
     this.thick = 0; this.hem = new Uint8Array(G.length / 3);
@@ -442,34 +462,63 @@ export class TemplateGarment {
     for (let i = 0; i < n * 3; i++) G[i] += D[i];
   }
 
-  /** tie each garment vertex to the skin triangle under it, in that triangle's local frame; G becomes the rest state */
+  /**
+   * Tie each garment vertex to the skin triangle under it, in that triangle's local frame; G becomes the rest state.
+   * A prefit garment is tied to BOTH the torso skin and the arm skin (two bindings); update() blends the two with
+   * `armW`: 0 on the front/back pieces, 1 on the sleeves, fading to 0.5 across the seams between them, like skin
+   * weights, so the underarm doesn't pinch when the arms move far (T-pose).
+   */
   #bind(G, skin, P, tri, ids) {
     const n = G.length / 3;
     this.fitG = G;
-    this.anchorU = new Uint32Array(n * 3);   // 3 indices into the "used" skin vertices per garment vertex
-    this.weight = new Float32Array(n * 3);   // barycentric weights of the anchor point
-    this.local = new Float32Array(n * 3);    // offset from the anchor point in the triangle frame (e1, e2, normal)
+    const dual = !!this.pieceRegion;
+    this.bindings = [];
     const slotToUsed = new Map(), usedSlots = [];
     const useSlot = (sl) => { let u = slotToUsed.get(sl); if (u === undefined) { u = usedSlots.length; slotToUsed.set(sl, u); usedSlots.push(sl); } return u; };
     const E = new Float32Array(9);
-    for (let i = 0; i < n; i++) {
-      skin.regionOnly = this.pieceRegion ? this.pieceRegion[this.piece[i]] : -1;
-      if (!skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3) && !(skin.regionOnly = -1, skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3))) { this.weight[i * 3] = 1; this.anchorU[i * 3] = this.anchorU[i * 3 + 1] = this.anchorU[i * 3 + 2] = useSlot(tri[0]); continue; }
-      const sl = [tri[skin.t * 3], tri[skin.t * 3 + 1], tri[skin.t * 3 + 2]];
-      for (let k = 0; k < 3; k++) this.anchorU[i * 3 + k] = useSlot(sl[k]);
-      this.weight[i * 3] = skin.u; this.weight[i * 3 + 1] = skin.v; this.weight[i * 3 + 2] = skin.w;
-      frame(P, sl[0] * 3, sl[1] * 3, sl[2] * 3, E);
-      const q0 = P[sl[0] * 3] * skin.u + P[sl[1] * 3] * skin.v + P[sl[2] * 3] * skin.w;
-      const q1 = P[sl[0] * 3 + 1] * skin.u + P[sl[1] * 3 + 1] * skin.v + P[sl[2] * 3 + 1] * skin.w;
-      const q2 = P[sl[0] * 3 + 2] * skin.u + P[sl[1] * 3 + 2] * skin.v + P[sl[2] * 3 + 2] * skin.w;
-      const ox = G[i * 3] - q0, oy = G[i * 3 + 1] - q1, oz = G[i * 3 + 2] - q2;
-      this.local[i * 3] = ox * E[0] + oy * E[1] + oz * E[2];
-      this.local[i * 3 + 1] = ox * E[3] + oy * E[4] + oz * E[5];
-      this.local[i * 3 + 2] = ox * E[6] + oy * E[7] + oz * E[8];
+    for (const region of dual ? [0, 1] : [-1]) {
+      const B = { anchorU: new Uint32Array(n * 3), weight: new Float32Array(n * 3), local: new Float32Array(n * 3) };
+      for (let i = 0; i < n; i++) {
+        // a vertex far from the seam follows ONE body part: no need to bind it to the other
+        if (dual && ((region === 1 && this.armW[i] === 0) || (region === 0 && this.armW[i] === 1))) continue;
+        skin.regionOnly = region;
+        if (!skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], dual ? 0.15 : 0.3) && !(skin.regionOnly = -1, skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3))) {
+          B.weight[i * 3] = 1; B.anchorU[i * 3] = B.anchorU[i * 3 + 1] = B.anchorU[i * 3 + 2] = useSlot(tri[0]); continue;
+        }
+        const sl = [tri[skin.t * 3], tri[skin.t * 3 + 1], tri[skin.t * 3 + 2]];
+        for (let k = 0; k < 3; k++) B.anchorU[i * 3 + k] = useSlot(sl[k]);
+        B.weight[i * 3] = skin.u; B.weight[i * 3 + 1] = skin.v; B.weight[i * 3 + 2] = skin.w;
+        frame(P, sl[0] * 3, sl[1] * 3, sl[2] * 3, E);
+        const q0 = P[sl[0] * 3] * skin.u + P[sl[1] * 3] * skin.v + P[sl[2] * 3] * skin.w;
+        const q1 = P[sl[0] * 3 + 1] * skin.u + P[sl[1] * 3 + 1] * skin.v + P[sl[2] * 3 + 1] * skin.w;
+        const q2 = P[sl[0] * 3 + 2] * skin.u + P[sl[1] * 3 + 2] * skin.v + P[sl[2] * 3 + 2] * skin.w;
+        const ox = G[i * 3] - q0, oy = G[i * 3 + 1] - q1, oz = G[i * 3 + 2] - q2;
+        B.local[i * 3] = ox * E[0] + oy * E[1] + oz * E[2];
+        B.local[i * 3 + 1] = ox * E[3] + oy * E[4] + oz * E[5];
+        B.local[i * 3 + 2] = ox * E[6] + oy * E[7] + oz * E[8];
+      }
+      this.bindings.push(B);
     }
     skin.regionOnly = -1;
     this.usedIds = usedSlots.map((sl) => ids[sl]);
     this.usedP = new Float32Array(usedSlots.length * 3);
+  }
+
+  /** blend weight toward the arm binding per vertex, from the REST positions (computed once) */
+  #armWeights(G) {
+    const n = G.length / 3, band = 0.045, W = new Float32Array(n);
+    // seams between a torso piece and an arm piece (twins whose pieces belong to different body parts)
+    const seam = [];
+    const t = this.twins || [];
+    for (let k = 0; k < t.length; k += 2) if (this.pieceRegion[this.piece[t[k]]] !== this.pieceRegion[this.piece[t[k + 1]]]) seam.push(t[k]);
+    const sm = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+    for (let i = 0; i < n; i++) {
+      let d2 = Infinity;
+      for (const j of seam) { const dx = G[i * 3] - G[j * 3], dy = G[i * 3 + 1] - G[j * 3 + 1], dz = G[i * 3 + 2] - G[j * 3 + 2]; const e = dx * dx + dy * dy + dz * dz; if (e < d2) d2 = e; }
+      const near = 1 - sm(Math.sqrt(d2) / band);               // 1 at the seam, 0 beyond the band
+      W[i] = this.pieceRegion[this.piece[i]] === 1 ? 1 - 0.5 * near : 0.5 * near;
+    }
+    return W;
   }
 
   /**
@@ -479,37 +528,45 @@ export class TemplateGarment {
    */
   settle() {
     if (!this.fitG || this.human.sex !== this.sex) return;
-    const t0 = performance.now();
-    this.update();
-    const { ids, P } = this.#skin();
+    const t0 = performance.now(), parts = {}, lap = (k) => { const t = performance.now(); parts[k] = Math.round(t - (lap.t || t0)); lap.t = t; };
+    this.update(); lap('update');
+    const { ids, P } = this.#skin(); lap('skin');
     const slot = this.slot, tri = Uint32Array.from(this.tri, (v) => slot.get(v));
-    const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
+    const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids)); lap('surface');
     const G = Float32Array.from(this.geometry.attributes.position.array);
-    this.#wrap(G, skin, [3, 0]);
+    this.#wrap(G, skin, [3, 0]); lap('wrap');
     this.#weld(G);
-    this.#clearSeams(G, skin);
-    this.#bind(G, skin, P, tri, ids);
-    this.#write(G);
+    this.#clearSeams(G, skin); lap('seams');
+    this.#bind(G, skin, P, tri, ids); lap('bind');
+    this.#write(G); lap('write');
     this.stats.settleMs = performance.now() - t0;
+    this.stats.settleParts = parts;
     this.onSettled?.();
   }
 
-  /** the garment's positions after the skin moved: each vertex rides on its skin triangle (position + rotation) */
+  /** the garment's positions after the skin moved: each vertex rides on its skin triangle(s) (position + rotation) */
   update() {
     if (!this.fitG) return;
     if (this.human.sex !== this.sex) { this.fit(); return; }
     const t0 = performance.now();
     this.#positions(this.usedIds, this.usedP);
     const n = this.fitG.length / 3, out = this.geometry.attributes.position.array;
-    const { anchorU, weight, local, usedP } = this, E = this.#E;
+    const { usedP, bindings, armW } = this, E = this.#E;
+    const dual = bindings.length === 2;
     for (let i = 0; i < n; i++) {
-      const a = anchorU[i * 3] * 3, b = anchorU[i * 3 + 1] * 3, c = anchorU[i * 3 + 2] * 3;
-      frame(usedP, a, b, c, E);
-      const u = weight[i * 3], v = weight[i * 3 + 1], w = weight[i * 3 + 2];
-      const lx = local[i * 3], ly = local[i * 3 + 1], lz = local[i * 3 + 2];
-      out[i * 3] = usedP[a] * u + usedP[b] * v + usedP[c] * w + lx * E[0] + ly * E[3] + lz * E[6];
-      out[i * 3 + 1] = usedP[a + 1] * u + usedP[b + 1] * v + usedP[c + 1] * w + lx * E[1] + ly * E[4] + lz * E[7];
-      out[i * 3 + 2] = usedP[a + 2] * u + usedP[b + 2] * v + usedP[c + 2] * w + lx * E[2] + ly * E[5] + lz * E[8];
+      let px = 0, py = 0, pz = 0;
+      for (let r = 0; r < bindings.length; r++) {
+        const B = bindings[r], w = dual ? (r === 1 ? armW[i] : 1 - armW[i]) : 1;
+        if (w === 0) continue;
+        const a = B.anchorU[i * 3] * 3, b = B.anchorU[i * 3 + 1] * 3, c = B.anchorU[i * 3 + 2] * 3;
+        frame(usedP, a, b, c, E);
+        const u = B.weight[i * 3], v = B.weight[i * 3 + 1], ww = B.weight[i * 3 + 2];
+        const lx = B.local[i * 3], ly = B.local[i * 3 + 1], lz = B.local[i * 3 + 2];
+        px += w * (usedP[a] * u + usedP[b] * v + usedP[c] * ww + lx * E[0] + ly * E[3] + lz * E[6]);
+        py += w * (usedP[a + 1] * u + usedP[b + 1] * v + usedP[c + 1] * ww + lx * E[1] + ly * E[4] + lz * E[7]);
+        pz += w * (usedP[a + 2] * u + usedP[b + 2] * v + usedP[c + 2] * ww + lx * E[2] + ly * E[5] + lz * E[8]);
+      }
+      out[i * 3] = px; out[i * 3 + 1] = py; out[i * 3 + 2] = pz;
     }
     this.#weld(out);
     this.geometry.attributes.position.needsUpdate = true;
