@@ -182,7 +182,7 @@ async function wear(t) {
   worn?.dispose(); worn = null;
   try {
     const spec = t.kind === 'body' ? t.spec : t.meta?.kind === 'body' ? t.meta.spec : null;
-    worn = spec ? BodyGarment.build(human, { ...spec, ease: ease(spec) }, { color: $('#tpl-color').value }) : await TemplateGarment.load(t.url, human, { color: $('#tpl-color').value });
+    worn = spec ? BodyGarment.build(human, { ...spec, ease: ease(spec) }, { color: $('#tpl-color').value }) : await TemplateGarment.load(t.url, human, { color: $('#tpl-color').value, prefit: !!(t.meta?.prefit || params.has('prefit')) });
     worn.template = t;
     wornId = t.id;
     $('#template-controls').hidden = false;
@@ -214,7 +214,7 @@ $('#tpl-remove').addEventListener('click', () => { worn?.dispose(); worn = null;
 $('#templates').addEventListener('click', (e) => { const t = templateList.find((x) => x.id === e.target.dataset.t); if (t) wear(t); });
 $('#presets').addEventListener('click', () => { const t = worn?.template; if (worn) { worn.dispose(); worn = null; wornId = null; $('#template-controls').hidden = true; } setTimeout(() => { drawTemplates(); if (t && (t.kind === 'body' || t.meta?.kind === 'body')) wear(t); }); });
 (async () => {
-  templateList = [...BODY_TEMPLATES];
+  templateList = params.has('builtin') ? [...BODY_TEMPLATES] : [];   // the generated fallback templates: ?builtin
   try { templateList.push(...await listTemplates()); } catch (e) { console.warn('templates:', e.message); }
   // dev: ?template=<url to a .glb> adds a local entry (the lab works before anything is in Supabase)
   const local = params.get('template');

@@ -201,6 +201,7 @@ export class TemplateGarment {
     this.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.base), 3).setUsage(THREE.DynamicDrawUsage));
     this.geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(this.baseN), 3).setUsage(THREE.DynamicDrawUsage));
     this.geometry.setIndex(new THREE.BufferAttribute(this.index, 1));
+    if (geometry.attributes.uv) this.geometry.setAttribute('uv', geometry.attributes.uv.clone());
     this.material = new THREE.MeshStandardMaterial({ color: opts.color || '#d9d6cf', roughness: 0.88, metalness: 0, side: THREE.DoubleSide });
     this.object = new THREE.Mesh(this.geometry, this.material);
     this.object.name = 'template-garment';
@@ -216,6 +217,40 @@ export class TemplateGarment {
   }
 
   setColor(c) { this.material.color.set(c); }
+  /** texture map for the garment's own UVs: a THREE.Texture, an image URL, or null (glTF convention: v runs down) */
+  async setTexture(t) {
+    if (typeof t === 'string') t = await new THREE.TextureLoader().loadAsync(t);
+    if (t) { t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; t.anisotropy = 4; }
+    this.material.map = t || null; this.material.needsUpdate = true;
+  }
+  /** UV test pattern: red grows with u, green with v, 1/16 grid lines, a corner mark at (0,0) */
+  showChecker(on) {
+    if (on && !this.checker) {
+      const S = 1024, c = document.createElement('canvas'); c.width = c.height = S;
+      const x = c.getContext('2d'), img = x.createImageData(S, S);
+      for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) { const o = (j * S + i) * 4; img.data[o] = 60 + 195 * i / S; img.data[o + 1] = 60 + 195 * j / S; img.data[o + 2] = 90; img.data[o + 3] = 255; }
+      x.putImageData(img, 0, 0);
+      x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 2;
+      for (let k = 0; k <= 16; k++) { x.beginPath(); x.moveTo(k * S / 16, 0); x.lineTo(k * S / 16, S); x.moveTo(0, k * S / 16); x.lineTo(S, k * S / 16); x.stroke(); }
+      x.fillStyle = '#fff'; x.fillRect(0, 0, 90, 90); x.fillStyle = '#000'; x.font = 'bold 40px sans-serif'; x.fillText('0,0', 10, 55);
+      this.checker = new THREE.CanvasTexture(c); this.checker.colorSpace = THREE.SRGBColorSpace; this.checker.flipY = false;
+    }
+    this.material.map = on ? this.checker : null; this.material.needsUpdate = true;
+  }
+  /** the garment's UV layout (triangle outlines) as a canvas — what the texture generator paints onto */
+  uvCanvas(size = 1024) {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const x = c.getContext('2d'), uv = this.geometry.attributes.uv?.array, ix = this.index;
+    x.fillStyle = '#fff'; x.fillRect(0, 0, size, size);
+    if (!uv) return c;
+    x.strokeStyle = '#222'; x.lineWidth = 1; x.beginPath();
+    for (let t = 0; t < ix.length; t += 3) for (let e = 0; e < 3; e++) {
+      const a = ix[t + e], b = ix[t + (e + 1) % 3];
+      x.moveTo(uv[a * 2] * size, uv[a * 2 + 1] * size); x.lineTo(uv[b * 2] * size, uv[b * 2 + 1] * size);
+    }
+    x.stroke();
+    return c;
+  }
   setSlack(m) { this.opts.slack = m; this.fit(); }
 
   dispose() {
@@ -278,6 +313,7 @@ export class TemplateGarment {
     const slot = this.slot;
     const tri = Uint32Array.from(this.tri, (v) => slot.get(v));      // triangles in slot space
     this.fitP = P;                                                    // skin at fit time (slot space)
+    if (opts.prefit) return this.#fitPrefit(ids, tri, t0);
     const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
 
     /* ---- 1. align: uniform scale + height + depth ---- */
@@ -342,6 +378,30 @@ export class TemplateGarment {
   }
 
   /**
+   * The garment was modelled directly on the mannequin (Blender, imported from the mannequin .glb, same
+   * origin / scale): nothing to align or wrap. Bind it to the mannequin's REST skin, then update() carries it
+   * to whatever the body does now (arms lowered, sliders …).
+   */
+  #fitPrefit(ids, tri, t0) {
+    const g = this.human.active.mesh.geometry.attributes.position, mesh = this.human.active.mesh;
+    this.human.object.updateMatrixWorld(true);
+    const m = new THREE.Matrix4().copy(this.human.object.matrixWorld).invert().multiply(mesh.matrixWorld);
+    const P = new Float32Array(ids.length * 3), v = new THREE.Vector3();
+    for (let i = 0; i < ids.length; i++) { v.fromBufferAttribute(g, ids[i]).applyMatrix4(m); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; }
+    const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
+    const G = Float32Array.from(this.base);
+    this.fitInfo = { prefit: true, scale: 1 };
+    this.inner = new Uint8Array(G.length / 3).fill(1);   // single-layer garment: its surface IS the cloth
+    this.thick = 0; this.hem = new Uint8Array(G.length / 3);
+    this.#bind(G, skin, P, tri, ids);
+    this.skin = skin;
+    this.stats.fitMs = performance.now() - t0;
+    this.update();
+    this.settleTimer = setTimeout(() => this.settle(), 60);   // the pose differs from the rest pose it was modelled in
+    return this.fitInfo;
+  }
+
+  /**
    * Keep every vertex's own gap to the skin, clamped into [lo, lo + slack] along the skin normal
    * (lo: snug for the wall's inner face, snug + thickness for its outer face). Each pass can smooth
    * the offsets first; the last passes (0) only enforce the bounds. Edits G in place.
@@ -355,7 +415,8 @@ export class TemplateGarment {
         skin.point(pt);
         const sd = (x - pt[0]) * skin.nx + (y - pt[1]) * skin.ny + (z - pt[2]) * skin.nz;
         const lo = opts.snug + (inner[i] ? 0 : thick);
-        const slack = this.hem[i] ? Math.min(opts.slack, opts.slackHem) : skin.region?.[skin.t] ? Math.min(opts.slack, opts.slackArm) : opts.slack;
+        // a prefit garment keeps its own looseness: only the lower bound (never inside the skin) applies
+        const slack = opts.prefit ? 1 : this.hem[i] ? Math.min(opts.slack, opts.slackHem) : skin.region?.[skin.t] ? Math.min(opts.slack, opts.slackArm) : opts.slack;
         const hi = lo + slack;
         const want = sd < lo ? lo : sd > hi ? hi : sd;
         D[i * 3] += skin.nx * (want - sd); D[i * 3 + 1] += skin.ny * (want - sd); D[i * 3 + 2] += skin.nz * (want - sd);
