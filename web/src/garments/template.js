@@ -31,6 +31,8 @@ export const FIT_DEFAULTS = {
   snug: 0.004,        // m: gap between the skin and the garment's inner face
   slack: 0.03,        // m: how far the body of the garment may stand off the skin (looseness)
   slackArm: 0.010,    // m: sleeves hug the arm (no balloon sleeves)
+  sleeveEase: 0.028,  // prefit garments: extra room added to the sleeves at the cuff (a real sleeve stands off the arm)
+  shoulderSmooth: 2,  // prefit garments: smoothing passes around the shoulder seam while the body moves (rounds the corner)
   slackHem: 0.008,    // m: the bottom hem hugs the hips (no flared corners)
   hemBelow: -0.40,    // model units: vertices below this height belong to the hem
   thickness: 0.0078,  // garment wall thickness in the model's own units (measured on the source mesh)
@@ -424,6 +426,17 @@ export class TemplateGarment {
       this.pieceRegion = Int8Array.from(arm, (a, k) => (a / Math.max(1, cnt[k]) > 0.5 ? 1 : 0));
     }
     this.armW = this.#armWeights(G);
+    {
+      // sleeves: add volume along the garment's own normal, growing from 0 at the armhole to `sleeveEase` at the cuff
+      const n = G.length / 3, far = new Float32Array(this.pieceCount);
+      for (let i = 0; i < n; i++) far[this.piece[i]] = Math.max(far[this.piece[i]], this.seamDist[i]);
+      const sm = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+      for (let i = 0; i < n; i++) {
+        if (this.pieceRegion[this.piece[i]] !== 1) continue;
+        const e = this.opts.sleeveEase * sm((this.seamDist[i] / (far[this.piece[i]] || 1) - 0.1) / 0.8);
+        for (let c = 0; c < 3; c++) G[i * 3 + c] += this.baseN[i * 3 + c] * e;
+      }
+    }
     this.fitInfo = { prefit: true, scale: 1, pieces: Array.from(this.pieceRegion) };
     this.inner = new Uint8Array(G.length / 3).fill(1);   // single-layer garment: its surface IS the cloth
     this.thick = 0; this.hem = new Uint8Array(G.length / 3);
@@ -512,9 +525,11 @@ export class TemplateGarment {
     const t = this.twins || [];
     for (let k = 0; k < t.length; k += 2) if (this.pieceRegion[this.piece[t[k]]] !== this.pieceRegion[this.piece[t[k + 1]]]) seam.push(t[k]);
     const sm = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+    this.seamDist = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       let d2 = Infinity;
       for (const j of seam) { const dx = G[i * 3] - G[j * 3], dy = G[i * 3 + 1] - G[j * 3 + 1], dz = G[i * 3 + 2] - G[j * 3 + 2]; const e = dx * dx + dy * dy + dz * dz; if (e < d2) d2 = e; }
+      this.seamDist[i] = Math.sqrt(d2);
       const near = 1 - sm(Math.sqrt(d2) / band);               // 1 at the seam, 0 beyond the band
       W[i] = this.pieceRegion[this.piece[i]] === 1 ? 1 - 0.5 * near : 0.5 * near;
     }
@@ -534,6 +549,7 @@ export class TemplateGarment {
     const slot = this.slot, tri = Uint32Array.from(this.tri, (v) => slot.get(v));
     const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids)); lap('surface');
     const G = Float32Array.from(this.geometry.attributes.position.array);
+    if (this.pieceRegion && this.opts.shoulderSmooth > 0) this.#roundSeams(G);   // round the shoulder corner, then the push-out below keeps it off the skin
     this.#wrap(G, skin, [3, 0]); lap('wrap');
     this.#weld(G);
     this.#clearSeams(G, skin); lap('seams');
@@ -653,6 +669,28 @@ export class TemplateGarment {
       }
     }
     skin.regionOnly = -1;
+  }
+
+  /** smooth the shape around the torso/arm seams (a few cm either side) so the shoulder is a curve, not a corner */
+  #roundSeams(out) {
+    const n = out.length / 3, { adjStart, adj, seamDist } = this;
+    if (!this.roundW) {
+      this.roundW = new Float32Array(n);
+      for (let i = 0; i < n; i++) { const x = Math.min(1, seamDist[i] / 0.04); this.roundW[i] = 1 - x * x * (3 - 2 * x); }
+      this.roundTmp = new Float32Array(n * 3);
+    }
+    const { roundW, roundTmp } = this;
+    for (let it = 0; it < this.opts.shoulderSmooth; it++) {
+      for (let i = 0; i < n; i++) {
+        const w = roundW[i] * 0.6, a = adjStart[i], b = adjStart[i + 1], c = b - a;
+        if (w <= 0.001 || !c) { roundTmp[i * 3] = out[i * 3]; roundTmp[i * 3 + 1] = out[i * 3 + 1]; roundTmp[i * 3 + 2] = out[i * 3 + 2]; continue; }
+        let x = 0, y = 0, z = 0;
+        for (let j = a; j < b; j++) { x += out[adj[j] * 3]; y += out[adj[j] * 3 + 1]; z += out[adj[j] * 3 + 2]; }
+        roundTmp[i * 3] = out[i * 3] + w * (x / c - out[i * 3]); roundTmp[i * 3 + 1] = out[i * 3 + 1] + w * (y / c - out[i * 3 + 1]); roundTmp[i * 3 + 2] = out[i * 3 + 2] + w * (z / c - out[i * 3 + 2]);
+      }
+      out.set(roundTmp);
+      this.#weld(out);
+    }
   }
 
   /** put each seam pair at its midpoint */
