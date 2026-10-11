@@ -81,6 +81,7 @@ function frame(P, a, b, c, E) {
 class Surface {
   constructor(P, tri, cell = 0.02, region = null) {
     this.P = P; this.tri = tri; this.cell = cell; this.region = region; // region[t]: 1 = arm triangle
+    this.regionOnly = -1;                                              // >= 0: only consider triangles of that region
     const n = P.length / 3;
     this.N = new Float32Array(n * 3);
     this.#normals();
@@ -136,7 +137,9 @@ class Surface {
             const l = grid.get(Surface.key(x, y, z));
             if (!l) continue;
             for (let q = 0; q < l.length; q++) {
-              const t = l[q], a = tri[t * 3] * 3, b = tri[t * 3 + 1] * 3, c = tri[t * 3 + 2] * 3;
+              const t = l[q];
+              if (this.regionOnly >= 0 && this.region[t] !== this.regionOnly) continue;
+              const a = tri[t * 3] * 3, b = tri[t * 3 + 1] * 3, c = tri[t * 3 + 2] * 3;
               const d2 = closestTri(px, py, pz, P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2], P[c], P[c + 1], P[c + 2]);
               if (d2 < this.d2) { this.d2 = d2; this.t = t; this.u = _bary[0]; this.v = _bary[1]; this.w = _bary[2]; }
             }
@@ -196,6 +199,7 @@ export class TemplateGarment {
     this.baseN = Float32Array.from(tmp.attributes.normal.array);
     tmp.dispose();
     this.#adjacency(n);
+    this.#pieces(n);
 
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.base), 3).setUsage(THREE.DynamicDrawUsage));
@@ -390,7 +394,17 @@ export class TemplateGarment {
     for (let i = 0; i < ids.length; i++) { v.fromBufferAttribute(g, ids[i]).applyMatrix4(m); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; }
     const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
     const G = Float32Array.from(this.base);
-    this.fitInfo = { prefit: true, scale: 1 };
+    this.#seams(G);
+    // which body part does each piece belong to? (sleeves -> arm skin, front/back -> torso skin)
+    {
+      const arm = new Float32Array(this.pieceCount), cnt = new Float32Array(this.pieceCount);
+      for (let i = 0; i < G.length / 3; i++) {
+        if (!skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3)) continue;
+        cnt[this.piece[i]]++; arm[this.piece[i]] += skin.region[skin.t];
+      }
+      this.pieceRegion = Int8Array.from(arm, (a, k) => (a / Math.max(1, cnt[k]) > 0.5 ? 1 : 0));
+    }
+    this.fitInfo = { prefit: true, scale: 1, pieces: Array.from(this.pieceRegion) };
     this.inner = new Uint8Array(G.length / 3).fill(1);   // single-layer garment: its surface IS the cloth
     this.thick = 0; this.hem = new Uint8Array(G.length / 3);
     this.#bind(G, skin, P, tri, ids);
@@ -411,7 +425,8 @@ export class TemplateGarment {
     for (const smooth of passes) {
       for (let i = 0; i < n; i++) {
         const x = G[i * 3] + D[i * 3], y = G[i * 3 + 1] + D[i * 3 + 1], z = G[i * 3 + 2] + D[i * 3 + 2];
-        if (!skin.query(x, y, z, 0.25)) continue;
+        skin.regionOnly = this.pieceRegion ? this.pieceRegion[this.piece[i]] : -1;
+        if (!skin.query(x, y, z, 0.25)) { skin.regionOnly = -1; if (!skin.query(x, y, z, 0.25)) continue; }
         skin.point(pt);
         const sd = (x - pt[0]) * skin.nx + (y - pt[1]) * skin.ny + (z - pt[2]) * skin.nz;
         const lo = opts.snug + (inner[i] ? 0 : thick);
@@ -423,6 +438,7 @@ export class TemplateGarment {
       }
       if (smooth) this.#smooth(D, smooth);
     }
+    skin.regionOnly = -1;
     for (let i = 0; i < n * 3; i++) G[i] += D[i];
   }
 
@@ -437,7 +453,8 @@ export class TemplateGarment {
     const useSlot = (sl) => { let u = slotToUsed.get(sl); if (u === undefined) { u = usedSlots.length; slotToUsed.set(sl, u); usedSlots.push(sl); } return u; };
     const E = new Float32Array(9);
     for (let i = 0; i < n; i++) {
-      if (!skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3)) { this.weight[i * 3] = 1; this.anchorU[i * 3] = this.anchorU[i * 3 + 1] = this.anchorU[i * 3 + 2] = useSlot(tri[0]); continue; }
+      skin.regionOnly = this.pieceRegion ? this.pieceRegion[this.piece[i]] : -1;
+      if (!skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3) && !(skin.regionOnly = -1, skin.query(G[i * 3], G[i * 3 + 1], G[i * 3 + 2], 0.3))) { this.weight[i * 3] = 1; this.anchorU[i * 3] = this.anchorU[i * 3 + 1] = this.anchorU[i * 3 + 2] = useSlot(tri[0]); continue; }
       const sl = [tri[skin.t * 3], tri[skin.t * 3 + 1], tri[skin.t * 3 + 2]];
       for (let k = 0; k < 3; k++) this.anchorU[i * 3 + k] = useSlot(sl[k]);
       this.weight[i * 3] = skin.u; this.weight[i * 3 + 1] = skin.v; this.weight[i * 3 + 2] = skin.w;
@@ -450,6 +467,7 @@ export class TemplateGarment {
       this.local[i * 3 + 1] = ox * E[3] + oy * E[4] + oz * E[5];
       this.local[i * 3 + 2] = ox * E[6] + oy * E[7] + oz * E[8];
     }
+    skin.regionOnly = -1;
     this.usedIds = usedSlots.map((sl) => ids[sl]);
     this.usedP = new Float32Array(usedSlots.length * 3);
   }
@@ -468,6 +486,8 @@ export class TemplateGarment {
     const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids));
     const G = Float32Array.from(this.geometry.attributes.position.array);
     this.#wrap(G, skin, [3, 0]);
+    this.#weld(G);
+    this.#clearSeams(G, skin);
     this.#bind(G, skin, P, tri, ids);
     this.#write(G);
     this.stats.settleMs = performance.now() - t0;
@@ -491,8 +511,10 @@ export class TemplateGarment {
       out[i * 3 + 1] = usedP[a + 1] * u + usedP[b + 1] * v + usedP[c + 1] * w + lx * E[1] + ly * E[4] + lz * E[7];
       out[i * 3 + 2] = usedP[a + 2] * u + usedP[b + 2] * v + usedP[c + 2] * w + lx * E[2] + ly * E[5] + lz * E[8];
     }
+    this.#weld(out);
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.computeVertexNormals();
+    this.#weld(this.geometry.attributes.normal.array);   // shared normals across seams: no visible line
     this.stats.followMs = performance.now() - t0;
   }
   #E = new Float32Array(9);
@@ -504,10 +526,11 @@ export class TemplateGarment {
   audit() {
     const { ids, P } = this.#skin();
     const slot = this.slot, tri = Uint32Array.from(this.tri, (v) => slot.get(v));
-    const skin = new Surface(P, tri), pos = this.geometry.attributes.position.array, n = pos.length / 3, pt = [0, 0, 0];
+    const skin = new Surface(P, tri, 0.02, this.#regions(tri, ids)), pos = this.geometry.attributes.position.array, n = pos.length / 3, pt = [0, 0, 0];
     let inside = 0, worst = 0; const gaps = [], deep = [];
     const B = this.human.active, names = B.bones.map((b) => b.name);
     for (let i = 0; i < n; i++) {
+      skin.regionOnly = this.pieceRegion ? this.pieceRegion[this.piece[i]] : -1;
       if (!skin.query(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], 0.3)) continue;
       skin.point(pt);
       const sd = (pos[i * 3] - pt[0]) * skin.nx + (pos[i * 3 + 1] - pt[1]) * skin.ny + (pos[i * 3 + 2] - pt[2]) * skin.nz;
@@ -526,6 +549,72 @@ export class TemplateGarment {
     this.geometry.attributes.position.array.set(G);
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.computeVertexNormals();
+  }
+
+  /**
+   * Vertices of different pieces that sit at the same spot at rest (the seams: shoulders, sides, armholes).
+   * The pieces follow different body parts, so those vertices are averaged every frame to keep the seams shut.
+   */
+  #seams(P) {
+    const n = P.length / 3, cell = 0.003, grid = new Map(), key = (x, y, z) => ((x + 2048) * 4096 + (y + 2048)) * 4096 + (z + 2048);
+    for (let i = 0; i < n; i++) {
+      const k = key(Math.floor(P[i * 3] / cell), Math.floor(P[i * 3 + 1] / cell), Math.floor(P[i * 3 + 2] / cell));
+      (grid.get(k) || grid.set(k, []).get(k)).push(i);
+    }
+    const pairs = [], tol2 = 0.0015 ** 2;
+    for (let i = 0; i < n; i++) {
+      const cx = Math.floor(P[i * 3] / cell), cy = Math.floor(P[i * 3 + 1] / cell), cz = Math.floor(P[i * 3 + 2] / cell);
+      for (let x = cx - 1; x <= cx + 1; x++) for (let y = cy - 1; y <= cy + 1; y++) for (let z = cz - 1; z <= cz + 1; z++) {
+        const l = grid.get(key(x, y, z)); if (!l) continue;
+        for (const j of l) {
+          if (j <= i || this.piece[j] === this.piece[i]) continue;
+          const dx = P[i * 3] - P[j * 3], dy = P[i * 3 + 1] - P[j * 3 + 1], dz = P[i * 3 + 2] - P[j * 3 + 2];
+          if (dx * dx + dy * dy + dz * dz < tol2) pairs.push(i, j);
+        }
+      }
+    }
+    this.twins = Int32Array.from(pairs);
+  }
+
+  /** after welding, a seam vertex must be outside BOTH body parts it sits between (torso and arm) */
+  #clearSeams(G, skin) {
+    const t = this.twins; if (!t || !skin.region) return;
+    const pt = [0, 0, 0], snug = this.opts.snug;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let k = 0; k < t.length; k += 2) {
+        const a = t[k] * 3;
+        let x = G[a], y = G[a + 1], z = G[a + 2];
+        for (const r of [0, 1]) {
+          skin.regionOnly = r;
+          if (!skin.query(x, y, z, 0.25)) continue;
+          skin.point(pt);
+          const sd = (x - pt[0]) * skin.nx + (y - pt[1]) * skin.ny + (z - pt[2]) * skin.nz;
+          if (sd < snug) { x += skin.nx * (snug - sd); y += skin.ny * (snug - sd); z += skin.nz * (snug - sd); }
+        }
+        const b = t[k + 1] * 3;
+        G[a] = G[b] = x; G[a + 1] = G[b + 1] = y; G[a + 2] = G[b + 2] = z;
+      }
+    }
+    skin.regionOnly = -1;
+  }
+
+  /** put each seam pair at its midpoint */
+  #weld(arr) {
+    const t = this.twins; if (!t) return;
+    for (let k = 0; k < t.length; k += 2) {
+      const a = t[k] * 3, b = t[k + 1] * 3;
+      for (let c = 0; c < 3; c++) { const m = (arr[a + c] + arr[b + c]) * 0.5; arr[a + c] = arr[b + c] = m; }
+    }
+  }
+
+  /** connected pieces of the garment (front, back, each sleeve …): this.piece[v] */
+  #pieces(n) {
+    const par = new Int32Array(n).map((_, i) => i), idx = this.index;
+    const find = (x) => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+    for (let t = 0; t < idx.length; t += 3) { par[find(idx[t + 1])] = find(idx[t]); par[find(idx[t + 2])] = find(idx[t]); }
+    const ids = new Map(); this.piece = new Uint16Array(n);
+    for (let i = 0; i < n; i++) { const r = find(i); if (!ids.has(r)) ids.set(r, ids.size); this.piece[i] = ids.get(r); }
+    this.pieceCount = ids.size;
   }
 
   /** CSR adjacency of the garment mesh, for smoothing the offsets */
