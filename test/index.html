@@ -31,6 +31,14 @@
           <div id="tpl-sliders"></div>
           <label class="check"><input type="checkbox" id="tpl-checker" /> UV check pattern</label>
           <button id="tpl-uv" type="button">Download UV layout (PNG)</button>
+          <div class="scanbox">
+            <b>Scan a photo → texture</b>
+            <label class="row">Front photo <input type="file" id="scan-front" accept="image/*" /></label>
+            <label class="row">Back photo (optional) <input type="file" id="scan-back" accept="image/*" /></label>
+            <button id="scan-run" type="button">Scan photo</button>
+            <div id="scan-out" class="small"></div>
+            <button id="scan-dl" type="button" hidden>Download texture PNG</button>
+          </div>
           <button id="tpl-remove" type="button">Take off</button>
         </div>
         <pre id="tpl-info" class="small"></pre>

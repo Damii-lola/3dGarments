@@ -10,6 +10,7 @@ import { ModelController, RANGES, fmtIn, IN, DEFAULT_TONE } from '@web/human/bod
 import { POSES, composePose } from '@web/human/poses.js';
 import { TemplateGarment } from '@web/garments/template.js';
 import { BodyGarment } from '@web/garments/bodygarment.js';
+import { scanToTexture, templateOf } from '@web/scan/scan.js';
 import { BODY_TEMPLATES } from '@web/garments/bodytemplates.js';
 import { listTemplates } from '@web/services/templates.js';
 
@@ -225,4 +226,29 @@ $('#presets').addEventListener('click', () => { const t = worn?.template; if (wo
   else if (w) { const t = templateList.find((x) => x.id === w); if (t) wear(t); }
 })();
 
-window.__lab = { stage, human, model, M, THREE, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };
+/* ------------------------------------------------ photo scanner: photo -> texture on the worn template */
+let lastScan = null;
+async function runScan(front, back) {
+  if (!worn?.base) { $('#scan-out').textContent = 'wear a template first (a .glb template, not the generated ones)'; return null; }
+  $('#scan-out').textContent = 'scanning…';
+  const res = await scanToTexture(templateOf(worn), front, { back });
+  const tex = new THREE.CanvasTexture(res.canvas);
+  await worn.setTexture(tex); worn.setColor('#ffffff');
+  stage.invalidate(6);
+  lastScan = res;
+  const r = res.report;
+  $('#scan-out').innerHTML = '';
+  for (const c of [res.cutout, res.canvas]) { const t = document.createElement('canvas'); t.width = 120; t.height = Math.round(120 * c.height / c.width); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height); t.style.cssText = 'border:1px solid #888;margin:2px'; $('#scan-out').appendChild(t); }
+  const info = document.createElement('div'); info.textContent = `${r.ms} ms · photo ${Math.round(r.fromFrontPhoto * 100)}% · back photo ${Math.round(r.fromBackPhoto * 100)}% · back inferred ${Math.round(r.backInferredFromFront * 100)}% · fabric fill ${Math.round(r.fallbackFabric * 100)}% · looks like: ${r.photoGuess} · sleeves ${r.photoSleeves.left ? 'L' : '-'}${r.photoSleeves.right ? 'R' : '-'} · cut-out: ${r.segmentation?.method}`;
+  $('#scan-out').appendChild(info);
+  $('#scan-dl').hidden = false;
+  return r;
+}
+$('#scan-run').addEventListener('click', async () => {
+  const f = $('#scan-front').files[0], b = $('#scan-back').files[0];
+  if (!f) { $('#scan-out').textContent = 'choose a front photo'; return; }
+  try { await runScan(f, b || null); } catch (e) { $('#scan-out').textContent = 'scan failed: ' + e.message; }
+});
+$('#scan-dl').addEventListener('click', () => { if (!lastScan) return; const a = document.createElement('a'); a.download = 'texture.png'; a.href = lastScan.canvas.toDataURL('image/png'); a.click(); });
+
+window.__lab = { stage, human, model, M, THREE, runScan, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };

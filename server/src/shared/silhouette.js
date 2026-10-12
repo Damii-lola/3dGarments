@@ -13,6 +13,25 @@
 
 export const SILHOUETTE_VERSION = 1;
 
+/**
+ * A band of the garment that is close to the backdrop colour (a white stripe on a white sheet) gets cut away as
+ * background, leaving a thin horizontal slot through the garment. Close vertical gaps up to maxGap that have
+ * garment directly above AND below them: the neck notch, armpits and legs are open at one end, so they stay open.
+ */
+function closeThinBands(mask, w, h, maxGap) {
+  const out = Uint8Array.from(mask);
+  for (let x = 0; x < w; x++) {
+    let lastOn = -1;
+    for (let y = 0; y < h; y++) {
+      if (mask[y * w + x]) {
+        if (lastOn >= 0 && y - lastOn - 1 > 0 && y - lastOn - 1 <= maxGap) for (let k = lastOn + 1; k < y; k++) out[k * w + x] = 1;
+        lastOn = y;
+      }
+    }
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* Categories                                                          */
 /* ------------------------------------------------------------------ */
@@ -317,6 +336,7 @@ export function segmentGarment(rgba, width, height) {
   mask = keepMainComponents(mask, width, height);
   mask = morph(morph(mask, width, height, r, true), width, height, r, false); // close
   mask = fillHoles(mask, width, height);
+  mask = closeThinBands(mask, width, height, Math.round(height * 0.06));
 
   let on = 0;
   for (let i = 0; i < n; i++) on += mask[i];
