@@ -10,7 +10,8 @@ import { ModelController, RANGES, fmtIn, IN, DEFAULT_TONE } from '@web/human/bod
 import { POSES, composePose } from '@web/human/poses.js';
 import { TemplateGarment } from '@web/garments/template.js';
 import { BodyGarment } from '@web/garments/bodygarment.js';
-import { scanToTexture, templateOf } from '@web/scan/scan.js';
+import { scanOnServer } from '@web/scan/client.js';
+import { API_URL } from '@web/services/config.js';
 import { BODY_TEMPLATES } from '@web/garments/bodytemplates.js';
 import { listTemplates } from '@web/services/templates.js';
 
@@ -219,28 +220,29 @@ $('#presets').addEventListener('click', () => { const t = worn?.template; if (wo
   try { templateList.push(...await listTemplates()); } catch (e) { console.warn('templates:', e.message); }
   // dev: ?template=<url to a .glb> adds a local entry (the lab works before anything is in Supabase)
   const local = params.get('template');
-  if (local) templateList.unshift({ id: 'local', name: 'Local test', category: 'top', sex: 'unisex', url: local });
+  if (local) templateList.unshift({ id: params.get('templateId') || 'local', name: 'Local test', category: 'top', sex: 'unisex', url: local });
   drawTemplates();
   const w = params.get('wear');
   if (local && w != null) wear(templateList[0]);
   else if (w) { const t = templateList.find((x) => x.id === w); if (t) wear(t); }
 })();
 
-/* ------------------------------------------------ photo scanner: photo -> texture on the worn template */
+/* ------------------------------------------------ photo scanner: photo -> texture, computed by the API */
 let lastScan = null;
+$('#scan-key').value = localStorage.getItem('3dg.labkey') || '';
 async function runScan(front, back) {
   if (!worn?.base) { $('#scan-out').textContent = 'wear a template first (a .glb template, not the generated ones)'; return null; }
-  $('#scan-out').textContent = 'scanning…';
-  const res = await scanToTexture(templateOf(worn), front, { back });
-  const tex = new THREE.CanvasTexture(res.canvas);
-  await worn.setTexture(tex); worn.setColor('#ffffff');
+  const templateId = worn.template?.id;
+  if (!/^[0-9a-f-]{36}$/i.test(templateId || '')) { $('#scan-out').textContent = 'this template is not in Supabase (no id): pick one from the list'; return null; }
+  $('#scan-out').textContent = 'scanning on the server… (a sleeping free instance can take a minute)';
+  const key = $('#scan-key').value.trim(); localStorage.setItem('3dg.labkey', key);
+  const t0 = performance.now();
+  const res = await scanOnServer({ front, back, templateId, labKey: key, apiUrl: params.get('api') || API_URL, size: 2048 });
+  await worn.setTexture(res.dataUrl); worn.setColor('#ffffff');
   stage.invalidate(6);
   lastScan = res;
   const r = res.report;
-  $('#scan-out').innerHTML = '';
-  for (const c of [res.cutout, res.canvas]) { const t = document.createElement('canvas'); t.width = 120; t.height = Math.round(120 * c.height / c.width); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height); t.style.cssText = 'border:1px solid #888;margin:2px'; $('#scan-out').appendChild(t); }
-  const info = document.createElement('div'); info.textContent = `${r.ms} ms · photo ${Math.round(r.fromFrontPhoto * 100)}% · back photo ${Math.round(r.fromBackPhoto * 100)}% · back inferred ${Math.round(r.backInferredFromFront * 100)}% · fabric fill ${Math.round(r.fallbackFabric * 100)}% · looks like: ${r.photoGuess} · sleeves ${r.photoSleeves.left ? 'L' : '-'}${r.photoSleeves.right ? 'R' : '-'} · cut-out: ${r.segmentation?.method}`;
-  $('#scan-out').appendChild(info);
+  $('#scan-out').textContent = `${Math.round(performance.now() - t0)} ms total (server ${r.totalMs} ms: cut-out ${r.cutoutMs}, scan ${r.ms}) · front photo ${Math.round(r.fromFrontPhoto * 100)}% · back photo ${Math.round(r.fromBackPhoto * 100)}% · back inferred ${Math.round(r.backInferredFromFront * 100)}% · fit ${r.registration.frontIoU}${r.registration.backIoU ? ' / ' + r.registration.backIoU : ''}`;
   $('#scan-dl').hidden = false;
   return r;
 }
@@ -249,6 +251,6 @@ $('#scan-run').addEventListener('click', async () => {
   if (!f) { $('#scan-out').textContent = 'choose a front photo'; return; }
   try { await runScan(f, b || null); } catch (e) { $('#scan-out').textContent = 'scan failed: ' + e.message; }
 });
-$('#scan-dl').addEventListener('click', () => { if (!lastScan) return; const a = document.createElement('a'); a.download = 'texture.png'; a.href = lastScan.canvas.toDataURL('image/png'); a.click(); });
+$('#scan-dl').addEventListener('click', () => { if (!lastScan) return; const a = document.createElement('a'); a.download = 'texture.' + (lastScan.mime === 'image/png' ? 'png' : 'webp'); a.href = lastScan.dataUrl; a.click(); });
 
 window.__lab = { stage, human, model, M, THREE, runScan, composePose, POSES, setPose: (p) => { pose = p; human.setPose(p); }, ready: true };

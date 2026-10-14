@@ -9,6 +9,7 @@ import { health } from './routes/health.js';
 import { garments } from './routes/garments.js';
 import { me } from './routes/me.js';
 import { groups } from './routes/groups.js';
+import { scan } from './routes/scan.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
 
@@ -23,7 +24,7 @@ app.use(cors({
     cb(new HttpError(403, `Origin ${origin} not allowed (add it to CORS_ORIGINS)`));
   },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'X-Scan-Key'],
   maxAge: 86400,
 }));
 app.use(express.json({ limit: '256kb' }));
@@ -42,6 +43,7 @@ app.get('/api/public-config', (_req, res) => {
 app.use('/api/garments', garments);
 app.use('/api/me', me);
 app.use('/api/groups', groups);
+app.use('/api/scan', scan);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
 

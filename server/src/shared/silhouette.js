@@ -717,9 +717,18 @@ function emptyGeometry(w, h) {
   };
 }
 
-/** One-call convenience used by both runtimes. */
-export function processGarmentPixels(rgba, width, height) {
-  const seg = segmentGarment(rgba, width, height);
+/**
+ * One-call convenience used by both runtimes.
+ * @param opts.mask  a ready-made garment mask (1 = garment), e.g. from an AI cut-out model; skips the colour-based
+ *                   segmentation, which only works on plain backdrops
+ */
+export function processGarmentPixels(rgba, width, height, opts = {}) {
+  let seg;
+  if (opts.mask) {
+    let on = 0;
+    for (let i = 0; i < opts.mask.length; i++) if (opts.mask[i]) on++;
+    seg = { mask: opts.mask, method: opts.method || 'model', coverage: Math.round((on / opts.mask.length) * 1000) / 1000 };
+  } else seg = segmentGarment(rgba, width, height);
   const cut = composeCutout(rgba, width, height, seg.mask);
   const geometry = analyzeSilhouette(cut.mask, cut.width, cut.height);
   geometry.segmentation = { method: seg.method, coverage: seg.coverage };

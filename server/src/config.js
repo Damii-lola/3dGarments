@@ -23,6 +23,8 @@ export const config = Object.freeze({
     uploadBytes: Number(process.env.MAX_UPLOAD_MB || 15) * 1024 * 1024,
     uploadsPerHour: Number(process.env.UPLOADS_PER_HOUR || 60),
   }),
+  // optional shared secret that lets the lab (no login) call /api/scan; empty = off
+  scanLabKey: process.env.SCAN_LAB_KEY || '',
   processingSize: Number(process.env.PROCESSING_SIZE || 1024),
   signedUrlTtl: 60 * 60 * 6,
 });
