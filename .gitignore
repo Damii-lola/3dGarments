@@ -10,3 +10,4 @@ supabase/.temp/
 supabase/.branches/
 coverage/
 tools/garment_ml/chatgarment/out/
+.aider*
