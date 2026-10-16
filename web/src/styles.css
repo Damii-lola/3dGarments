@@ -23,6 +23,12 @@
 
 * { box-sizing: border-box; }
 
+/* Step switching uses the `hidden` attribute, so it has to win. Without this,
+   the display rules below (`.trim { display: flex }`, `.open-camera {
+   display: grid }`, ...) override the browser's built-in [hidden] rule and
+   every step renders at once. */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; }
 
 body {
