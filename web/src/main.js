@@ -272,7 +272,10 @@ function renderMath(data) {
   }
 
   if (g.dropped?.length) {
-    rows.push(`Left blank (not visible in the clip): ${g.dropped.join(', ')}`);
+    rows.push(`Left blank (not measurable from this clip): ${g.dropped.join(', ')}`);
+  }
+  if (g.scale?.headUnitsCorrection && Math.abs(g.scale.headUnitsCorrection - 1) > 0.02) {
+    rows.push(`Head-length correction: ×${g.scale.headUnitsCorrection} (adult proportions are 7.1–7.9 heads tall)`);
   }
 
   for (const row of rows) mathList.append(el('li', 'math-item', row));

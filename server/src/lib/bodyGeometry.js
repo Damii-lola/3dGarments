@@ -13,6 +13,14 @@ export const CM_PER_IN = 2.54;
 
 /** Documented population constants — the only assumptions, and all about scale. */
 export const HEAD_HEIGHT_CM = { male: 23.5, female: 22.5, unsure: 23.0 };
+/**
+ * Adult stature runs about 7.1-7.9 of the subject's own head-heights, so a frame
+ * that reads outside that range has a mis-placed head landmark (usually a chin
+ * set too high). Rather than throw the frame away we nudge the scale back inside
+ * the range, bounded, because the head is what every other number is scaled by.
+ */
+export const TARGET_HEAD_UNITS = 7.5;
+export const HEAD_UNIT_CORRECTION_LIMIT = 0.08;
 /** Width:depth of a cross-section, used only when no side view exists. */
 export const DEPTH_RATIO = { chest: 0.72, waist: 0.76, hips: 0.80, neck: 0.92, arm: 0.90 };
 
@@ -154,15 +162,27 @@ function pairY(frame, a, b) {
 export function frameScale(frame) {
   const anchors = [];
   let reliability = 0;
+  let headUnitsCorrection = 1;
 
   const headSpan = spanY(frame, point(frame, 'headTop')?.y, point(frame, 'chin')?.y);
   if (headSpan && headSpan > 0.02 && frame.visible?.head !== false) {
     const headCm = HEAD_HEIGHT_CM[frame.gender] || HEAD_HEIGHT_CM.unsure;
+
+    // If the whole body is in shot we can check the head against adult
+    // proportions and correct a small head-landmark error, which would
+    // otherwise inflate every measurement by the same percentage.
+    const statureSpan = spanY(frame, point(frame, 'headTop')?.y, meanY(frame, 'footL', 'footR'));
+    if (statureSpan && statureSpan > headSpan * 5) {
+      const units = statureSpan / headSpan;
+      headUnitsCorrection = clamp(units / TARGET_HEAD_UNITS, [1 - HEAD_UNIT_CORRECTION_LIMIT, 1 + HEAD_UNIT_CORRECTION_LIMIT]);
+    }
+    const effectiveSpan = headSpan * headUnitsCorrection;
+
     // 0.12 image widths of head is comfortable; below that, trust it less.
     const headTrust = clamp(headSpan / 0.12, [0.25, 1]);
     anchors.push({
       what: 'head length',
-      cmPerWidth: headCm / headSpan,
+      cmPerWidth: headCm / effectiveSpan,
       weight: 1.0 * headTrust,
       detail: `${round1(headCm)} cm head`,
     });
@@ -191,7 +211,7 @@ export function frameScale(frame) {
   if (!anchors.length) return null;
   const wsum = anchors.reduce((s, x) => s + x.weight, 0);
   const cmPerWidth = Math.exp(anchors.reduce((s, x) => s + x.weight * Math.log(x.cmPerWidth), 0) / wsum);
-  return { cmPerWidth, anchors, reliability };
+  return { cmPerWidth, anchors, reliability, headUnitsCorrection: round2(headUnitsCorrection) };
 }
 
 /** The chain of landmarks that must run top-to-bottom down the body. */

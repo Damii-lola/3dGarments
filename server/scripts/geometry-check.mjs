@@ -32,7 +32,7 @@ function checkTrue(name, cond, detail = '') {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name.padEnd(48)} ${detail}`);
 }
 
-/** A male, 180 cm tall, 23.5 cm head, seen front-on in a 3:4 frame. */
+/** A male exactly 7.5 head-heights tall (176.25 cm, 23.5 cm head), 3:4 frame. */
 function frontFrame(overrides = {}) {
   const aspect = 0.75;
   const headY = 0.095; // head height as a fraction of image height
@@ -47,7 +47,7 @@ function frontFrame(overrides = {}) {
   const arm = pair(11, 0.30, 0.34);
   const waist = pair(33, 0.38);
   const hips = pair(36, 0.46);
-  const footY = headTopY + P(180) * aspect; // spanY divides by aspect again
+  const footY = headTopY + P(176.25) * aspect; // 7.5 head-heights tall
 
   return {
     view: 'front',
@@ -86,6 +86,7 @@ function sideFrame(overrides = {}) {
   const chest = pair(27, 0.29);
   const waist = pair(25, 0.37);
   const hips = pair(28, 0.45);
+  const footY = headTopY + P(176.25) * aspect; // same 7.5 head-heights
 
   return {
     view: 'side',
@@ -102,6 +103,7 @@ function sideFrame(overrides = {}) {
       armpitL: chest.L, armpitR: chest.R,
       waistL: waist.L, waistR: waist.R,
       hipL: hips.L, hipR: hips.R,
+      footL: { x: 0.46, y: footY }, footR: { x: 0.54, y: footY },
     },
     ...overrides,
   };
@@ -123,7 +125,8 @@ check('hip girth (in)', measureRegion('hips', both).valueIn, 39.73, 0.4);
 check('neck girth (in)', measureRegion('neck', both).valueIn, 14.25, 0.4);
 check('arm girth (in)', measureRegion('arm', both).valueIn, 12.93, 0.4);
 check('shoulder width (in)', measureRegion('shoulder', both).valueIn, 18.10, 0.2);
-check('height (in)', measureHeight(both).in, 70.87, 0.4);
+check('height (in)', measureHeight(both).in, 69.39, 0.4);
+checkTrue('a 7.5 head-height body is left uncorrected', front.scale.headUnitsCorrection === 1, String(front.scale.headUnitsCorrection));
 checkTrue('depth really measured from the side view', measureRegion('chest', both).depthSource.includes('side view'), measureRegion('chest', both).depthSource);
 checkTrue('shoulder width comes from the front, not the side', measureRegion('shoulder', both).views.includes('front') && !measureRegion('shoulder', both).views.includes('side'), measureRegion('shoulder', both).views.join(','));
 
@@ -195,6 +198,22 @@ const legCheck = checkFrame(crotchBelowFeet);
 checkTrue('crotch below the feet only invalidates height', legCheck.fatal === false && legCheck.heightBad === true, 'heightBad');
 checkTrue('height skipped for the bad frame', measureHeight([{ ...crotchBelowFeet, heightBad: true }]) === null, 'height -> null');
 checkTrue('girths still usable from the same frame', measureRegion('chest', [{ ...crotchBelowFeet, bad: legCheck.bad, heightBad: true }]) !== null, 'chest kept');
+
+console.log('\n== a mis-placed head is corrected against adult proportions ==');
+// The model put the chin too high, so the head reads short and the body looks
+// 8.0 head-heights tall instead of 7.5. Everything scaled off that head would
+// come out ~7% too big.
+const longBody = frontFrame();
+longBody.landmarks.footL = { x: 0.47, y: 0.06 + 0.95 * 0.75 * (8.0 / 7.5) };
+longBody.landmarks.footR = { x: 0.53, y: longBody.landmarks.footL.y };
+const longScaled = scaled(longBody);
+checkTrue('an 8-head body gets its scale pulled back', longScaled.scale.headUnitsCorrection > 1.03 && longScaled.scale.headUnitsCorrection <= 1.08, `x${longScaled.scale.headUnitsCorrection}`);
+checkTrue('the correction shrinks the scale, not inflates it', longScaled.scale.cmPerWidth < front.scale.cmPerWidth, `${longScaled.scale.cmPerWidth.toFixed(1)} vs ${front.scale.cmPerWidth.toFixed(1)} cm/width`);
+checkTrue('the corrected height lands in adult range', measureHeight([longScaled]).in < 71 && measureHeight([longScaled]).in > 68, `${measureHeight([longScaled]).in.toFixed(1)} in`);
+const wildBody = frontFrame();
+wildBody.landmarks.footL = { x: 0.47, y: 0.06 + 0.95 * 0.75 * 1.6 };
+wildBody.landmarks.footR = { x: 0.53, y: wildBody.landmarks.footL.y };
+checkTrue('the correction is bounded at 8%', scaled(wildBody).scale.headUnitsCorrection <= 1.08, `x${scaled(wildBody).scale.headUnitsCorrection}`);
 
 console.log(`\n${fail === 0 ? 'ALL GOOD' : 'FAILURES'} - ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

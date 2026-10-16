@@ -341,7 +341,11 @@ function pickGender(analyses) {
   };
 }
 
-const firstString = (analyses, get) => analyses.map(get).find((v) => typeof v === 'string' && v.trim()) || null;
+const NULLISH = /^(null|nil|none|n\/?a|unknown|unsure|not (visible|applicable|clear)|nothing|no|both|-+|—+|\.+|)$/i;
+const firstString = (analyses, get) => analyses
+  .map(get)
+  .map((v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''))
+  .find((v) => v && !NULLISH.test(v)) || null;
 
 function combineClothing(analyses) {
   const raw = [];
@@ -509,6 +513,11 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const scaleW = scaled.reduce((s, f) => s + scaleWeight(f), 0);
   const cmPerWidth = Math.exp(scaled.reduce((s, f) => s + scaleWeight(f) * Math.log(f.scale.cmPerWidth), 0) / scaleW);
   const anchors = [...new Set(scaled.flatMap((f) => f.scale.anchors.map((a) => a.detail)))];
+  // How far the head landmarks had to be nudged onto adult proportions. 1 = no
+  // correction; anything else means the head was mis-measured in the frame.
+  const headUnitsCorrection = round2(
+    scaled.reduce((s, f) => s + scaleWeight(f) * (f.scale.headUnitsCorrection ?? 1), 0) / scaleW,
+  );
 
   // 3. Measure every region from the landmark geometry.
   const measured = {};
@@ -633,7 +642,9 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     notes.push(`${label(k)} was not visible in the clip, so it was left blank rather than guessed.`);
   }
   if (droppedByCheck.size) {
-    notes.push(`${[...droppedByCheck].join(' and ')} came out an impossible size in at least one frame, so ${droppedByCheck.size > 1 ? 'those frames were' : 'that frame was'} left out of ${droppedByCheck.size > 1 ? 'their' : 'its'} average.`);
+    const list = [...droppedByCheck];
+    const joined = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0];
+    notes.push(`${joined}: at least one frame measured an impossible span for ${list.length > 1 ? 'these' : 'this'}, so that reading was discarded rather than averaged in.`);
   }
   const clampedRegions = GIRTH_REGIONS.filter((k) => measured[k]?.clamped);
   if (clampedRegions.length) {
@@ -641,6 +652,10 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   }
   if (heightIn == null && measured.chest) {
     notes.push('Height was not measured — your feet were not in frame. Film the full body to get it.');
+  }
+  if (headUnitsCorrection && Math.abs(headUnitsCorrection - 1) > 0.02) {
+    const pct = Math.round(Math.abs(headUnitsCorrection - 1) * 100);
+    notes.push(`Your proportions read as an unusual head-to-body ratio, so the scale was corrected by ${pct}% — keeping your whole head and your feet in shot gives a cleaner read.`);
   }
   if (clothing.items.length || clothing.fit) {
     notes.push(
@@ -672,7 +687,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     proportions: { build, shoulderToHip, legToTorso },
     geometry: {
       aspect: round2(aspect),
-      scale: { cmPerImageWidth: round2(cmPerWidth), anchors },
+      scale: { cmPerImageWidth: round2(cmPerWidth), anchors, headUnitsCorrection },
       methods,
       height: heightIn != null
         ? { in: round1(heightIn), headUnits: headUnitsToHeight, views: h.views || 0, spread: round2(h.spread ?? 0) }
