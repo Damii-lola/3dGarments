@@ -379,6 +379,11 @@ export class BodyGarment {
     }
     this.src = src;
     this.geometry = geo;
+    // rest positions / normals (the ones the UVs were computed from). update() overwrites
+    // geometry.attributes.position/normal with body-following deformed values every frame,
+    // so the scanner must use the rest copies or the texture paints onto the wrong atlas spots.
+    this.restPos = Float32Array.from(pos);
+    this.restNrm = Float32Array.from(nor);
     this.#copyWeights();
 
     this.texture = null;
@@ -441,17 +446,17 @@ export class BodyGarment {
   }
 
   /** Export this garment's rest mesh as {pos, nrm, uv, index} for the server-side scanner.
-   *  Returns plain JS arrays so they survive JSON serialisation (FormData -> template_geometry). */
+   *  Returns plain JS arrays so they survive JSON serialisation (FormData -> template_geometry).
+   *  Uses rest positions/normals (the ones the UVs were computed from), not the body-following
+   *  deformed values that update() writes into geometry.attributes.position/normal every frame. */
   scanMesh() {
     const g = this.geometry;
-    const pos = g.attributes.position.array;
-    const nrm = g.attributes.normal.array;
     const uv = g.attributes.uv.array;
     const idx = g.index;
-    const index = idx ? idx.array : Uint32Array.from({ length: pos.length / 3 }, (_, i) => i);
+    const index = idx ? idx.array : Uint32Array.from({ length: this.restPos.length / 3 }, (_, i) => i);
     return {
-      pos: Array.from(pos),
-      nrm: Array.from(nrm),
+      pos: Array.from(this.restPos),
+      nrm: Array.from(this.restNrm),
       uv: Array.from(uv),
       index: Array.from(index),
     };
