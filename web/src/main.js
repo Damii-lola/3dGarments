@@ -7,7 +7,7 @@
 
 const MAX_SECONDS = 30;
 
-const cameraBox = document.getElementById('camera-box');
+const openCamera = document.querySelector('.open-camera');
 const input = document.getElementById('video-input');
 const result = document.getElementById('result');
 const preview = document.getElementById('preview');
@@ -25,7 +25,7 @@ function setStatus(message, kind = '') {
 }
 
 function showResult() {
-  cameraBox.hidden = true;
+  openCamera.hidden = true;
   result.hidden = false;
 }
 
@@ -39,7 +39,7 @@ function resetToCamera() {
   recordedBlob = null;
   input.value = '';
   result.hidden = true;
-  cameraBox.hidden = false;
+  openCamera.hidden = false;
   setStatus('');
 }
 

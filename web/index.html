@@ -22,8 +22,8 @@
         </p>
       </header>
 
-      <!-- Camera box: a <label> so tapping it opens the phone's native camera app -->
-      <label class="camera-box" id="camera-box" for="video-input">
+      <!-- Just a button. Tapping it opens the phone's native camera app. -->
+      <label class="open-camera" for="video-input">
         <input
           id="video-input"
           class="visually-hidden"
@@ -31,13 +31,11 @@
           accept="video/*"
           capture="environment"
         />
-        <span class="camera-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
-            <circle cx="12" cy="12.2" r="3.6" />
-          </svg>
-        </span>
-        <span class="camera-label">Record video</span>
+        <svg class="cam-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+          <circle cx="12" cy="12.2" r="3.6" />
+        </svg>
+        <span>Open camera</span>
       </label>
 
       <section class="result" id="result" hidden>
