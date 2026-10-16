@@ -40,7 +40,32 @@
       <section class="result" id="result" hidden>
         <video id="preview" controls playsinline></video>
         <p class="result-text" id="result-text"></p>
-        <button class="btn-ghost" id="retake-btn" type="button">Record again</button>
+        <div class="actions">
+          <button class="btn-primary" id="analyze-btn" type="button">Analyze my size</button>
+          <button class="btn-ghost" id="retake-btn" type="button">Record again</button>
+        </div>
+      </section>
+
+      <section class="analysis" id="analysis" hidden>
+        <div class="size-hero">
+          <span class="size-hero-label">Your estimated size</span>
+          <span class="size-hero-value" id="size-value">&mdash;</span>
+          <span class="size-hero-sub" id="size-sub"></span>
+        </div>
+
+        <ul class="facts" id="facts"></ul>
+
+        <div class="measures">
+          <h2 class="measures-title">Body estimate</h2>
+          <div class="measure-grid" id="measure-grid"></div>
+          <p class="measures-note" id="measures-note"></p>
+        </div>
+
+        <ul class="notes" id="analysis-notes"></ul>
+
+        <div class="actions">
+          <button class="btn-ghost" id="again-btn" type="button">Record again</button>
+        </div>
       </section>
 
       <p class="status" id="status" role="status" aria-live="polite"></p>

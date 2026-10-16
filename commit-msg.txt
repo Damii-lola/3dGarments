@@ -1,0 +1,22 @@
+AI body analysis: person focus, gender, clothing density, size w/ clothing offset
+
+Server (routes/body-scan.js):
+- Richer vision prompt: ignore background/noise and analyse only the person,
+  detect gender, read clothing items/fit/density plus the extra width the
+  clothing adds (thicknessIn), estimate measures + proportions.
+- Combine frames with confidence weighting; majority gender vote.
+- Subtract the clothing's width (2 x thicknessIn) from chest/waist/hips/shoulder
+  before choosing a size; report both "as seen" and adjusted figures.
+- Choose the men's vs women's chart from the detected gender (or best fit when
+  unsure). Skip frames that fail instead of aborting the whole scan.
+- Clear 503 when CLOUDFLARE_* env vars are missing.
+
+Web:
+- New body-scan/frames.js: pull 6 evenly spaced JPEG frames from the recorded
+  video via a hidden <video> + canvas.
+- New body-scan/analyze.js: POST frames to /api/body-scan with a long timeout.
+- main.js: "Analyze my size" flow, progress status, and a results view
+  (size hero, detected gender, clothing, body measurement grid, notes).
+- index.html/styles.css: analyze button + results section styling.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
