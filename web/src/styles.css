@@ -6,3 +6,37 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+
+#app {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#camera-box {
+  width: 120px;
+  height: 120px;
+  border-radius: 20px;
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s;
+}
+#camera-box svg {
+  width: 44px;
+  height: 44px;
+}
+#camera-box:hover {
+  background: rgba(255, 91, 58, 0.1);
+  transform: scale(1.05);
+}
+#camera-box:active {
+  transform: scale(0.95);
+}

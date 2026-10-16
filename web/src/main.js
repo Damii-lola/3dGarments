@@ -1,1 +1,1 @@
-/* blank main — nothing rendered */
+/* nothing rendered — just the camera box */
