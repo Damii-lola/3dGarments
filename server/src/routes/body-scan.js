@@ -395,8 +395,12 @@ function combineClothing(analyses) {
   ].filter(Boolean);
   const note = parts.length ? parts.join(' ').slice(0, 240) : null;
 
+  const uniqItems = [...new Set(raw.map((s) => s.toLowerCase()))];
+  // "suit jacket" and "jacket" are the same garment seen twice.
+  const items = uniqItems.filter((a) => !uniqItems.some((b) => b !== a && b.includes(a))).slice(0, 6);
+
   return {
-    items: [...new Set(raw.map((s) => s.toLowerCase()))].slice(0, 6),
+    items,
     fit,
     density,
     thicknessIn: thickN ? Number((thickSum / thickN).toFixed(2)) : null,
@@ -693,6 +697,9 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     notes.push('No size was given: without a chest or bust measurement there is nothing honest to put on the chart. A straight-on front view is what sizes you.');
   }
   if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} — a slower turn gives a steadier estimate.`);
+  if (h && h.views > 1 && h.spread > 3) {
+    notes.push(`Your height read ${Math.round(h.spread)} in apart between frames, so film from further back — the whole body needs to fit in shot the whole way round.`);
+  }
   if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
     notes.push('No clear side-on frame, so body depth was modelled from the front width rather than measured.');
   }
