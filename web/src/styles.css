@@ -80,34 +80,31 @@ body {
   line-height: 1.55;
 }
 
-/* ---------- open camera button (no box) ---------- */
+/* ---------- open camera (icon only) ---------- */
 .open-camera {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 58px;
-  padding: 0 30px;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
   border: 0;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  color: #fff;
-  font-size: 1.05rem;
-  font-weight: 650;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
   cursor: pointer;
   user-select: none;
-  box-shadow: 0 14px 34px rgba(255, 91, 58, 0.32);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 .open-camera:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 18px 42px rgba(255, 91, 58, 0.42);
+  background: rgba(255, 91, 58, 0.10);
+  color: var(--accent-2);
 }
-.open-camera:active { transform: scale(0.97); }
+.open-camera:active { transform: scale(0.94); }
+.open-camera:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .cam-icon {
-  width: 24px; height: 24px;
+  width: 68px; height: 68px;
   fill: none; stroke: currentColor;
-  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 
 /* ---------- result ---------- */
@@ -155,6 +152,7 @@ body {
 
 @media (max-width: 380px) {
   body { padding-top: 22px; }
-  .open-camera { width: 100%; }
+  .open-camera { width: 92px; height: 92px; }
+  .cam-icon { width: 60px; height: 60px; }
   .lead { font-size: 0.94rem; }
 }

@@ -103,6 +103,14 @@ input.addEventListener('change', () => {
 
 retakeBtn.addEventListener('click', resetToCamera);
 
+// Icon has role="button": let Enter / Space open the camera too.
+openCamera.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    input.click();
+  }
+});
+
 // If the tab is closed/navigated away, release the object URL.
 window.addEventListener('pagehide', () => {
   if (previewUrl) URL.revokeObjectURL(previewUrl);
