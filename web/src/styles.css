@@ -371,9 +371,14 @@ body {
 .status.error { color: #ff5470; }
 .status.ok { color: var(--good); }
 
-/* ---------- phones: bump the whole UI to 135% ---------- */
+/* ---------- phones: bump the whole UI to 189% (135% x 1.4) ---------- */
 @media (max-width: 768px) {
-  html { font-size: 135%; }
+  html { font-size: 189%; }
+  /* As the text grows, trim the side margins so the video and result cards
+     keep as much width as possible instead of being squeezed. */
+  body { padding-left: 0.9rem; padding-right: 0.9rem; }
+  .trim-row { grid-template-columns: 2.6rem 1fr 2.6rem; }
+  .measure-grid { grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); }
 }
 
 @media (max-width: 380px) {
