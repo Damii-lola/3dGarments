@@ -2,14 +2,22 @@
  * Pull evenly spaced frames out of a recorded video so the vision model can see
  * the person from several angles as they turn.
  *
- * The native camera app records an ordinary video file; we decode it in a hidden
+ * The native camera app records an ordinary video file; we decode it in a
  * <video>, seek to points across the clip, and draw each one to a canvas.
  *
- * `from` / `to` (0-1 of the clip) let the caller trim the video's LENGTH: only
- * frames inside that span are sampled.
+ * `from` / `to` (0-1 of the clip) trim the video's LENGTH: only frames inside
+ * that span are sampled.
+ *
+ * Everything here is time-boxed and the decoder is attached (off-screen) to the
+ * document, because some mobile browsers refuse to decode a detached video and
+ * will otherwise hang forever.
  */
 
+const METADATA_TIMEOUT = 15000;
+const SEEK_TIMEOUT = 6000;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const log = (...args) => console.log('[3dg:framed]', ...args);
 
 /** Some browsers report duration = Infinity until the file is seeked. */
 async function resolveDuration(video) {
@@ -31,35 +39,68 @@ async function resolveDuration(video) {
   });
 }
 
+function waitForMetadata(video) {
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      video.removeEventListener('loadedmetadata', onOk);
+      video.removeEventListener('error', onErr);
+    };
+    const onOk = () => { cleanup(); resolve(); };
+    const onErr = () => { cleanup(); reject(new Error('Could not read the recorded video')); };
+
+    video.addEventListener('loadedmetadata', onOk);
+    video.addEventListener('error', onErr);
+    if (video.readyState >= 1) { onOk(); return; }
+    timer = setTimeout(() => { cleanup(); reject(new Error('Timed out reading the video')); }, METADATA_TIMEOUT);
+  });
+}
+
 function seek(video, time) {
   return new Promise((resolve) => {
-    const done = () => { video.removeEventListener('seeked', done); resolve(); };
-    video.addEventListener('seeked', done);
-    try { video.currentTime = Math.max(0, time); } catch { done(); }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      video.removeEventListener('seeked', finish);
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, SEEK_TIMEOUT);
+    // already there? no 'seeked' will fire
+    if (Math.abs(video.currentTime - time) < 0.02 && video.readyState >= 2) { finish(); return; }
+    video.addEventListener('seeked', finish);
+    try { video.currentTime = Math.max(0, time); } catch { finish(); }
   });
 }
 
 const toBlob = (canvas, quality) =>
   new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
 
-/** Opens the video file in a detached <video> and hands it to `run`. */
+/** Opens the video off-screen, runs `run(video)`, and always cleans up. */
 async function withVideo(file, run) {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.preload = 'auto';
   video.muted = true;
+  video.setAttribute('muted', '');
   video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  // Attached but invisible: some mobile browsers only decode video in the DOM.
+  video.style.cssText = 'position:fixed;left:-10000px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+  document.body.appendChild(video);
 
   try {
     video.src = url;
-    await new Promise((resolve, reject) => {
-      video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error('Could not read the recorded video'));
-    });
+    video.load();
+    await waitForMetadata(video);
     return await run(video);
   } finally {
     video.removeAttribute('src');
     try { video.load(); } catch { /* ignore */ }
+    video.remove();
     URL.revokeObjectURL(url);
   }
 }
@@ -67,15 +108,16 @@ async function withVideo(file, run) {
 /**
  * @param {File|Blob} file recorded video
  * @param {{count?: number, maxWidth?: number, quality?: number, from?: number, to?: number}} [opts]
- *   from/to are fractions (0-1) of the clip length to sample between.
  * @returns {Promise<File[]>} JPEG frames
  */
 export async function extractFrames(file, opts = {}) {
   const { count = 6, maxWidth = 900, quality = 0.85, from = 0, to = 1 } = opts;
+  log('extractFrames start', { bytes: file.size, count, from, to });
 
   return withVideo(file, async (video) => {
     const duration = await resolveDuration(video);
     if (!duration || !Number.isFinite(duration)) throw new Error('Could not determine the video length');
+    log('video ready', { duration, w: video.videoWidth, h: video.videoHeight });
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
@@ -101,18 +143,18 @@ export async function extractFrames(file, opts = {}) {
     }
 
     if (!frames.length) throw new Error('Could not extract any frames from the video');
+    const total = frames.reduce((s, f) => s + f.size, 0);
+    log('extractFrames done', { frames: frames.length, bytes: total });
     return frames;
   });
 }
 
-/**
- * The clip's length in seconds (0 if it can't be determined).
- * @param {File|Blob} file
- */
+/** The clip's length in seconds (0 if it can't be determined). */
 export async function readDuration(file) {
   try {
     return await withVideo(file, (video) => resolveDuration(video));
-  } catch {
+  } catch (e) {
+    log('readDuration failed', e.message);
     return 0;
   }
 }

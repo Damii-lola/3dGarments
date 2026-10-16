@@ -38,6 +38,8 @@ const startOverBtn = document.getElementById('start-over-btn');
 
 const statusEl = document.getElementById('status');
 
+const log = (...args) => console.log('[3dg]', ...args);
+
 const fmtTime = (s) => {
   const total = Math.max(0, Math.round(s));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
@@ -67,6 +69,9 @@ let analyzing = false;
 function setStatus(message, kind = '') {
   statusEl.textContent = message || '';
   statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  if (kind === 'error') {
+    try { statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch { /* ignore */ }
+  }
 }
 
 function el(tag, className, text) {
@@ -117,6 +122,7 @@ async function handleRecording(file) {
   recordedBlob = file;
   show('trim');
   setStatus('Loading your video…');
+  log('recorded', { name: file.name, type: file.type, bytes: file.size });
 
   releaseMedia();
   videoUrl = URL.createObjectURL(file);
@@ -124,12 +130,15 @@ async function handleRecording(file) {
 
   const duration = await readDuration(file);
   trimmer.load(duration);
+  log('duration', duration);
 
   try {
     const poster = await extractPoster(file);
     posterUrl = URL.createObjectURL(poster.blob);
     trimVideo.poster = posterUrl;
-  } catch { /* poster is optional */ }
+  } catch (e) {
+    log('poster failed:', e.message);
+  }
 
   if (!duration) {
     setStatus('Could not read the clip length — the whole clip will be used.', 'error');
@@ -219,19 +228,35 @@ function renderAnalysis(data) {
 async function runAnalysis() {
   if (analyzing || !recordedBlob) return;
   setBusy(true);
+  const startedAt = Date.now();
 
   try {
     const { from, to } = trimmer.getSpan();
+    log('analyze start', { bytes: recordedBlob.size, type: recordedBlob.type, from, to });
 
+    // 1. Frames. If decoding fails, fall back to a single poster frame.
     setStatus('Grabbing key frames from your clip…');
-    const frames = await extractFrames(recordedBlob, { count: 6, from, to });
+    let frames;
+    try {
+      frames = await extractFrames(recordedBlob, { count: 6, from, to });
+    } catch (e) {
+      log('frame extraction failed — falling back to a single frame:', e.message);
+      const poster = await extractPoster(recordedBlob, { maxWidth: 900 });
+      frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
+    }
+    log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
 
-    setStatus(`Analyzing ${frames.length} frames — this can take up to 30s…`);
-    const data = await analyzeBody(frames);
+    // 2. Ask the server. The tick keeps the status moving so it never looks frozen.
+    setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
+    const data = await analyzeBody(frames, {
+      onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`),
+    });
 
+    log('analysis result', data);
     renderAnalysis(data);
-    setStatus('');
+    setStatus(`Done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`, 'ok');
   } catch (e) {
+    log('analyze failed:', e.message);
     setStatus(e.message || 'Something went wrong during analysis.', 'error');
     setBusy(false);
   }

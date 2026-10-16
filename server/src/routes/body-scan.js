@@ -39,6 +39,8 @@ const upload = multer({
 
 export const bodyScan = Router();
 
+const log = (...args) => console.log('[body-scan]', ...args);
+
 /** US retail size charts (inches). Men size on chest, women on bust. */
 const CHARTS = {
   male: {
@@ -254,17 +256,24 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const files = req.files;
   if (!files || files.length === 0) throw new HttpError(400, 'Upload at least one frame');
 
+  const startedAt = Date.now();
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  log(`▶ POST received — ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, model=${config.cloudflare.visionModel}`);
+
   // 1. Analyse every frame; skip the ones that fail rather than aborting.
   const analyses = [];
   const failures = [];
-  for (const file of files) {
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+    const frameStart = Date.now();
     try {
       const parsed = parseJson(await callModel(config.cloudflare.visionModel, [
         { role: 'system', content: FRAME_PROMPT },
         { role: 'user', content: [{ type: 'image', image: { data: file.buffer.toString('base64') } }] },
       ]));
+      const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
-        analyses.push({
+        const frame = {
           view: parsed.view || 'front',
           gender: parsed.gender || 'unsure',
           genderConfidence: Number(parsed.genderConfidence) || 0,
@@ -273,14 +282,20 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
           proportions: parsed.proportions || {},
           headUnitsToHeight: Number(parsed.headUnitsToHeight) || null,
           confidence: Number(parsed.confidence) || 0.5,
-        });
+        };
+        analyses.push(frame);
+        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) — view=${frame.view} gender=${frame.gender} conf=${frame.confidence} clothing=${frame.clothing?.density || '?'} thick=${frame.clothing?.thicknessIn ?? '?'}`);
+      } else {
+        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) — no person visible`);
       }
     } catch (e) {
       failures.push({ file: file.originalname, error: e.message });
+      log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) — ${e.message}`);
     }
   }
 
   if (analyses.length === 0) {
+    log(`✖ no usable frames after ${Date.now() - startedAt}ms`);
     throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.');
   }
 
@@ -363,9 +378,13 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
         };
         reconciled = true;
         reconcileNote = typeof r.note === 'string' ? r.note : null;
+        log('  reconcile ok —', JSON.stringify({ chestIn: r.chestIn, waistIn: r.waistIn, hipsIn: r.hipsIn, heightIn: r.heightIn }));
+      } else {
+        log('  reconcile returned nothing usable — keeping the maths result');
       }
     } catch (e) {
       failures.push({ file: 'reconcile', error: e.message });
+      log('  reconcile FAILED —', e.message);
     }
   }
 
@@ -434,6 +453,23 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     createdAt: new Date().toISOString(),
   };
   if (failures.length) result.frameFailures = failures;
+
+  result.debug = {
+    elapsedMs: Date.now() - startedAt,
+    framesReceived: files.length,
+    framesUsed: analyses.length,
+    totalBytes,
+    reconciled,
+    frames: analyses.map((a) => ({
+      view: a.view,
+      gender: a.gender,
+      confidence: a.confidence,
+      density: a.clothing?.density || null,
+      thicknessIn: a.clothing?.thicknessIn ?? null,
+    })),
+  };
+
+  log(`✔ done in ${result.debug.elapsedMs}ms — gender=${gender.guess} basis=${sizeBasis} size=${result.size} seen=${JSON.stringify(seen)} adjusted=${JSON.stringify(final)} reconciled=${reconciled}`);
 
   try {
     if (config.supabase.url && config.supabase.serviceRoleKey) {
