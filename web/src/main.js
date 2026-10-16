@@ -11,10 +11,36 @@ import { extractFrames, extractPoster, readDuration } from './body-scan/frames.j
 import { analyzeBody } from './body-scan/analyze.js';
 import { createTrimmer } from './body-scan/trim.js';
 
+/**
+ * ?debug=1 — prints what the device is actually reporting. Handy when a layout
+ * change appears not to apply on a real phone: it shows the viewport the browser
+ * claims, the resulting root font size, whether either mobile condition matched,
+ * and the exact asset filenames loaded (so a stale cache is obvious).
+ */
+function showDeviceReadout() {
+  const asset = (sel, attr) => [...document.querySelectorAll(sel)]
+    .map((el) => el[attr].split('/').pop()).join(' ') || 'none';
+  const narrow = matchMedia('(max-width: 768px)').matches;
+  const touch = matchMedia('(hover: none) and (pointer: coarse)').matches;
+  const lines = [
+    `viewport   ${window.innerWidth} x ${window.innerHeight}  @${window.devicePixelRatio}x`,
+    `root font  ${getComputedStyle(document.documentElement).fontSize}   mobile scale: ${narrow || touch ? 'ON' : 'OFF'}`,
+    `width<=768 ${narrow ? 'yes' : 'no'}    touch-first ${touch ? 'yes' : 'no'}`,
+    `css        ${asset('link[rel="stylesheet"]', 'href')}`,
+    `js         ${asset('script[src]', 'src')}`,
+  ];
+  const box = document.createElement('pre');
+  box.className = 'debug';
+  box.textContent = lines.join('\n');
+  document.body.append(box);
+  console.log('[3dg:debug]', lines.join(' | '));
+}
+
+if (new URLSearchParams(location.search).has('debug')) showDeviceReadout();
+
 const intro = document.getElementById('intro');
 const openCamera = document.querySelector('.open-camera');
 const input = document.getElementById('video-input');
-
 const trimStep = document.getElementById('trim');
 const trimVideo = document.getElementById('trim-video');
 const trimStart = document.getElementById('trim-start');

@@ -361,6 +361,23 @@ body {
   font-weight: 700;
 }
 
+/* ---------- ?debug=1 device readout ---------- */
+.debug {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  background: rgba(0, 0, 0, 0.92);
+  color: #5dff9e;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: left;
+  white-space: pre-wrap;
+  border-top: 1px solid #5dff9e;
+}
+
 /* ---------- status ---------- */
 .status {
   margin: 0;
@@ -371,8 +388,12 @@ body {
 .status.error { color: #ff5470; }
 .status.ok { color: var(--good); }
 
-/* ---------- phones: bump the whole UI to 189% ---------- */
-@media (max-width: 768px) {
+/* ---------- phones: bump the whole UI to 189% ----------
+   Matched two ways: a narrow viewport, OR any touch-first device. The second
+   path matters because a phone browsing in "desktop site" mode (or a large
+   device) reports a wide viewport, and the width query alone would never fire
+   there — which looks exactly like the change "not working" on the device. */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
   html { font-size: 189%; }
   /* As the text grows, trim the side margins so the video and result cards
      keep as much width as possible instead of being squeezed. */
