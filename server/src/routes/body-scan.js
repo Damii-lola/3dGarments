@@ -1,14 +1,15 @@
 /**
- * Body scan API: video frames -> body analysis -> size recommendation.
+ * Body scan API: video frames -> visible body geometry -> measurements -> size.
  *
  *   POST /api/body-scan   multipart: frames (image files, 1-8)   <- key frames from the video
  *     -> {
  *          id,
  *          gender:       { guess, confidence, scores },
- *          clothing:     { items[], fit, density, thicknessIn, note },
- *          measurements: { chest, bust, waist, hips, height, shoulder },   // as seen, over clothes
- *          adjusted:     { chest, waist, hips, shoulder, height, bodyWidthRemovedIn },
+ *          clothing:     { items[], fit, density, thicknessIn, note, ... },
+ *          measurements: { chest, bust, waist, hips, shoulder, neck, arm, height },   // as seen, over clothes
+ *          adjusted:     { chest, waist, hips, shoulder, neck, arm, height, bodyWidthRemovedIn },
  *          proportions:  { build, shoulderToHip, legToTorso },
+ *          geometry:     { scale, methods, height, proportions, dropped[] },   // the working
  *          size, sizeChart, sizeBasis,
  *          notes[], views[], frameCount, reconciled, createdAt
  *        }
@@ -16,21 +17,58 @@
  * Results are returned inline and deliberately not stored server-side: the flow
  * is anonymous, and body measurements are not something to keep around.
  *
- * Accuracy strategy:
- *   1. Each frame is analysed by vision with explicit anthropometric reasoning
- *      (head-lengths, shoulder/waist/hip relationships) and per-measurement
- *      confidence, and told to ignore background noise and focus on the person.
- *   2. Frames are combined with a robust, view-weighted average (outliers and
- *      side-on views count for less).
- *   3. Clothing thickness is removed (2 x thicknessIn) before sizing.
- *   4. A short reconciliation pass reviews all frames together and returns a
- *      final, self-consistent set of numbers (falls back to the maths if it fails).
+ * HOW THE NUMBERS ARE PRODUCED — measurement, not guessing:
+ *
+ *   The vision model is NEVER asked for a size or for inches. It reports only
+ *   what it can point at in one frame: normalised landmark coordinates, which
+ *   way the body is facing, which parts are visible, and any object of known
+ *   size. Every number below is then COMPUTED here from that geometry:
+ *
+ *     1. SCALE. Each frame gets its own centimetres-per-image-width from an
+ *        anchor of known size — the subject's own head (adult head height
+ *        22.5-23.5 cm, read off the head landmarks) and/or a reference object
+ *        the model could actually identify (a standard door, a chair...).
+ *        Anchors are combined as a weighted geometric mean.
+ *     2. WIDTH and DEPTH. Front/back frames give body WIDTH at shoulder,
+ *        chest, waist, hip, neck and arm level. Side frames give body DEPTH at
+ *        the same heights. Both are the horizontal separation of the matching
+ *        landmark pair, converted to centimetres with that frame's scale.
+ *        Outliers are dropped, the rest are averaged with view/quality weights.
+ *     3. GIRTH. A torso cross-section is treated as an ellipse; its perimeter is
+ *        computed from the half-width and half-depth (Ramanujan's second
+ *        approximation). With no side view the depth falls back to a documented
+ *        width:depth ratio.
+ *     4. HEIGHT. Head-to-floor, from the floor-contact landmarks in full-body
+ *        frames, scaled the same way. Feet out of frame means no height — we say
+ *        so instead of inventing one.
+ *     5. CLOTHING. The extra width the clothing adds is subtracted from the girths.
+ *
+ *   A measurement is only reported when the landmarks it needs were visible in
+ *   at least one frame. A gap beats an invention.
  */
 
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
+import {
+  CM_PER_IN,
+  GIRTH_REGIONS,
+  HEAD_HEIGHT_CM,
+  REGIONS,
+  clamp,
+  frameQuality,
+  frameScale,
+  meanY,
+  measureHeight,
+  measureRegion,
+  normGender,
+  normView,
+  normalizeLandmarks,
+  point,
+  round1,
+  round2,
+} from '../lib/bodyGeometry.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -64,70 +102,81 @@ const CHARTS = {
 
 /** Plausible adult ranges in inches — used to reject/repair absurd values. */
 const RANGES = {
-  chestIn: [26, 64],
-  waistIn: [20, 60],
-  hipsIn: [28, 66],
-  heightIn: [54, 86],
-  shoulderIn: [12, 26],
+  chest: [26, 64],
+  waist: [20, 60],
+  hips: [28, 66],
+  shoulder: [12, 26],
+  neck: [11, 22],
+  arm: [8, 22],
+  height: [54, 86],
 };
 
-const FRAME_PROMPT = `You are an expert anthropometrist estimating body measurements from ONE frame of a person slowly turning 360°. Work with the care of a tailor taking measurements.
+/**
+ * Everything below the prompt is pure arithmetic on visible geometry, so it
+ * lives in ./lib/bodyGeometry.js where it can be tested on its own.
+ */
+const FRAME_PROMPT = `You are a measuring instrument, not a guesser. You are shown ONE frame from a video of a person slowly turning through 360 degrees. Report only what is VISIBLE in this frame, as geometry we will compute from. Never estimate a size, never give inches or centimetres, and never fill in something you cannot see. A missing value is far more useful than an invented one.
 
-STEP 1 — ISOLATE THE SUBJECT. Ignore the background, furniture, other people, pets, text and objects completely. Analyse ONLY the single person in the foreground. If there is no clearly visible person, return {"personVisible": false} and nothing else.
+STEP 1 - FIND THE PERSON. Ignore the background, furniture, other people, pets, text and objects. Use only the single person in the foreground. If no person is clearly visible, reply {"personVisible": false} and nothing else.
 
-STEP 2 — READ THE PERSON, NOT THE CLOTHES. Look at where the body actually is: shoulder line, armpits, natural waist crease, widest hip/seat point, the floor. Clothing hangs away from the body, so estimate the BODY underneath.
+STEP 2 - WHICH WAY ARE THEY FACING? "view": front | back | side | three-quarter (a side view is a left or right profile).
 
-STEP 3 — REASON WITH HUMAN PROPORTIONS before you answer:
- - An adult is about 7.2–7.8 head-lengths tall. Use the subject's own head as a ruler to sanity-check their height and limb lengths (headUnitsToHeight).
- - Shoulder width is roughly two head-widths (about 17–20 in for men, 15–17 in for women).
- - Chest/bust is typically 3–6 in larger than the natural waist; hips usually sit within ~2 in of the chest/bust.
- - Legs (floor to crotch) are usually 45–48% of total height.
-State your reasoning briefly inside the "reasoning" field, then give the numbers.
+STEP 3 - PLACE LANDMARKS. Give each as x,y in NORMALISED image coordinates: x=0 is the left edge of the image, x=1 the right edge; y=0 the top edge, y=1 the bottom. Three decimals. Points:
+  headTop     top of the skull
+  chin        bottom of the chin
+  neckL, neckR       left/right edges of the neck where it meets the shoulders
+  shoulderL, shoulderR   the outer bony corners of the shoulders
+  armpitL, armpitR   left/right edges of the TORSO at armpit/chest level - the torso only, NOT the arms
+  waistL, waistR     left/right edges of the torso at the narrowest point of the waist
+  hipL, hipR         left/right edges of the body at the widest hip/seat point
+  armL, armR         the left and right edges of ONE upper arm (use the arm on the left of the image), midway between shoulder and elbow
+  crotch      where the legs meet
+  footL, footR       left/right feet where they touch the floor
+CRITICAL: "left/right" ALWAYS means the horizontal extremes in THIS image. In a front or back view a left/right pair measures body WIDTH. In a side view the same pair measures body DEPTH, front to back. If a landmark is hidden, cropped, or you cannot see it clearly, OMIT that key completely - do not guess it.
 
-STEP 4 — CLOTHING. List the garments, how they fit (tight / regular / loose / oversized), the fabric density (light / medium / heavy), and "thicknessIn": the extra width the clothing adds on ONE side of the body (thin tee ~0.15, hoodie ~0.6, puffer ~1.2).
+STEP 4 - WHAT IS VISIBLE. visible: { head, torso, hips, legs, feet } - true only if that part is actually in frame.
 
-STEP 5 — MEASUREMENTS. Give inches as seen over the clothing, each with a 0-1 confidence:
- chest/bust, waist (natural, narrowest), hips (fullest), height, shoulder width.
+STEP 5 - SCALE REFERENCE. If the frame contains an object whose real size you are confident of (a standard interior door is about 203 cm tall, a dining chair seat is about 45 cm from the floor, a fridge is about 170 cm, an A4 sheet is 29.7 cm), give its two end points as "a" and "b", its real length in cm, and how reliable that is 0-1. Most frames have nothing usable: return [].
 
-STEP 6 — VIEW. Which way is the person facing: front, side, back or three-quarter.
+STEP 6 - CLOTHING AND CAMERA, described plainly (these explain the fabric, they do not become numbers):
+  top: t-shirt / polo / shirt / hoodie / jacket / dress / none
+  topFit: skin-tight | fitted | regular | loose | oversized
+  lower: shorts / trousers / jeans / joggers / skirt / none
+  waistband: natural | low | high
+  hang: how the fabric hangs and wrinkles across chest, shoulders and midsection
+  sleeves: how the sleeves sit on the upper arms
+  excessFabric: none | some | a lot - at chest, waist and sleeves
+  density: light | medium | heavy
+  thicknessIn: the extra width this clothing adds on ONE side of the body, in inches (thin tee ~0.15, hoodie ~0.6, puffer ~1.2)
+  camera: { angle: low | eye-level | high, distance: close | medium | far, sharpness: 0-1, lighting: 0-1 }
 
-Respond with ONLY this JSON (no markdown, no prose outside it):
+STEP 7 - WHO. gender: male | female | unsure with genderConfidence 0-1, judged from build, shoulder-to-hip ratio, waist taper and chest shape. Hair and clothing are only weak hints. Also give build: slim | lean | average | broad | muscular | heavyset | petite.
+
+Respond with ONLY this JSON, no markdown and no prose outside it:
 {
   "personVisible": true,
-  "view": "front" | "side" | "back" | "three-quarter",
-  "bbox": { "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0 },
-  "gender": "male" | "female" | "unsure",
+  "view": "front",
+  "gender": "male",
   "genderConfidence": 0.0,
-  "headUnitsToHeight": 7.5,
-  "clothing": {
-    "items": ["t-shirt", "jeans"],
-    "fit": "tight|regular|loose|oversized",
-    "density": "light|medium|heavy",
-    "thicknessIn": 0.3,
-    "note": "loose hoodie hides the torso outline"
+  "build": "average",
+  "landmarks": {
+    "headTop": { "x": 0.500, "y": 0.060 },
+    "chin": { "x": 0.500, "y": 0.150 },
+    "neckL": { "x": 0.480, "y": 0.170 }, "neckR": { "x": 0.520, "y": 0.170 },
+    "shoulderL": { "x": 0.370, "y": 0.205 }, "shoulderR": { "x": 0.630, "y": 0.205 },
+    "armpitL": { "x": 0.390, "y": 0.270 }, "armpitR": { "x": 0.610, "y": 0.270 },
+    "waistL": { "x": 0.415, "y": 0.380 }, "waistR": { "x": 0.585, "y": 0.380 },
+    "hipL": { "x": 0.390, "y": 0.460 }, "hipR": { "x": 0.610, "y": 0.460 },
+    "armL": { "x": 0.330, "y": 0.300 }, "armR": { "x": 0.670, "y": 0.300 },
+    "crotch": { "x": 0.500, "y": 0.520 },
+    "footL": { "x": 0.450, "y": 0.960 }, "footR": { "x": 0.550, "y": 0.960 }
   },
-  "measurements": {
-    "chestIn":    { "value": 0, "confidence": 0.0 },
-    "waistIn":    { "value": 0, "confidence": 0.0 },
-    "hipsIn":     { "value": 0, "confidence": 0.0 },
-    "heightIn":   { "value": 0, "confidence": 0.0 },
-    "shoulderIn": { "value": 0, "confidence": 0.0 }
-  },
-  "proportions": { "build": "slim|average|athletic|heavyset|petite|tall", "shoulderToHip": 1.0, "legToTorso": 0.95 },
-  "reasoning": "one or two short sentences",
+  "visible": { "head": true, "torso": true, "hips": true, "legs": true, "feet": true },
+  "references": [],
+  "clothing": { "top": "t-shirt", "topFit": "regular", "lower": "jeans", "waistband": "natural", "hang": "", "sleeves": "", "excessFabric": "some", "density": "light", "thicknessIn": 0.15 },
+  "camera": { "angle": "eye-level", "distance": "medium", "sharpness": 0.7, "lighting": 0.8 },
   "confidence": 0.0
 }`;
-
-const RECONCILE_PROMPT = `You are a master tailor reconciling several estimates of the SAME person, each taken from a different angle of one 360° video. The numbers below are already adjusted for clothing. Your job is to produce the single most accurate, self-consistent set of body measurements in inches.
-
-Rules:
-- Weight front and back views most for chest/bust, waist and hips; treat side views mainly as a check on posture and depth.
-- Reject outliers; if one view disagrees with the rest, side with the majority.
-- Enforce human consistency: an adult is 7.2–7.8 head-lengths tall, hips sit near the chest/bust, and the waist is smaller than both.
-- Keep every value within realistic adult ranges.
-- Return ONLY JSON: {"chestIn":0,"waistIn":0,"hipsIn":0,"heightIn":0,"shoulderIn":0,"note":"one short sentence"}`;
-
-const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.85, side: 0.5 };
 
 /* ---------------- Cloudflare helpers ---------------- */
 
@@ -225,7 +274,7 @@ async function callVision(b64, prompt, opts = {}) {
       const text = await callModel(config.cloudflare.visionModel, fmt.messages(b64, prompt), opts);
       if (visionFormat !== i) {
         visionFormat = i;
-        log(`  vision message format locked → "${fmt.name}"`);
+        log(`  vision message format locked -> "${fmt.name}"`);
       }
       return text;
     } catch (e) {
@@ -251,44 +300,34 @@ function parseJson(text) {
   return null;
 }
 
-/* ---------------- maths ---------------- */
-
-const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
-
-/** Pull {value, confidence} out of the model's measurement, tolerating a plain number. */
-function readMeasure(raw) {
-  if (raw == null) return null;
-  if (typeof raw === 'number') return { value: raw, confidence: 0.5 };
-  if (typeof raw === 'object' && typeof raw.value === 'number') {
-    return { value: raw.value, confidence: Number.isFinite(raw.confidence) ? raw.confidence : 0.5 };
+/** Pixel size of a JPEG, straight out of its SOF marker. */
+function jpegSize(buf) {
+  if (!buf || buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  let i = 2;
+  while (i < buf.length - 9) {
+    if (buf[i] !== 0xff) { i += 1; continue; }
+    const marker = buf[i + 1];
+    if (marker === 0xff) { i += 1; continue; }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+    const len = buf.readUInt16BE(i + 2);
+    if (len < 2) break;
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      const height = buf.readUInt16BE(i + 5);
+      const width = buf.readUInt16BE(i + 7);
+      if (width > 0 && height > 0) return { width, height };
+      return null;
+    }
+    i += 2 + len;
   }
   return null;
 }
 
-/** Robust, view- and confidence-weighted average that drops outliers. */
-function robustCombine(samples) {
-  const usable = samples.filter((s) => s && Number.isFinite(s.value) && s.weight > 0);
-  if (!usable.length) return null;
-  const sorted = [...usable].sort((a, b) => a.value - b.value);
-  const median = sorted[Math.floor(sorted.length / 2)].value;
-  const tol = Math.max(2, Math.abs(median) * 0.12);
-  const kept = usable.filter((s) => Math.abs(s.value - median) <= tol);
-  const use = kept.length ? kept : usable;
-  const wsum = use.reduce((s, x) => s + x.weight, 0);
-  return use.reduce((s, x) => s + x.value * x.weight, 0) / wsum;
-}
-
-function modal(counts) {
-  const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  return best ? best[0] : null;
-}
+/* ---------------- analysis ---------------- */
 
 function pickGender(analyses) {
   const score = { male: 0, female: 0 };
   for (const a of analyses) {
-    if (a.gender === 'male' || a.gender === 'female') {
-      score[a.gender] += a.genderConfidence ?? 0.5;
-    }
+    if (a.gender === 'male' || a.gender === 'female') score[a.gender] += a.genderConfidence ?? 0.5;
   }
   const total = score.male + score.female;
   if (!total) return { guess: 'unsure', confidence: 0, scores: score };
@@ -301,27 +340,53 @@ function pickGender(analyses) {
   };
 }
 
+const firstString = (analyses, get) => analyses.map(get).find((v) => typeof v === 'string' && v.trim()) || null;
+
 function combineClothing(analyses) {
-  const items = [...new Set(analyses.flatMap((a) => a.clothing?.items || []))].slice(0, 8);
-  const fitCount = {};
-  const densityCount = {};
+  const raw = [];
+  let fit = null;
+  let density = null;
   let thickSum = 0;
   let thickN = 0;
+  const fitCount = {};
+  const densityCount = {};
+
   for (const a of analyses) {
     const c = a.clothing || {};
-    if (c.fit) fitCount[c.fit] = (fitCount[c.fit] || 0) + 1;
+    for (const k of ['top', 'lower']) {
+      const v = c[k];
+      if (typeof v === 'string' && v.trim() && !/^(none|nothing|n\/a)/i.test(v.trim())) raw.push(v.trim());
+    }
+    if (c.topFit) fitCount[c.topFit] = (fitCount[c.topFit] || 0) + 1;
     if (c.density) densityCount[c.density] = (densityCount[c.density] || 0) + 1;
-    if (typeof c.thicknessIn === 'number' && c.thicknessIn >= 0 && c.thicknessIn < 3) {
-      thickSum += c.thicknessIn;
+    if (Number.isFinite(Number(c.thicknessIn)) && Number(c.thicknessIn) >= 0 && Number(c.thicknessIn) < 3) {
+      thickSum += Number(c.thicknessIn);
       thickN += 1;
     }
   }
+
+  const modal = (counts) => {
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return best ? best[0] : null;
+  };
+  fit = modal(fitCount);
+  density = modal(densityCount);
+
+  const parts = [
+    firstString(analyses, (a) => a.clothing?.hang),
+    firstString(analyses, (a) => a.clothing?.sleeves),
+    firstString(analyses, (a) => a.clothing?.excessFabric),
+    firstString(analyses, (a) => a.clothing?.waistband),
+  ].filter(Boolean);
+  const note = parts.length ? parts.join(' · ').slice(0, 240) : null;
+
   return {
-    items,
-    fit: modal(fitCount),
-    density: modal(densityCount),
+    items: [...new Set(raw.map((s) => s.toLowerCase()))].slice(0, 6),
+    fit,
+    density,
     thicknessIn: thickN ? Number((thickSum / thickN).toFixed(2)) : null,
-    note: analyses.map((a) => a.clothing?.note).find(Boolean) || null,
+    waistband: firstString(analyses, (a) => a.clothing?.waistband),
+    note,
   };
 }
 
@@ -337,8 +402,6 @@ function bestSize(sex, girth) {
   return best;
 }
 
-const round1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
-
 /* ---------------- route ---------------- */
 
 bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
@@ -351,204 +414,239 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
 
   const startedAt = Date.now();
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
-  log(`▶ POST received — ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, model=${config.cloudflare.visionModel}`);
+
+  // The frame's true aspect ratio decides how a vertical normed distance (y is
+  // normalised by height) converts into the same unit as a horizontal one. Read
+  // it straight out of the JPEG so the client cannot get it wrong.
+  const jpeg = jpegSize(files[0].buffer);
+  const aspect = jpeg
+    ? jpeg.width / jpeg.height
+    : clamp(Number(req.body?.aspect) || 0.75, [0.3, 3]);
+
+  log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
 
   // 1. Analyse every frame IN PARALLEL — each vision call takes ~30-50s, so a
   //    sequential loop would blow the client's timeout. Skip failures rather
   //    than aborting the whole request.
-  const analyses = [];
+  const frames = [];
   const failures = [];
 
   await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
     try {
-      const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1200, json: true });
+      const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1600, json: true });
       const parsed = parseJson(raw);
       const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
         const frame = {
-          view: parsed.view || 'front',
-          gender: parsed.gender || 'unsure',
+          view: normView(parsed.view),
+          gender: normGender(parsed.gender),
           genderConfidence: Number(parsed.genderConfidence) || 0,
-          clothing: parsed.clothing || {},
-          measurements: parsed.measurements || {},
-          proportions: parsed.proportions || {},
-          headUnitsToHeight: Number(parsed.headUnitsToHeight) || null,
+          build: typeof parsed.build === 'string' ? parsed.build : null,
+          landmarks: normalizeLandmarks(parsed.landmarks),
+          visible: parsed.visible && typeof parsed.visible === 'object' ? parsed.visible : {},
+          references: Array.isArray(parsed.references) ? parsed.references : [],
+          clothing: parsed.clothing && typeof parsed.clothing === 'object' ? parsed.clothing : {},
+          camera: parsed.camera && typeof parsed.camera === 'object' ? parsed.camera : {},
           confidence: Number(parsed.confidence) || 0.5,
+          aspect,
         };
-        analyses.push(frame);
-        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) — view=${frame.view} gender=${frame.gender} conf=${frame.confidence} clothing=${frame.clothing?.density || '?'} thick=${frame.clothing?.thicknessIn ?? '?'} chest=${frame.measurements?.chestIn?.value ?? '?'}`);
+        frame.scale = frameScale(frame);
+        frames.push(frame);
+        const keys = Object.keys(frame.landmarks);
+        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} [${keys.join(',')}] scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width' : 'NONE'}`);
       } else {
-        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) — ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
+        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
       }
     } catch (e) {
       failures.push({ file: file.originalname, error: e.message });
-      log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) — ${e.message}`);
+      log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) - ${e.message}`);
     }
   }));
 
-  log(`  all frames done in ${Date.now() - startedAt}ms (${analyses.length} usable, ${failures.length} failed)`);
+  log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${failures.length} failed)`);
 
-  if (analyses.length === 0) {
-    log(`✖ no usable frames after ${Date.now() - startedAt}ms (${failures.length} failed)`);
-    // Every call erroring is a service problem, not "no person in the video".
+  if (frames.length === 0) {
+    log(`x no usable frames after ${Date.now() - startedAt}ms (${failures.length} failed)`);
     if (failures.length === files.length) {
       throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`);
     }
     throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.');
   }
 
-  // 2. Gender, clothing.
-  const gender = pickGender(analyses);
-  const clothing = combineClothing(analyses);
+  // 2. Scale. Without an anchor there are no centimetres, so say so rather than
+  //    inventing numbers.
+  const scaled = frames.filter((f) => f.scale);
+  if (!scaled.length) {
+    log('x no frame had a usable scale anchor (no head, no reference object)');
+    throw new HttpError(422, 'We could not work out the scale of your video — keep your head fully in frame for the whole turn, or include a door or similar in shot, and try again.');
+  }
+
+  const scaleW = scaled.reduce((s, f) => s + frameQuality(f), 0);
+  const cmPerWidth = Math.exp(scaled.reduce((s, f) => s + frameQuality(f) * Math.log(f.scale.cmPerWidth), 0) / scaleW);
+  const anchors = [...new Set(scaled.flatMap((f) => f.scale.anchors.map((a) => a.detail)))];
+
+  // 3. Measure every region from the landmark geometry.
+  const measured = {};
+  const methods = {};
+  const dropped = [];
+  for (const key of Object.keys(REGIONS)) {
+    const r = measureRegion(key, frames);
+    if (!r) { dropped.push(key); continue; }
+    const range = RANGES[key];
+    const v = clamp(r.valueIn, range);
+    r.clamped = v !== r.valueIn;
+    r.valueIn = v;
+    measured[key] = r;
+    methods[key] = {
+      label: r.label,
+      girthIn: r.girth ? round1(r.valueIn) : null,
+      widthIn: round1(r.widthIn),
+      depthIn: round1(r.depthIn),
+      depthSource: r.depthSource,
+      widthViews: r.widthViews,
+      depthViews: r.depthViews,
+      formula: r.girth
+        ? 'ellipse perimeter of half-width x half-depth'
+        : 'horizontal separation of the shoulder landmarks',
+      confidence: r.confidence,
+      clamped: r.clamped,
+    };
+  }
+
+  // 4. Height: head to floor, only from frames where the feet were actually visible.
+  const h = measureHeight(frames);
+  const heightIn = h ? clamp(h.in, RANGES.height) : null;
+  const headUnitsToHeight = h
+    ? round1(h.in * CM_PER_IN / (HEAD_HEIGHT_CM[scaled[0].gender] || HEAD_HEIGHT_CM.unsure))
+    : null;
+
+  // 5. Proportions, computed from the same geometry.
+  const shoulderToHip = measured.shoulder && measured.hips ? round2(measured.shoulder.widthIn / measured.hips.widthIn) : null;
+  let legToTorso = null;
+  for (const f of frames) {
+    const top = point(f, 'headTop');
+    const crotch = point(f, 'crotch');
+    const floorY = meanY(f, 'footL', 'footR');
+    if (!top || !crotch || floorY == null) continue;
+    const torso = crotch.y - top.y;
+    if (torso > 0.05) { legToTorso = round2((floorY - crotch.y) / torso); break; }
+  }
+  const build = (() => {
+    const counts = {};
+    for (const f of frames) if (f.build) counts[f.build] = (counts[f.build] || 0) + 1;
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return best ? best[0] : null;
+  })();
+
+  // 6. Gender and clothing.
+  const gender = pickGender(frames);
+  const clothing = combineClothing(frames);
   const removed = (clothing.thicknessIn || 0) * 2;
 
-  // 3. Measurements "as seen", then minus the clothing width.
-  const KEYS = ['chestIn', 'waistIn', 'hipsIn', 'heightIn', 'shoulderIn'];
-  const perFrame = [];
-  const seenRaw = {};
-  for (const key of KEYS) {
-    const samples = [];
-    for (const a of analyses) {
-      const m = readMeasure(a.measurements[key]);
-      if (!m) continue;
-      const range = RANGES[key];
-      if (range && (m.value < range[0] * 0.6 || m.value > range[1] * 1.6)) continue; // parse junk
-      samples.push({ value: m.value, confidence: m.confidence, weight: (VIEW_WEIGHT[a.view] ?? 0.7) * (0.3 + 0.7 * m.confidence) });
-    }
-    seenRaw[key] = robustCombine(samples);
-  }
+  // 7. As seen over the clothes, then minus the clothing width.
   const seen = {
-    chest: round1(seenRaw.chestIn),
-    bust: round1(seenRaw.chestIn),
-    waist: round1(seenRaw.waistIn),
-    hips: round1(seenRaw.hipsIn),
-    height: round1(seenRaw.heightIn),
-    shoulder: round1(seenRaw.shoulderIn),
+    chest: round1(measured.chest?.valueIn),
+    bust: round1(measured.chest?.valueIn),
+    waist: round1(measured.waist?.valueIn),
+    hips: round1(measured.hips?.valueIn),
+    shoulder: round1(measured.shoulder?.valueIn),
+    neck: round1(measured.neck?.valueIn),
+    arm: round1(measured.arm?.valueIn),
+    height: round1(heightIn),
   };
-
   const adjusted = {
-    chest: seenRaw.chestIn != null ? clamp(round1(seenRaw.chestIn - removed), RANGES.chestIn) : null,
-    waist: seenRaw.waistIn != null ? clamp(round1(seenRaw.waistIn - removed), RANGES.waistIn) : null,
-    hips: seenRaw.hipsIn != null ? clamp(round1(seenRaw.hipsIn - removed), RANGES.hipsIn) : null,
-    shoulder: seenRaw.shoulderIn != null ? clamp(round1(seenRaw.shoulderIn - removed), RANGES.shoulderIn) : null,
-    height: seen.height, // height is unaffected by clothing thickness
+    chest: seen.chest != null ? round1(clamp(seen.chest - removed, RANGES.chest)) : null,
+    waist: seen.waist != null ? round1(clamp(seen.waist - removed, RANGES.waist)) : null,
+    hips: seen.hips != null ? round1(clamp(seen.hips - removed, RANGES.hips)) : null,
+    shoulder: seen.shoulder != null ? round1(clamp(seen.shoulder - removed, RANGES.shoulder)) : null,
+    neck: seen.neck,
+    arm: seen.arm,
+    height: seen.height,
     bodyWidthRemovedIn: round1(removed),
   };
 
-  // 4. Per-frame adjusted estimates -> feed the reconciliation pass.
-  for (const a of analyses) {
-    const row = { view: a.view, confidence: a.confidence };
-    for (const key of KEYS) {
-      const m = readMeasure(a.measurements[key]);
-      if (!m) continue;
-      const isGirth = key !== 'heightIn';
-      row[key] = round1(isGirth ? m.value - removed : m.value);
-    }
-    perFrame.push(row);
-  }
-
-  // 5. Reconcile across views (best effort; maths result stands if it fails).
-  let final = { ...adjusted };
-  let reconciled = false;
-  let reconcileNote = null;
-  if (perFrame.length > 1) {
-    try {
-      const text = await callModel(config.cloudflare.textModel || config.cloudflare.visionModel, [
-        { role: 'system', content: RECONCILE_PROMPT },
-        { role: 'user', content: JSON.stringify({ gender: gender.guess, views: perFrame }) },
-      ], { maxTokens: 500, json: true });
-      const r = parseJson(text);
-      if (r) {
-        const pick = (k, fallback) => {
-          const v = typeof r[k] === 'number' ? r[k] : null;
-          if (v == null) return fallback;
-          const range = RANGES[k];
-          if (range && (v < range[0] * 0.85 || v > range[1] * 1.15)) return fallback;
-          return round1(v);
-        };
-        final = {
-          chest: pick('chestIn', adjusted.chest),
-          waist: pick('waistIn', adjusted.waist),
-          hips: pick('hipsIn', adjusted.hips),
-          shoulder: pick('shoulderIn', adjusted.shoulder),
-          height: pick('heightIn', adjusted.height),
-          bodyWidthRemovedIn: adjusted.bodyWidthRemovedIn,
-        };
-        reconciled = true;
-        reconcileNote = typeof r.note === 'string' ? r.note : null;
-        log('  reconcile ok —', JSON.stringify({ chestIn: r.chestIn, waistIn: r.waistIn, hipsIn: r.hipsIn, heightIn: r.heightIn }));
-      } else {
-        log('  reconcile returned nothing usable — keeping the maths result');
-      }
-    } catch (e) {
-      failures.push({ file: 'reconcile', error: e.message });
-      log('  reconcile FAILED —', e.message);
-    }
-  }
-
-  // 6. Size.
-  const girth = final.chest ?? final.waist;
-  let sizeBasis = null;
+  // 8. Size.
   let size = null;
+  let sizeBasis = null;
   if (gender.guess === 'male' || gender.guess === 'female') {
-    sizeBasis = gender.guess;
-    size = bestSize(gender.guess, final.chest);
-  } else {
-    const m = bestSize('male', girth);
-    const f = bestSize('female', girth);
+    size = bestSize(gender.guess, adjusted.chest);
+    if (size) sizeBasis = gender.guess;
+  } else if (adjusted.chest != null) {
+    const m = bestSize('male', adjusted.chest);
+    const f = bestSize('female', adjusted.chest);
     if (m && f) {
       size = m.diff <= f.diff ? m : f;
       sizeBasis = m.diff <= f.diff ? 'male' : 'female';
     } else if (m || f) {
       size = m || f;
-      sizeBasis = m ? 'male' : 'female';
+      sizeBasis = (m ? 'male' : 'female');
     }
   }
 
-  // 7. Proportions.
-  const build = modal(analyses.map((a) => a.proportions.build).filter(Boolean).reduce((acc, b) => ({ ...acc, [b]: (acc[b] || 0) + 1 }), {}));
-  const avgProp = (k) => {
-    const vals = analyses.map((a) => a.proportions[k]).filter((v) => Number.isFinite(v));
-    return vals.length ? round1(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
-  };
-  const proportions = { build, shoulderToHip: avgProp('shoulderToHip'), legToTorso: avgProp('legToTorso') };
-
-  // 8. Notes.
+  // 9. Notes — including exactly which gaps we refused to fill.
   const notes = [];
+  const label = (k) => REGIONS[k]?.label || k;
+  const visibleRegions = GIRTH_REGIONS.filter((k) => measured[k]);
+  if (visibleRegions.length) {
+    notes.push(`Measured from what is visible in the clip: ${visibleRegions.map((k) => label(k).toLowerCase()).join(', ')}${heightIn != null ? ' and full height' : ''}.`);
+  }
+  for (const k of dropped) {
+    if (k === 'neck' || k === 'arm') continue;
+    notes.push(`${label(k)} was not visible in the clip, so it was left blank rather than guessed.`);
+  }
+  if (heightIn == null && measured.chest) {
+    notes.push('Height was not measured — your feet were not in frame. Film the full body to get it.');
+  }
   if (clothing.items.length || clothing.fit) {
     notes.push(
       `Clothing${clothing.items.length ? ` (${clothing.items.join(', ')})` : ''}` +
       `${clothing.density ? ` · ${clothing.density} density` : ''}` +
       `${clothing.fit ? ` · ${clothing.fit} fit` : ''}` +
-      `${removed > 0.05 ? ` — about ${round1(removed)} in of width removed from the body estimate` : ''}.`
+      `${removed > 0.05 ? ` — about ${round1(removed)} in of width subtracted from the body estimate` : ''}.`
     );
   }
   if (clothing.note) notes.push(clothing.note);
-  if (reconcileNote) notes.push(reconcileNote);
   if (gender.guess === 'unsure') notes.push('Gender was ambiguous in the video, so the size was picked from the body proportions alone.');
-  if (size && final.chest != null) {
+  if (size && adjusted.chest != null) {
     const key = sizeBasis === 'female' ? 'bust' : 'chest';
-    const d = final.chest - CHARTS[sizeBasis][size.sizeKey][key];
+    const d = adjusted.chest - CHARTS[sizeBasis][size.sizeKey][key];
     if (d > 1.5) notes.push(`Size ${size.sizeKey} chest/bust may be snug.`);
     else if (d < -2) notes.push(`Size ${size.sizeKey} chest may be loose.`);
   }
-  if (analyses.length < 3) notes.push(`Only ${analyses.length} usable frame${analyses.length === 1 ? '' : 's'} — a slower turn gives a steadier estimate.`);
+  if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} — a slower turn gives a steadier estimate.`);
+  if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
+    notes.push('No clear side-on frame, so body depth was modelled from the front width rather than measured.');
+  }
 
   const result = {
     id: crypto.randomUUID(),
     gender,
     clothing,
     measurements: seen,
-    adjusted: final,
-    proportions,
+    adjusted,
+    proportions: { build, shoulderToHip, legToTorso },
+    geometry: {
+      aspect: round2(aspect),
+      scale: { cmPerImageWidth: round2(cmPerWidth), anchors },
+      methods,
+      height: heightIn != null
+        ? { in: round1(heightIn), headUnits: headUnitsToHeight, views: h.views || 0, spread: round2(h.spread ?? 0) }
+        : null,
+      dropped,
+      frames: frames.map((f) => ({
+        view: f.view,
+        landmarks: Object.keys(f.landmarks).length,
+        scaleCmPerWidth: f.scale ? round2(f.scale.cmPerWidth) : null,
+      })),
+    },
     size: size?.sizeKey || null,
     sizeChart: size?.row || null,
     sizeBasis: size ? sizeBasis : null,
     notes,
-    views: analyses.map((a) => a.view),
-    frameCount: analyses.length,
-    reconciled,
+    views: frames.map((f) => f.view),
+    frameCount: frames.length,
+    reconciled: frames.length > 1 && visibleRegions.length > 0,
     createdAt: new Date().toISOString(),
   };
   if (failures.length) result.frameFailures = failures;
@@ -556,19 +654,17 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   result.debug = {
     elapsedMs: Date.now() - startedAt,
     framesReceived: files.length,
-    framesUsed: analyses.length,
+    framesUsed: frames.length,
     totalBytes,
-    reconciled,
-    frames: analyses.map((a) => ({
-      view: a.view,
-      gender: a.gender,
-      confidence: a.confidence,
-      density: a.clothing?.density || null,
-      thicknessIn: a.clothing?.thicknessIn ?? null,
-    })),
+    aspect: round2(aspect),
+    cmPerImageWidth: round2(cmPerWidth),
+    anchors,
+    reconciled: result.reconciled,
   };
 
-  log(`✔ done in ${result.debug.elapsedMs}ms — gender=${gender.guess} basis=${sizeBasis} size=${result.size} seen=${JSON.stringify(seen)} adjusted=${JSON.stringify(final)} reconciled=${reconciled}`);
+  log(`done in ${result.debug.elapsedMs}ms - gender=${gender.guess} basis=${sizeBasis} size=${result.size} scale=${round2(cmPerWidth)}cm/width anchors=[${anchors.join('; ')}]`);
+  log(`  seen=${JSON.stringify(seen)} adjusted=${JSON.stringify(adjusted)}`);
+  log(`  methods=${JSON.stringify(methods)}`);
 
   res.json(result);
 }));

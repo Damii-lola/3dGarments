@@ -2,9 +2,11 @@
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
    2. Trim the clip's LENGTH to the part where you turn around.
-   3. The AI focuses on you, guesses gender, gauges how thick the clothing is,
-      then estimates body measurements and size — subtracting the clothing's
-      width. A reconciliation pass tightens the final numbers.
+   3. The server reads body LANDMARKS out of the frames (nothing but positions,
+      no sizes), then computes every measurement itself: width from the
+      front-facing frames, depth from the side-on ones, and a girth from the
+      ellipse those two describe. It only reports what was visible — a blank
+      beats a guess. The arithmetic is shown under "How these were worked out".
    ========================================================= */
 
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
@@ -58,6 +60,8 @@ const sizeSub = document.getElementById('size-sub');
 const factsEl = document.getElementById('facts');
 const measureGrid = document.getElementById('measure-grid');
 const measuresNote = document.getElementById('measures-note');
+const mathEl = document.getElementById('math');
+const mathList = document.getElementById('math-list');
 const notesEl = document.getElementById('analysis-notes');
 const retakeBtn = document.getElementById('retake-btn');
 const startOverBtn = document.getElementById('start-over-btn');
@@ -217,6 +221,8 @@ function renderMeasures(data) {
     ['Waist', fmtIn(m.waist)],
     ['Hips', fmtIn(m.hips)],
     ['Shoulder', fmtIn(m.shoulder)],
+    ['Neck', fmtIn(m.neck)],
+    ['Upper arm', fmtIn(m.arm)],
     ['Height', fmtIn(m.height)],
   ];
   for (const [label, value] of items) {
@@ -228,10 +234,49 @@ function renderMeasures(data) {
   const seenChest = data.measurements?.chest;
   const removed = m.bodyWidthRemovedIn;
   if (seenChest != null && removed) {
-    measuresNote.textContent = `Measured about ${seenChest}" over the clothing, then adjusted down by ${removed}" to estimate the body itself.`;
+    measuresNote.textContent = `Measured about ${fmtIn(seenChest)} over the clothing, then widened down by ${removed}" to estimate the body itself.`;
   } else {
-    measuresNote.textContent = 'Estimates from the video — treat them as a guide, not a tape measure.';
+    measuresNote.textContent = 'Computed from the visible landmarks in your video — not a tape measure.';
   }
+}
+
+/**
+ * The working: every number is the perimeter of an ellipse whose width came
+ * from the front-facing frames and whose depth came from the side-on ones.
+ * Showing it is the whole point — these are calculations, not guesses.
+ */
+function renderMath(data) {
+  mathList.replaceChildren();
+  const g = data.geometry || {};
+  const methods = g.methods || {};
+  const rows = [];
+
+  for (const key of ['chest', 'waist', 'hips', 'neck', 'arm', 'shoulder']) {
+    const m = methods[key];
+    if (!m) continue;
+    if (m.girthIn != null) {
+      rows.push(`${m.label}: ${m.widthIn}" wide × ${m.depthIn}" deep (${m.depthSource}) → perimeter ${m.girthIn}"`);
+    } else {
+      rows.push(`${m.label}: ${m.widthIn}" across (${m.widthView ?? m.widthViews} view${(m.widthViews ?? 1) === 1 ? '' : 's'})`);
+    }
+  }
+
+  const h = g.height;
+  if (h) {
+    rows.push(`Height: ${h.in}" head-to-floor${h.headUnits ? ` (${h.headUnits} head-lengths)` : ''}, from ${h.views} full-body frame${h.views === 1 ? '' : 's'}`);
+  }
+
+  if (g.scale) {
+    const anchors = (g.scale.anchors || []).join(', ');
+    rows.push(`Scale: ${g.scale.cmPerImageWidth} cm per image width${anchors ? ` — anchored on ${anchors}` : ''}`);
+  }
+
+  if (g.dropped?.length) {
+    rows.push(`Left blank (not visible in the clip): ${g.dropped.join(', ')}`);
+  }
+
+  for (const row of rows) mathList.append(el('li', 'math-item', row));
+  mathEl.hidden = rows.length === 0;
 }
 
 function renderNotes(data) {
@@ -247,6 +292,7 @@ function renderAnalysis(data) {
 
   renderFacts(data);
   renderMeasures(data);
+  renderMath(data);
   renderNotes(data);
   show('result');
 }
@@ -317,3 +363,42 @@ openCamera.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('pagehide', releaseMedia);
+
+/**
+ * ?demo=1 — render a canned analysis so the results screen can be seen and
+ * checked without recording a video. Local only; it touches no network.
+ */
+if (new URLSearchParams(location.search).has('demo')) {
+  renderAnalysis({
+    size: 'M',
+    sizeBasis: 'male',
+    reconciled: true,
+    frameCount: 6,
+    gender: { guess: 'male', confidence: 0.82 },
+    clothing: { items: ['t-shirt', 'jeans'], fit: 'regular', density: 'light', thicknessIn: 0.15 },
+    measurements: { chest: 41.2, waist: 36.4, hips: 40.2, shoulder: 18.3, neck: 14.6, arm: 13.1, height: 71.1 },
+    adjusted: { chest: 40.9, waist: 36.1, hips: 39.9, shoulder: 18.0, neck: 14.6, arm: 13.1, height: 71.1, bodyWidthRemovedIn: 0.3 },
+    proportions: { build: 'average', shoulderToHip: 1.15, legToTorso: 0.95 },
+    geometry: {
+      aspect: 0.75,
+      scale: { cmPerImageWidth: 185.53, anchors: ['23.5 cm head'] },
+      methods: {
+        chest: { label: 'Chest', girthIn: 41.2, widthIn: 15.0, depthIn: 10.6, depthSource: 'side view x2', widthViews: 3, widthView: 3, confidence: 0.86 },
+        waist: { label: 'Waist', girthIn: 36.4, widthIn: 13.0, depthIn: 9.8, depthSource: 'side view x2', widthViews: 3, widthView: 3, confidence: 0.84 },
+        hips: { label: 'Hips', girthIn: 40.2, widthIn: 14.2, depthIn: 11.0, depthSource: 'side view x2', widthViews: 3, widthView: 3, confidence: 0.83 },
+        neck: { label: 'Neck', girthIn: 14.6, widthIn: 4.7, depthIn: 4.3, depthSource: 'side view x2', widthViews: 4, widthView: 4, confidence: 0.8 },
+        arm: { label: 'Upper arm', girthIn: 13.1, widthIn: 4.3, depthIn: 3.9, depthSource: 'side view x2', widthViews: 4, widthView: 4, confidence: 0.75 },
+        shoulder: { label: 'Shoulder', girthIn: null, widthIn: 18.3, widthViews: 3, widthView: 3, depthSource: '', confidence: 0.8 },
+      },
+      height: { in: 71.1, headUnits: 7.5, views: 4, spread: 0.4 },
+      dropped: [],
+    },
+    notes: [
+      'Measured from what is visible in the clip: chest, waist, hips and full height.',
+      'Clothing (t-shirt, jeans) · light density · regular fit — about 0.3 in of width subtracted from the body estimate.',
+      'Depth came from the side-on frames, so the girths are measured rather than modelled.',
+    ],
+    views: ['front', 'three-quarter', 'side', 'back', 'side', 'front'],
+  });
+  setStatus('Sample result — nothing was recorded.', 'ok');
+}

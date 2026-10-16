@@ -344,6 +344,37 @@ body {
 }
 .measures-note { margin: 0; font-size: 0.82rem; color: var(--faint); line-height: 1.5; }
 
+/* ---------- the working behind each number ---------- */
+.math {
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.5rem 0.75rem;
+}
+.math summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--muted);
+  list-style: none;
+}
+.math summary::-webkit-details-marker { display: none; }
+.math summary::before { content: '+ '; color: var(--faint); }
+.math[open] summary::before { content: '− '; }
+.math-list {
+  list-style: none;
+  margin: 0.6rem 0 0.15rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.math-item {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .notes {
   list-style: none;
   margin: 0;
