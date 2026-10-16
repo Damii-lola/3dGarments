@@ -316,7 +316,7 @@ async function runAnalysis() {
       frames = await extractFrames(recordedBlob, { count: 6, from, to });
     } catch (e) {
       log('frame extraction failed — falling back to a single frame:', e.message);
-      const poster = await extractPoster(recordedBlob, { maxWidth: 900 });
+      const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });
       frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
     }
     log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');

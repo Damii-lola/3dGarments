@@ -202,10 +202,12 @@ export async function readDuration(file) {
 }
 
 /**
- * One frame as a Blob + the video's pixel size — used as the player's poster.
+ * One frame as a Blob + the video's pixel size — used as the player's poster,
+ * and as the last-resort analysis frame when full frame extraction fails. Pass
+ * `grid: true` for the analysis case so the model still gets its ruler.
  * @returns {Promise<{blob: Blob, width: number, height: number}>}
  */
-export async function extractPoster(file, { maxWidth = 720, quality = 0.82 } = {}) {
+export async function extractPoster(file, { maxWidth = 720, quality = 0.82, grid = false } = {}) {
   return withVideo(file, async (video) => {
     const duration = await resolveDuration(video);
     const vw = video.videoWidth;
@@ -218,7 +220,9 @@ export async function extractPoster(file, { maxWidth = 720, quality = 0.82 } = {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(vw * scale));
     canvas.height = Math.max(1, Math.round(vh * scale));
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (grid) drawGrid(ctx, canvas.width, canvas.height);
 
     const blob = await toBlob(canvas, quality);
     if (!blob) throw new Error('Could not read a frame from the video');
