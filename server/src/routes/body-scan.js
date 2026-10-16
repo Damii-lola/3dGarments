@@ -151,10 +151,14 @@ function extractText(data) {
   const r = data?.result;
   if (r == null) return '';
   if (typeof r === 'string') return r;
-  if (typeof r.response === 'string') return r.response;
+  // Preferred: the raw assistant message string.
+  const choice = Array.isArray(r.choices) ? r.choices[0]?.message?.content : null;
+  if (typeof choice === 'string' && choice.trim()) return choice;
+  // Legacy: result.response (Cloudflare pre-parses it into an object when the
+  // model replies with JSON, so it is not always a string).
+  if (typeof r.response === 'string' && r.response.trim()) return r.response;
   if (r.response != null) return JSON.stringify(r.response);
-  if (Array.isArray(r.choices)) return r.choices[0]?.message?.content ?? '';
-  return JSON.stringify(r);
+  return '';
 }
 
 async function callModel(model, messages) {
@@ -168,16 +172,7 @@ async function callModel(model, messages) {
  */
 const VISION_FORMATS = [
   {
-    name: 'openai-sys-array-data-url',
-    messages: (b64, prompt) => [
-      { role: 'system', content: [{ type: 'text', text: prompt }] },
-      { role: 'user', content: [
-        { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
-      ] },
-    ],
-  },
-  {
+    // Verified against the live API.
     name: 'openai-sys-string-data-url',
     messages: (b64, prompt) => [
       { role: 'system', content: prompt },
@@ -188,22 +183,12 @@ const VISION_FORMATS = [
     ],
   },
   {
-    name: 'openai-sys-array-bare-base64',
+    name: 'openai-sys-array-data-url',
     messages: (b64, prompt) => [
       { role: 'system', content: [{ type: 'text', text: prompt }] },
       { role: 'user', content: [
         { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
-        { type: 'image_url', image_url: { url: b64 } },
-      ] },
-    ],
-  },
-  {
-    name: 'cf-content-image',
-    messages: (b64, prompt) => [
-      { role: 'system', content: prompt },
-      { role: 'user', content: [
-        { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
-        { type: 'image', image: b64 },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
       ] },
     ],
   },
@@ -212,13 +197,6 @@ const VISION_FORMATS = [
     messages: (b64, prompt) => [
       { role: 'system', content: prompt },
       { role: 'user', content: 'Analyse this frame and reply with the JSON.', image: b64 },
-    ],
-  },
-  {
-    name: 'cf-old-content-image',
-    messages: (b64, prompt) => [
-      { role: 'system', content: prompt },
-      { role: 'user', content: [{ type: 'image', image: { data: b64 } }] },
     ],
   },
 ];
@@ -257,61 +235,32 @@ async function callVision(b64, prompt) {
   throw lastErr;
 }
 
-/* TEMPORARY diagnostic: GET /api/body-scan/_probe?key=probe-3dg
-   Asks Cloudflare which image-message shape it actually accepts. Remove once the
-   format is pinned. */
+/* TEMPORARY diagnostic: GET /api/body-scan/_probe-frame?key=probe-3dg
+   Runs the real per-frame path end to end (message format + response
+   extraction + JSON parsing) against a 1x1 pixel image. Remove once verified. */
 const PROBE_JPEG = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
 
-bodyScan.get('/_probe', ah(async (req, res) => {
+bodyScan.get('/_probe-frame', ah(async (req, res) => {
   if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
-  const out = [];
-  for (let i = 0; i < VISION_FORMATS.length; i += 1) {
-    const fmt = VISION_FORMATS[i];
-    const t = Date.now();
-    try {
-      const text = await callModel(config.cloudflare.visionModel, fmt.messages(PROBE_JPEG, 'Reply with {"personVisible":false}.'));
-      out.push({ i, name: fmt.name, ok: true, ms: Date.now() - t, text: String(text).slice(0, 160) });
-    } catch (e) {
-      out.push({ i, name: fmt.name, ok: false, ms: Date.now() - t, error: String(e.message).slice(0, 300) });
-    }
-  }
-  res.json({ model: config.cloudflare.visionModel, formats: out });
-}));
-
-/* TEMPORARY diagnostic: text-only shapes used by the reconciliation pass. */
-bodyScan.get('/_probe-text', ah(async (req, res) => {
-  if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
-  const shapes = [
-    { name: 'string', messages: [{ role: 'system', content: 'Reply with {"ok":true}.' }, { role: 'user', content: 'go' }] },
-    { name: 'array', messages: [{ role: 'system', content: [{ type: 'text', text: 'Reply with {"ok":true}.' }] }, { role: 'user', content: [{ type: 'text', text: 'go' }] }] },
-  ];
-  const out = [];
-  for (const s of shapes) {
-    const t = Date.now();
-    try {
-      const text = await callModel(config.cloudflare.textModel || config.cloudflare.visionModel, s.messages);
-      out.push({ name: s.name, ok: true, ms: Date.now() - t, text: String(text).slice(0, 120) });
-    } catch (e) {
-      out.push({ name: s.name, ok: false, ms: Date.now() - t, error: String(e.message).slice(0, 300) });
-    }
-  }
-  res.json({ model: config.cloudflare.textModel || config.cloudflare.visionModel, shapes: out });
-}));
-
-/* TEMPORARY diagnostic: dump the raw Cloudflare envelope. */
-bodyScan.get('/_probe-raw', ah(async (req, res) => {
-  if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
-  const data = await callModelRaw(config.cloudflare.visionModel, [
-    { role: 'system', content: 'Reply with {"ok":true}.' },
-    { role: 'user', content: 'go' },
-  ]);
-  res.json({ keys: Object.keys(data || {}), resultKeys: Object.keys(data?.result || {}), raw: JSON.stringify(data).slice(0, 1200) });
+  const t = Date.now();
+  const raw = await callVision(PROBE_JPEG, FRAME_PROMPT);
+  const parsed = parseJson(raw);
+  res.json({
+    ms: Date.now() - t,
+    format: visionFormat,
+    rawType: typeof raw,
+    raw: String(raw).slice(0, 400),
+    parsedOk: !!parsed,
+    parsed,
+  });
 }));
 
 function parseJson(text) {
   if (!text) return null;
-  const candidates = [text];
-  const m = text.match(/\{[\s\S]*\}/);
+  if (typeof text === 'object') return text; // Cloudflare sometimes pre-parses
+  const str = String(text);
+  const candidates = [str];
+  const m = str.match(/\{[\s\S]*\}/);
   if (m) candidates.push(m[0]);
   for (const c of candidates) {
     try { return JSON.parse(c); } catch { /* try next */ }
