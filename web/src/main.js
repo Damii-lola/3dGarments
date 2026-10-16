@@ -1,98 +1,109 @@
-/* Camera record — click opens camera, records video, stores Blob momentarily */
+/* =========================================================
+   3dGarments — Find your size
+   Tapping the camera box opens the phone's NATIVE camera app
+   (via <input type="file" accept="video/*" capture>), records a
+   video, and holds it in memory momentarily.
+   ========================================================= */
 
-const app = document.getElementById('app');
-const title = document.getElementById('title');
-const instructions = document.getElementById('instructions');
+const MAX_SECONDS = 30;
+
 const cameraBox = document.getElementById('camera-box');
-const cameraView = document.getElementById('camera-view');
-const cameraVideo = document.getElementById('camera-video');
-const recordBtn = document.getElementById('record-btn');
-const stopBtn = document.getElementById('stop-btn');
-const cameraStatus = document.getElementById('camera-status');
+const input = document.getElementById('video-input');
 const result = document.getElementById('result');
+const preview = document.getElementById('preview');
 const resultText = document.getElementById('result-text');
 const retakeBtn = document.getElementById('retake-btn');
+const statusEl = document.getElementById('status');
 
-let stream = null;
-let mediaRecorder = null;
-let chunks = [];
+/** The recorded video, held in memory while the user is on the page. */
 let recordedBlob = null;
+let previewUrl = null;
 
-function showCamera() {
-  cameraBox.hidden = true;
-  title.hidden = true;
-  instructions.hidden = true;
-  cameraView.hidden = false;
+function setStatus(message, kind = '') {
+  statusEl.textContent = message || '';
+  statusEl.className = 'status' + (kind ? ' ' + kind : '');
 }
 
 function showResult() {
-  cameraView.hidden = true;
+  cameraBox.hidden = true;
   result.hidden = false;
 }
 
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720, facingMode: 'environment' },
-      audio: false,
-    });
-    cameraVideo.srcObject = stream;
-    await new Promise((r) => { cameraVideo.onloadedmetadata = r; });
-  } catch (e) {
-    cameraStatus.textContent = 'Camera access failed: ' + e.message;
-    cameraStatus.style.color = '#ff5470';
+function resetToCamera() {
+  if (previewUrl) {
+    URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
   }
-}
-
-async function startRecording() {
-  chunks = [];
-  mediaRecorder = new MediaRecorder(stream, {
-    mimeType: 'video/webm;codecs=vp8',
-    videoBitsPerSecond: 2_500_000,
-  });
-  mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-  mediaRecorder.onstop = () => {
-    recordedBlob = new Blob(chunks, { type: 'video/webm' });
-    cameraStatus.textContent = 'Recording saved (' + Math.round(recordedBlob.size / 1024) + ' KB)';
-    showResult();
-  };
-  mediaRecorder.start(1000);
-  recordBtn.hidden = true;
-  stopBtn.hidden = false;
-  cameraStatus.textContent = 'Recording…';
-  cameraStatus.style.color = '#ff5470';
-
-  // Auto-stop after 30 seconds
-  setTimeout(() => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-  }, 30_000);
-}
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-  }
-  recordBtn.hidden = false;
-  stopBtn.hidden = true;
-}
-
-cameraBox.addEventListener('click', async () => {
-  showCamera();
-  await startCamera();
-});
-
-recordBtn.addEventListener('click', startRecording);
-stopBtn.addEventListener('click', () => {
-  stopRecording();
-  showResult();
-});
-
-retakeBtn.addEventListener('click', () => {
+  preview.removeAttribute('src');
+  preview.load();
   recordedBlob = null;
+  input.value = '';
   result.hidden = true;
   cameraBox.hidden = false;
-  title.hidden = false;
-  instructions.hidden = false;
+  setStatus('');
+}
+
+/** Read the duration of a video blob without keeping it in the DOM. */
+function readDuration(blob) {
+  return new Promise((resolve) => {
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    const url = URL.createObjectURL(blob);
+    const done = (value) => {
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    probe.onloadedmetadata = () => {
+      const d = probe.duration;
+      done(Number.isFinite(d) ? d : null);
+    };
+    probe.onerror = () => done(null);
+    probe.src = url;
+  });
+}
+
+async function handleRecording(file) {
+  recordedBlob = file;
+  previewUrl = URL.createObjectURL(file);
+  preview.src = previewUrl;
+
+  const kb = Math.max(1, Math.round(file.size / 1024));
+  const sizeText = kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB';
+  resultText.textContent = 'Video captured · ' + sizeText;
+
+  showResult();
+  setStatus('Loading video…');
+
+  const seconds = await readDuration(file);
+  if (seconds == null) {
+    setStatus('Video captured and held in memory.', 'ok');
+  } else if (seconds > MAX_SECONDS + 1) {
+    setStatus(
+      'That clip is ' + Math.round(seconds) + 's — over the 30s limit. Record again if you can.',
+      'error'
+    );
+  } else {
+    setStatus('Looks good — held in memory.', 'ok');
+  }
+}
+
+input.addEventListener('change', () => {
+  const file = input.files && input.files[0];
+  if (!file) {
+    setStatus('No video recorded.', 'error');
+    return;
+  }
+  if (!file.type.startsWith('video/')) {
+    setStatus('That file is not a video.', 'error');
+    input.value = '';
+    return;
+  }
+  handleRecording(file);
+});
+
+retakeBtn.addEventListener('click', resetToCamera);
+
+// If the tab is closed/navigated away, release the object URL.
+window.addEventListener('pagehide', () => {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
 });
