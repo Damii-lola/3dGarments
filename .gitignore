@@ -11,3 +11,4 @@ supabase/.branches/
 coverage/
 tools/garment_ml/chatgarment/out/
 .aider*
+commit-msg.txt
