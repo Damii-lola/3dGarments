@@ -331,6 +331,12 @@ export function measureHeight(frames) {
   return h ? { in: h.value, views: h.n, spread: h.spread } : null;
 }
 
+/** Were the landmarks for this region ever placed in any frame? */
+export function sawRegion(frames, key) {
+  const spec = REGIONS[key];
+  return frames.some((f) => spanX(f, spec.left, spec.right) != null);
+}
+
 /**
  * Measure one region across every frame: width from front/back frames, depth
  * from side frames, then a girth from the ellipse they describe. Returns null

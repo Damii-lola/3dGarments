@@ -69,6 +69,7 @@ import {
   point,
   round1,
   round2,
+  sawRegion,
 } from '../lib/bodyGeometry.js';
 
 const upload = multer({
@@ -378,7 +379,8 @@ function combineClothing(analyses) {
   density = modal(densityCount);
 
   const sentence = (s) => {
-    const t = String(s).trim().replace(/\s+/g, ' ');
+    if (typeof s !== 'string') return null;
+    const t = s.trim().replace(/\s+/g, ' ');
     if (!t) return null;
     return t[0].toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? '' : '.');
   };
@@ -523,10 +525,16 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const measured = {};
   const methods = {};
   const dropped = [];
+  const rejectedEverywhere = [];
   const droppedByCheck = new Set();
   for (const key of Object.keys(REGIONS)) {
     const r = measureRegion(key, frames);
-    if (!r) { dropped.push(key); continue; }
+    if (!r) {
+      dropped.push(key);
+      // Distinguish "never seen" from "seen but not humanly possible".
+      if (sawRegion(frames, key)) rejectedEverywhere.push(REGIONS[key].label);
+      continue;
+    }
     if (r.skipped) droppedByCheck.add(REGIONS[key].label);
     const range = RANGES[key];
     const v = clamp(r.valueIn, range);
@@ -639,7 +647,14 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   }
   for (const k of dropped) {
     if (k === 'neck' || k === 'arm') continue;
+    if (sawRegion(frames, k)) continue; // explained by the rejection note below
     notes.push(`${label(k)} was not visible in the clip, so it was left blank rather than guessed.`);
+  }
+  if (rejectedEverywhere.length) {
+    const joined = rejectedEverywhere.length > 1
+      ? `${rejectedEverywhere.slice(0, -1).join(', ')} and ${rejectedEverywhere[rejectedEverywhere.length - 1]}`
+      : rejectedEverywhere[0];
+    notes.push(`${joined}: the span came out impossible in every frame that showed ${rejectedEverywhere.length > 1 ? 'them' : 'it'}, so ${rejectedEverywhere.length > 1 ? 'they were' : 'it was'} left blank rather than guessed.`);
   }
   if (droppedByCheck.size) {
     const list = [...droppedByCheck];
@@ -672,6 +687,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     const d = adjusted.chest - CHARTS[sizeBasis][size.sizeKey][key];
     if (d > 1.5) notes.push(`Size ${size.sizeKey} chest/bust may be snug.`);
     else if (d < -2) notes.push(`Size ${size.sizeKey} chest may be loose.`);
+  } else {
+    notes.push('No size was given: without a chest or bust measurement there is nothing honest to put on the chart. A straight-on front view is what sizes you.');
   }
   if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} — a slower turn gives a steadier estimate.`);
   if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
