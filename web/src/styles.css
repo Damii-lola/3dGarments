@@ -126,6 +126,7 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips.grid2 { display: grid; grid-template-columns: 1fr 1fr; }
 .chips.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); }
+.chips.grid6 { display: grid; grid-template-columns: repeat(6, 1fr); }
 .chips.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 3px; border-radius: 11px; background: var(--card); border: 1px solid var(--line); }
 .chip { height: 34px; padding: 0 8px; border-radius: 9px; background: var(--card); border: 1px solid var(--line-2); cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip:hover { background: rgba(255,255,255,.08); }

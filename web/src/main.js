@@ -11,6 +11,7 @@ import {
 import { DEFAULT_POSE, composePose } from './human/poses.js';
 import { createUploads } from './uploads/groups.js';
 import { loadProfile, saveProfile } from './services/profile.js';
+import { SIZE_ORDER, SIZES, applySize, findClosestSize, chestLabel } from './sizes.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -38,6 +39,7 @@ try {
 } catch { /* private mode / bad JSON */ }
 let M = profile.models[profile.sex];
 let saveTimer = null;
+let sizeSelected = null;   // last size the user picked via the size picker
 const save = () => {
   profile.updated = Date.now();
   clearTimeout(saveTimer);
@@ -183,6 +185,103 @@ const breadth = (v) => {
 
 let uploads = null; // the garment photo section: built once, kept across panel rebuilds
 
+/* ---------------------------------------------------------------- size picker */
+
+/**
+ * Build the "Your size" panel section: a quick clothing-size picker plus a
+ * guided measurement entry. Nobody knows their shoulder width or body-fat
+ * percentage off the top of their head, so this lets them pick the size they
+ * usually wear (or enter chest/waist/hips/height) and we set the body to match.
+ */
+function buildSizePicker() {
+  const title = document.createElement('h3');
+  title.textContent = 'Your size';
+
+  const intro = document.createElement('div');
+  intro.style.cssText = 'font-size:11.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:6px;';
+  intro.textContent = 'I usually wear';
+
+  const sizeChips = chips(
+    SIZE_ORDER.map((k) => [k, k]),
+    sizeSelected,
+    (v) => { sizeSelected = v; },
+    { cls: 'grid6' }
+  );
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn btn-primary grow';
+  applyBtn.textContent = 'Apply to my body';
+  applyBtn.addEventListener('click', () => {
+    if (!sizeSelected) { toast('Pick a size first'); return; }
+    const size = applySize(M, model, M.sex, sizeSelected);
+    if (size) {
+      toast(`Applied size ${sizeSelected}`);
+      queueShape();
+      queueReadouts();
+      // remember the choice on this model's profile
+      M._size = sizeSelected;
+      save();
+    }
+  });
+
+  const measureNote = document.createElement('div');
+  measureNote.style.cssText = 'border-top:1px solid var(--line-2);padding-top:8px;margin-top:10px;font-size:11.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);';
+  measureNote.textContent = 'Or tell me your measurements';
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:8px;margin-top:6px;';
+
+  const numInput = (label, id, placeholder) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;gap:6px;font-size:11.5px;color:var(--muted);';
+    const span = document.createElement('span'); span.textContent = label;
+    const out = document.createElement('output'); out.id = id; out.textContent = placeholder;
+    head.append(span, out);
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.placeholder = placeholder;
+    input.style.cssText = 'height:22px;border-radius:6px;background:#1d2029;border:1px solid var(--line);color:inherit;padding:0 6px;font-size:12px;';
+    input.addEventListener('input', () => { out.textContent = input.value + (placeholder === 'in' ? ' in' : ''); });
+    wrap.append(head, input);
+    return { wrap, input, out };
+  };
+
+  const szHeight = numInput('Height', 'sz-height-out', 'in');
+  const szChest = numInput(chestLabel(M.sex), 'sz-chest-out', 'in');
+  const szWaist = numInput('Waist', 'sz-waist-out', 'in');
+  const szHips = numInput('Hips', 'sz-hips-out', 'in');
+  row.append(szHeight.wrap, szChest.wrap, szWaist.wrap, szHips.wrap);
+
+  const findBtn = document.createElement('button');
+  findBtn.className = 'btn btn-ghost grow';
+  findBtn.textContent = 'Find my size';
+  findBtn.style.cssText = 'margin-top:8px;';
+  findBtn.addEventListener('click', () => {
+    const h = +szHeight.input.value, c = +szChest.input.value, w = +szWaist.input.value, hp = +szHips.input.value;
+    if (!h || !c || !w || !hp) { toast('Fill in all four measurements'); return; }
+    const key = findClosestSize(M.sex, { height: h, chest: c, waist: w, hips: hp });
+    if (!key) { toast("Couldn't match a size"); return; }
+    sizeSelected = key;
+    sizeChips.select(key);
+    const size = applySize(M, model, M.sex, key);
+    if (size) {
+      toast(`Closest match: size ${key}`);
+      queueShape();
+      queueReadouts();
+      M._size = key;
+      save();
+    }
+  });
+
+  const result = document.createElement('div');
+  result.id = 'sz-result';
+  result.style.cssText = 'font-size:12px;color:var(--good);margin-top:6px;min-height:16px;';
+
+  return group('Your size', null, intro, sizeChips, applyBtn, measureNote, row, findBtn, result);
+}
+
 function buildPanel() {
   const host = $('#panel');
   uploads ||= createUploads({ toast });
@@ -269,6 +368,7 @@ function buildPanel() {
     group('Model', null, sex),
     group('Skin', null, skin),
     group('Measurements', 'live', ui.stats),
+    group('Your size', null, buildSizePicker()),
     group('Height & weight', null, height, ui.weight),
     group('Body type', null, ui.build, ui.muscle),
     group('Abdomen & waist', null, abdomen, ui.waist),
