@@ -141,11 +141,148 @@ async function callModel(model, messages) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new HttpError(502, `Cloudflare AI error: ${res.status} ${body.slice(0, 160)}`);
+    throw new HttpError(502, `Cloudflare AI error: ${res.status} ${body.slice(0, 400)}`);
   }
   const data = await res.json();
   return data?.result?.response || '';
 }
+
+/**
+ * Cloudflare keeps changing the shape of the image message it accepts, and a
+ * wrong shape is rejected with a 400 before the model ever runs. Rather than
+ * guess, we try the known shapes in order and remember the one that works.
+ */
+const VISION_FORMATS = [
+  {
+    name: 'openai-sys-array-data-url',
+    messages: (b64, prompt) => [
+      { role: 'system', content: [{ type: 'text', text: prompt }] },
+      { role: 'user', content: [
+        { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
+      ] },
+    ],
+  },
+  {
+    name: 'openai-sys-string-data-url',
+    messages: (b64, prompt) => [
+      { role: 'system', content: prompt },
+      { role: 'user', content: [
+        { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
+      ] },
+    ],
+  },
+  {
+    name: 'openai-sys-array-bare-base64',
+    messages: (b64, prompt) => [
+      { role: 'system', content: [{ type: 'text', text: prompt }] },
+      { role: 'user', content: [
+        { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
+        { type: 'image_url', image_url: { url: b64 } },
+      ] },
+    ],
+  },
+  {
+    name: 'cf-content-image',
+    messages: (b64, prompt) => [
+      { role: 'system', content: prompt },
+      { role: 'user', content: [
+        { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
+        { type: 'image', image: b64 },
+      ] },
+    ],
+  },
+  {
+    name: 'cf-message-image',
+    messages: (b64, prompt) => [
+      { role: 'system', content: prompt },
+      { role: 'user', content: 'Analyse this frame and reply with the JSON.', image: b64 },
+    ],
+  },
+  {
+    name: 'cf-old-content-image',
+    messages: (b64, prompt) => [
+      { role: 'system', content: prompt },
+      { role: 'user', content: [{ type: 'image', image: { data: b64 } }] },
+    ],
+  },
+];
+
+/** The index of the vision format that last worked (null = not yet known). */
+let visionFormat = null;
+
+function isFormatError(e) {
+  // Cloudflare returns 400 for a malformed message body; anything else (429, 500)
+  // is worth surfacing rather than silently retrying every shape.
+  return /Cloudflare AI error: 400/.test(e?.message || '');
+}
+
+async function callVision(b64, prompt) {
+  const order = visionFormat == null
+    ? VISION_FORMATS.map((_, i) => i)
+    : [visionFormat, ...VISION_FORMATS.map((_, i) => i).filter((i) => i !== visionFormat)];
+
+  let lastErr = null;
+  for (const i of order) {
+    const fmt = VISION_FORMATS[i];
+    try {
+      const text = await callModel(config.cloudflare.visionModel, fmt.messages(b64, prompt));
+      if (visionFormat !== i) {
+        visionFormat = i;
+        log(`  vision message format locked → "${fmt.name}"`);
+      }
+      return text;
+    } catch (e) {
+      lastErr = e;
+      log(`  vision format "${fmt.name}" rejected: ${(e?.message || e).slice(0, 200)}`);
+      if (!isFormatError(e)) break; // a real outage; don't hammer every shape
+    }
+  }
+  if (visionFormat != null) visionFormat = null; // rediscover on the next request
+  throw lastErr;
+}
+
+/* TEMPORARY diagnostic: GET /api/body-scan/_probe?key=probe-3dg
+   Asks Cloudflare which image-message shape it actually accepts. Remove once the
+   format is pinned. */
+const PROBE_JPEG = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+
+bodyScan.get('/_probe', ah(async (req, res) => {
+  if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
+  const out = [];
+  for (let i = 0; i < VISION_FORMATS.length; i += 1) {
+    const fmt = VISION_FORMATS[i];
+    const t = Date.now();
+    try {
+      const text = await callModel(config.cloudflare.visionModel, fmt.messages(PROBE_JPEG, 'Reply with {"personVisible":false}.'));
+      out.push({ i, name: fmt.name, ok: true, ms: Date.now() - t, text: String(text).slice(0, 160) });
+    } catch (e) {
+      out.push({ i, name: fmt.name, ok: false, ms: Date.now() - t, error: String(e.message).slice(0, 300) });
+    }
+  }
+  res.json({ model: config.cloudflare.visionModel, formats: out });
+}));
+
+/* TEMPORARY diagnostic: text-only shapes used by the reconciliation pass. */
+bodyScan.get('/_probe-text', ah(async (req, res) => {
+  if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
+  const shapes = [
+    { name: 'string', messages: [{ role: 'system', content: 'Reply with {"ok":true}.' }, { role: 'user', content: 'go' }] },
+    { name: 'array', messages: [{ role: 'system', content: [{ type: 'text', text: 'Reply with {"ok":true}.' }] }, { role: 'user', content: [{ type: 'text', text: 'go' }] }] },
+  ];
+  const out = [];
+  for (const s of shapes) {
+    const t = Date.now();
+    try {
+      const text = await callModel(config.cloudflare.textModel || config.cloudflare.visionModel, s.messages);
+      out.push({ name: s.name, ok: true, ms: Date.now() - t, text: String(text).slice(0, 120) });
+    } catch (e) {
+      out.push({ name: s.name, ok: false, ms: Date.now() - t, error: String(e.message).slice(0, 300) });
+    }
+  }
+  res.json({ model: config.cloudflare.textModel || config.cloudflare.visionModel, shapes: out });
+}));
 
 function parseJson(text) {
   if (!text) return null;
@@ -267,10 +404,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     const file = files[i];
     const frameStart = Date.now();
     try {
-      const parsed = parseJson(await callModel(config.cloudflare.visionModel, [
-        { role: 'system', content: FRAME_PROMPT },
-        { role: 'user', content: [{ type: 'image', image: { data: file.buffer.toString('base64') } }] },
-      ]));
+      const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT);
+      const parsed = parseJson(raw);
       const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
         const frame = {
@@ -286,7 +421,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
         analyses.push(frame);
         log(`  frame ${i + 1}/${files.length} ok (${ms}ms) — view=${frame.view} gender=${frame.gender} conf=${frame.confidence} clothing=${frame.clothing?.density || '?'} thick=${frame.clothing?.thicknessIn ?? '?'}`);
       } else {
-        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) — no person visible`);
+        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) — ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
       }
     } catch (e) {
       failures.push({ file: file.originalname, error: e.message });
@@ -295,7 +430,11 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   }
 
   if (analyses.length === 0) {
-    log(`✖ no usable frames after ${Date.now() - startedAt}ms`);
+    log(`✖ no usable frames after ${Date.now() - startedAt}ms (${failures.length} failed)`);
+    // Every call erroring is a service problem, not "no person in the video".
+    if (failures.length === files.length) {
+      throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`);
+    }
     throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.');
   }
 
