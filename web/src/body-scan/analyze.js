@@ -10,7 +10,7 @@ import { API_URL } from '../services/config.js';
 
 const log = (...args) => console.log('[3dg:api]', ...args);
 
-export async function analyzeBody(frames, { timeoutMs = 120000, onTick } = {}) {
+export async function analyzeBody(frames, { timeoutMs = 180000, onTick } = {}) {
   const url = `${API_URL}/api/body-scan`;
   const bytes = frames.reduce((s, f) => s + f.size, 0);
   log('POST', url);

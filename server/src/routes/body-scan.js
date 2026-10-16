@@ -130,14 +130,16 @@ const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.85, side: 0.5 }
 
 /* ---------------- Cloudflare helpers ---------------- */
 
-async function callModelRaw(model, messages) {
+async function callModelRaw(model, messages, opts = {}) {
+  const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
+  if (opts.json) payload.response_format = { type: 'json_object' };
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.accountId}/ai/run/${model}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.cloudflare.apiToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -161,8 +163,8 @@ function extractText(data) {
   return '';
 }
 
-async function callModel(model, messages) {
-  return extractText(await callModelRaw(model, messages));
+async function callModel(model, messages, opts) {
+  return extractText(await callModelRaw(model, messages, opts));
 }
 
 /**
@@ -210,7 +212,7 @@ function isFormatError(e) {
   return /Cloudflare AI error: 400/.test(e?.message || '');
 }
 
-async function callVision(b64, prompt) {
+async function callVision(b64, prompt, opts = {}) {
   const order = visionFormat == null
     ? VISION_FORMATS.map((_, i) => i)
     : [visionFormat, ...VISION_FORMATS.map((_, i) => i).filter((i) => i !== visionFormat)];
@@ -219,7 +221,7 @@ async function callVision(b64, prompt) {
   for (const i of order) {
     const fmt = VISION_FORMATS[i];
     try {
-      const text = await callModel(config.cloudflare.visionModel, fmt.messages(b64, prompt));
+      const text = await callModel(config.cloudflare.visionModel, fmt.messages(b64, prompt), opts);
       if (visionFormat !== i) {
         visionFormat = i;
         log(`  vision message format locked → "${fmt.name}"`);
@@ -251,7 +253,7 @@ bodyScan.get('/_probe-frame', ah(async (req, res) => {
     src = req.query.url;
   }
   const t = Date.now();
-  const raw = await callVision(b64, FRAME_PROMPT);
+  const raw = await callVision(b64, FRAME_PROMPT, { maxTokens: 1200, json: true });
   const parsed = parseJson(raw);
   res.json({
     src,
@@ -379,14 +381,16 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
   log(`▶ POST received — ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, model=${config.cloudflare.visionModel}`);
 
-  // 1. Analyse every frame; skip the ones that fail rather than aborting.
+  // 1. Analyse every frame IN PARALLEL — each vision call takes ~30-50s, so a
+  //    sequential loop would blow the client's timeout. Skip failures rather
+  //    than aborting the whole request.
   const analyses = [];
   const failures = [];
-  for (let i = 0; i < files.length; i += 1) {
-    const file = files[i];
+
+  await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
     try {
-      const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT);
+      const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1200, json: true });
       const parsed = parseJson(raw);
       const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
@@ -401,7 +405,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
           confidence: Number(parsed.confidence) || 0.5,
         };
         analyses.push(frame);
-        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) — view=${frame.view} gender=${frame.gender} conf=${frame.confidence} clothing=${frame.clothing?.density || '?'} thick=${frame.clothing?.thicknessIn ?? '?'}`);
+        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) — view=${frame.view} gender=${frame.gender} conf=${frame.confidence} clothing=${frame.clothing?.density || '?'} thick=${frame.clothing?.thicknessIn ?? '?'} chest=${frame.measurements?.chestIn?.value ?? '?'}`);
       } else {
         log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) — ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
       }
@@ -409,7 +413,9 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       failures.push({ file: file.originalname, error: e.message });
       log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) — ${e.message}`);
     }
-  }
+  }));
+
+  log(`  all frames done in ${Date.now() - startedAt}ms (${analyses.length} usable, ${failures.length} failed)`);
 
   if (analyses.length === 0) {
     log(`✖ no usable frames after ${Date.now() - startedAt}ms (${failures.length} failed)`);
@@ -479,7 +485,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       const text = await callModel(config.cloudflare.textModel || config.cloudflare.visionModel, [
         { role: 'system', content: RECONCILE_PROMPT },
         { role: 'user', content: JSON.stringify({ gender: gender.guess, views: perFrame }) },
-      ]);
+      ], { maxTokens: 500, json: true });
       const r = parseJson(text);
       if (r) {
         const pick = (k, fallback) => {
