@@ -130,7 +130,7 @@ const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.85, side: 0.5 }
 
 /* ---------------- Cloudflare helpers ---------------- */
 
-async function callModel(model, messages) {
+async function callModelRaw(model, messages) {
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.accountId}/ai/run/${model}`, {
     method: 'POST',
     headers: {
@@ -143,8 +143,22 @@ async function callModel(model, messages) {
     const body = await res.text().catch(() => '');
     throw new HttpError(502, `Cloudflare AI error: ${res.status} ${body.slice(0, 400)}`);
   }
-  const data = await res.json();
-  return data?.result?.response || '';
+  return res.json();
+}
+
+/** Pull the assistant text out of Cloudflare's envelope, whatever shape it takes. */
+function extractText(data) {
+  const r = data?.result;
+  if (r == null) return '';
+  if (typeof r === 'string') return r;
+  if (typeof r.response === 'string') return r.response;
+  if (r.response != null) return JSON.stringify(r.response);
+  if (Array.isArray(r.choices)) return r.choices[0]?.message?.content ?? '';
+  return JSON.stringify(r);
+}
+
+async function callModel(model, messages) {
+  return extractText(await callModelRaw(model, messages));
 }
 
 /**
@@ -282,6 +296,16 @@ bodyScan.get('/_probe-text', ah(async (req, res) => {
     }
   }
   res.json({ model: config.cloudflare.textModel || config.cloudflare.visionModel, shapes: out });
+}));
+
+/* TEMPORARY diagnostic: dump the raw Cloudflare envelope. */
+bodyScan.get('/_probe-raw', ah(async (req, res) => {
+  if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
+  const data = await callModelRaw(config.cloudflare.visionModel, [
+    { role: 'system', content: 'Reply with {"ok":true}.' },
+    { role: 'user', content: 'go' },
+  ]);
+  res.json({ keys: Object.keys(data || {}), resultKeys: Object.keys(data?.result || {}), raw: JSON.stringify(data).slice(0, 1200) });
 }));
 
 function parseJson(text) {
