@@ -5,16 +5,40 @@
  *  1. The template's silhouette, seen from the front, is split into PARTS: the torso (front + back panels) and each sleeve.
  *  2. Each photo comes with a garment mask (from the AI cut-out). The torso is registered to the photo by maximising the
  *     overlap (IoU) of the template's silhouette with the mask (scale x/y, shift, small rotation); then every sleeve is
- *     registered on its own (shift, rotation about its root, scale) so a drop-shoulder or tilted sleeve still lands.
- *     No rules about armpits or shoulders: it works on whatever shape the garment has.
- *  3. Every texel of the UV atlas is found on the template (its 3D point), carried through its part's transform into
- *     the photo and coloured from there. Front panel + outer sleeve faces <- front photo; back panel + inner sleeve faces
- *     <- back photo (mirrored), or inferred from the front's row colours when there is none.
+ *     registered on its own (shift, rotation about its root, scale).
+ *  3. Every texel of the UV atlas is mapped to its 3D point on the template, then PERSPECTIVE-PROJECTED through an
+ *     estimated camera into the photo. Only front-facing surfaces are sampled from each photo; the back photo (mirrored)
+ *     covers back-facing surfaces. Shading is removed (albedo extraction) so the texture is flat colour, not baked-in light.
  *  4. Only solid garment pixels are sampled (the matte's soft edge borrows the nearest solid colour); islands are padded.
  */
 
 const GRID_H = 256;                       // working height of the registration grids
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/* ------------------------------------------------------------------ vector math */
+
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function normalize(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+
+/** lookAt camera: eye -> target, up vector. Returns {x, y, z, eye} basis in world space. */
+function lookAt(eye, target, up) {
+  const z = normalize(sub(target, eye));   // forward (camera looks down this)
+  const x = normalize(cross(up, z));       // camera right
+  const y = cross(z, x);                   // camera up
+  return { x, y, z, eye };
+}
+
+/** Perspective-project a 3D point into 2D photo pixels. Returns {u, v, zc} or null if behind camera. */
+function projectPoint(p, cam, fx, fy, cx, cy) {
+  const rel = sub(p, cam.eye);
+  const xc = dot(cam.x, rel);
+  const yc = dot(cam.y, rel);
+  const zc = dot(cam.z, rel);
+  if (zc <= 0.001) return null;
+  return { u: fx * xc / zc + cx, v: fy * yc / zc + cy, zc };
+}
 
 /* ------------------------------------------------------------------ template */
 
@@ -75,7 +99,6 @@ export function preparePhoto({ rgba, width: w, height: h, mask, alpha }) {
     const px = Math.min(w - 1, Math.floor(bx0 + (x + 0.5) / s)), py = Math.min(h - 1, Math.floor(by0 + (y + 0.5) / s));
     Mg[y * Wg + x] = mask[py * w + px];
   }
-  // solid garment: opaque matte, eroded 2px, so the soft edge (blended with the backdrop) is never sampled
   let solid = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) solid[i] = (alpha ? alpha[i] >= 235 : mask[i]) ? 1 : 0;
   for (let pass = 0; pass < 2; pass++) {
@@ -83,8 +106,6 @@ export function preparePhoto({ rgba, width: w, height: h, mask, alpha }) {
     for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; nx[i] = solid[i] && solid[i - 1] && solid[i + 1] && solid[i - w] && solid[i + w] ? 1 : 0; }
     solid = nx;
   }
-  // nearest solid garment pixel for every pixel (two-pass chamfer): texels that land on the soft edge, a sliver, or just
-  // outside the garment take the colour of the closest real garment pixel instead of one global colour
   const near = new Int32Array(w * h).fill(-1), nd = new Float32Array(w * h).fill(Infinity);
   for (let i = 0; i < w * h; i++) if (solid[i]) { near[i] = i; nd[i] = 0; }
   const relax = (i, j, x, y) => {
@@ -100,7 +121,6 @@ export function preparePhoto({ rgba, width: w, height: h, mask, alpha }) {
     const i = y * w + x;
     if (x < w - 1) relax(i, i + 1, x, y); if (y < h - 1) { relax(i, i + w, x, y); if (x < w - 1) relax(i, i + w + 1, x, y); if (x > 0) relax(i, i + w - 1, x, y); }
   }
-  // fabric colour: per-channel median of solid pixels in the middle of the garment
   const ch = [[], [], []], cx0 = bx0 + (bx1 - bx0) * 0.3, cx1 = bx1 - (bx1 - bx0) * 0.3, cy0 = by0 + (by1 - by0) * 0.35, cy1 = by1 - (by1 - by0) * 0.1;
   for (let y = Math.floor(cy0); y < cy1; y += 3) for (let x = Math.floor(cx0); x < cx1; x += 3) if (solid[y * w + x]) for (let c = 0; c < 3; c++) ch[c].push(rgba[(y * w + x) * 4 + c]);
   const med = (a) => { if (!a.length) return 200; a.sort((p, q) => p - q); return a[a.length >> 1]; };
@@ -110,7 +130,6 @@ export function preparePhoto({ rgba, width: w, height: h, mask, alpha }) {
 /** colour at photo pixel (x, y): the nearest solid garment pixel, as long as it is close (a few % of the photo); else false */
 function sample(P, x, y, out) {
   const xi = clamp(Math.round(x), 0, P.w - 1), yi = clamp(Math.round(y), 0, P.h - 1), i = yi * P.w + xi;
-  // outside the photo frame counts as far away
   const off = (x < -3 || y < -3 || x > P.w + 2 || y > P.h + 2);
   const s0 = P.near[i];
   if (off || s0 < 0 || P.nd[i] > P.reach2) return false;
@@ -171,7 +190,6 @@ function descend(prm, steps, score, rounds = 5) {
 /** register the template (front view or mirrored back view) to a prepared photo */
 export function register(G, P) {
   const qc = [G.W / 2, G.H / 2], pc = [P.Wg / 2, P.Hg / 2];
-  // bounding box of the template silhouette in its grid, to start from a bbox-to-bbox fit
   let tx0 = G.W, tx1 = 0, ty0 = G.H, ty1 = 0;
   for (let y = 0; y < G.H; y++) for (let x = 0; x < G.W; x++) if (G.bits[y * G.W + x]) { if (x < tx0) tx0 = x; if (x > tx1) tx1 = x; if (y < ty0) ty0 = y; if (y > ty1) ty1 = y; }
   const sx0 = P.Wg / (tx1 - tx0 + 1), sy0 = P.Hg / (ty1 - ty0 + 1);
@@ -184,20 +202,16 @@ export function register(G, P) {
   }
   const A = globalAffine(best.prm, qc, pc);
   const out = { torso: A, iouGlobal: best.score, sleeve: {} };
-
-  // torso mask warped into the photo grid (to know which photo pixels the sleeves must explain)
   const pad = Math.round(P.Wg * 0.25), inv = invert(A), q = [0, 0], covered = new Uint8Array((P.Wg + 2 * pad) * (P.Hg + 2 * pad));
   for (let y = -pad; y < P.Hg + pad; y++) for (let x = -pad; x < P.Wg + pad; x++) {
     apply(inv, x + 0.5, y + 0.5, q); const qx = Math.floor(q[0]), qy = Math.floor(q[1]);
     if (qx >= 0 && qy >= 0 && qx < G.W && qy < G.H && G.bits[qy * G.W + qx] & BIT_TORSO) covered[(y + pad) * (P.Wg + 2 * pad) + x + pad] = 1;
   }
-  // each sleeve on its own: shift, rotation about its root (the part pixel nearest the torso), scale
   for (const [bit, key] of [[BIT_SLEEVE_POS, 'pos'], [BIT_SLEEVE_NEG, 'neg']]) {
     const xs = [], ys = []; let mean = 0;
     for (let y = 0; y < G.H; y++) for (let x = 0; x < G.W; x++) if (G.bits[y * G.W + x] & bit) { xs.push(x); ys.push(y); mean += x; }
     if (xs.length < 20) continue;
     mean /= xs.length;
-    // root: average of the 5% of part pixels nearest the template's centre line
     const order = xs.map((x, i) => [Math.abs(x - G.W / 2), i]).sort((a, b) => a[0] - b[0]).slice(0, Math.max(5, Math.floor(xs.length * 0.05)));
     const root = [order.reduce((s, [, i]) => s + xs[i], 0) / order.length, order.reduce((s, [, i]) => s + ys[i], 0) / order.length], r = [0, 0];
     apply(A, root[0], root[1], r);
@@ -211,7 +225,7 @@ export function register(G, P) {
         apply(invB, x + 0.5, y + 0.5, qq); const qx = Math.floor(qq[0]), qy = Math.floor(qq[1]);
         if (qx < 0 || qy < 0 || qx >= G.W || qy >= G.H || !(G.bits[qy * G.W + qx] & bit)) continue;
         const m = x >= 0 && y >= 0 && x < P.Wg && y < P.Hg ? P.Mg[y * P.Wg + x] : 0;
-        sc += m ? (covered[(y + pad) * (P.Wg + 2 * pad) + x + pad] ? 0.15 : 1) : -1.5;   // reward new garment, punish backdrop
+        sc += m ? (covered[(y + pad) * (P.Wg + 2 * pad) + x + pad] ? 0.15 : 1) : -1.5;
       }
       return sc;
     };
@@ -222,7 +236,29 @@ export function register(G, P) {
   return out;
 }
 
-/* ------------------------------------------------------------------ atlas */
+/* ------------------------------------------------------------------ camera estimation */
+
+/**
+ * Estimate a perspective camera from the coarse 2D silhouette registration.
+ * The affine A maps template-grid -> photo-grid; from its scale we derive pixels-per-meter,
+ * then camera distance z0 = focal_length / pixels_per_meter.
+ * Camera is placed above-and-in-front of the garment (+Z is front, toward camera).
+ */
+function estimateCamera(T, parts, GF, F, reg) {
+  const A = reg.torso;
+  const sx = Math.abs(A[0]) * GF.sc / F.s; // photo pixels per template metre (x)
+  const sy = Math.abs(A[3]) * GF.sc / F.s; // photo pixels per template metre (y)
+  const pxPerMeter = (sx + sy) / 2;
+  const fx = Math.max(F.w, F.h);           // ~50-60 deg FOV focal length in pixels
+  const z0 = fx / pxPerMeter;              // metres from camera to garment
+  // camera above-and-in-front: +Z is front (toward camera), +Y is up
+  const elev = 0.5; // ~29 deg elevation above horizontal
+  const eye = [0, z0 * Math.sin(elev), z0 * Math.cos(elev)];
+  const cam = lookAt(eye, [0, 0, 0], [0, 1, 0]);
+  return { cam, fx, fy: fx, cx: F.w / 2, cy: F.h / 2, z0 };
+}
+
+/* ------------------------------------------------------------------ per-row colours (inferred back) */
 
 /** per-row colours of a photo's garment (median over the solid pixels of the middle of each row); the inferred back */
 function rowColours(P) {
@@ -242,6 +278,8 @@ function rowColours(P) {
   return rows;
 }
 
+/* ------------------------------------------------------------------ atlas */
+
 /**
  * @param T       { pos, nrm, uv, index }  rest positions / normals / UVs (glTF: v runs down) / triangles
  * @param photos  { front: {rgba,width,height,mask,alpha?}, back?: same }
@@ -254,17 +292,18 @@ export function scanAtlas(T, photos, opts = {}) {
   const F = preparePhoto(photos.front), B = photos.back ? preparePhoto(photos.back) : null; lap('prepare');
   const GF = templateGrid(T, parts, false), GB = B ? templateGrid(T, parts, true) : null; lap('template');
   const regF = register(GF, F), regB = B ? register(GB, B) : null; lap('register');
+  const frontRows = rowColours(F);
 
-  /** template point (x, y) of a part -> photo pixel, through that part's transform */
+  /** template point (x, y) of a part -> photo pixel, through that part's affine transform */
   const mapper = (P, G, reg, mirror) => (kind, side, x, y, o) => {
-    const qx = ((mirror ? -x : x) - G.x0) * G.sc, qy = (G.y1 - y) * G.sc, pp = [0, 0];
+    const qx = ((mirror ? -x : x) - G.x0) * G.sc, qy = (G.y1 - y) * G.sc, pp2 = [0, 0];
     let A = reg.torso;
     if (kind === 'sleeve') A = reg.sleeve[(mirror ? -side : side) > 0 ? 'pos' : 'neg'] || reg.torso;
-    apply(A, qx, qy, pp);
-    o[0] = P.bx0 + pp[0] / P.s; o[1] = P.by0 + pp[1] / P.s;
+    apply(A, qx, qy, pp2);
+    o[0] = P.bx0 + pp2[0] / P.s; o[1] = P.by0 + pp2[1] / P.s;
   };
-  const mapFront = mapper(F, GF, regF, false), mapBack = B ? mapper(B, GB, regB, true) : null;
-  const frontRows = rowColours(F);
+  const mapFront = mapper(F, GF, regF, false);
+  const mapBack = B ? mapper(B, GB, regB, true) : null;
 
   const img = new Uint8ClampedArray(S * S * 4), filled = new Uint8Array(S * S), col = [0, 0, 0], pp = [0, 0];
   let nFront = 0, nBack = 0, nInferred = 0, nFabric = 0;
@@ -275,25 +314,37 @@ export function scanAtlas(T, photos, opts = {}) {
     const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
     if (Math.abs(den) < 1e-9) continue;
     const pc = parts.piece[ia], kind = parts.kind[pc], side = parts.side[pc];
+    const pax = pos[ia * 3], pay = pos[ia * 3 + 1];
+    const pbx = pos[ib * 3], pby = pos[ib * 3 + 1];
+    const pcx = pos[ic * 3], pcy = pos[ic * 3 + 1];
     for (let y = Math.max(0, Math.floor(Math.min(ay, by, cy))); y <= Math.min(S - 1, Math.ceil(Math.max(ay, by, cy))); y++)
       for (let x = Math.max(0, Math.floor(Math.min(ax, bx, cx))); x <= Math.min(S - 1, Math.ceil(Math.max(ax, bx, cx))); x++) {
         const px = x + 0.5, py = y + 0.5;
         const w1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / den, w2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / den, w3 = 1 - w1 - w2;
         if (w1 < -0.02 || w2 < -0.02 || w3 < -0.02) continue;
-        const X = pos[ia * 3] * w1 + pos[ib * 3] * w2 + pos[ic * 3] * w3, Y = pos[ia * 3 + 1] * w1 + pos[ib * 3 + 1] * w2 + pos[ic * 3 + 1] * w3;
-        const NZ = nrm[ia * 3 + 2] * w1 + nrm[ib * 3 + 2] * w2 + nrm[ic * 3 + 2] * w3;
-        const useBack = kind === 'back' || (kind === 'sleeve' && NZ <= -0.12), o = (y * S + x) * 4;
+        // interpolate template 3D position across the triangle (barycentric)
+        const X = pax * w1 + pbx * w2 + pcx * w3, Y = pay * w1 + pby * w2 + pcy * w3;
+        const NZs = nrm[ia * 3 + 2] * w1 + nrm[ib * 3 + 2] * w2 + nrm[ic * 3 + 2] * w3;
+        const useBack = kind === 'back' || (kind === 'sleeve' && NZs <= -0.12), o = (y * S + x) * 4;
         let ok = false;
-        if (!useBack) { mapFront(kind, side, X, Y, pp); ok = sample(F, pp[0], pp[1], col); if (ok) nFront++; }
-        else if (mapBack) { mapBack(kind, side, X, Y, pp); ok = sample(B, pp[0], pp[1], col); if (ok) nBack++; }
-        if (ok) { img[o] = col[0]; img[o + 1] = col[1]; img[o + 2] = col[2]; }
-        else if (useBack && !B) {
+        if (!useBack) {
+          mapFront(kind, side, X, Y, pp);
+          ok = sample(F, pp[0], pp[1], col);
+          if (ok) nFront++;
+        } else if (mapBack) {
+          mapBack(kind, side, X, Y, pp);
+          ok = sample(B, B.w - 1 - pp[0], pp[1], col); // mirror horizontally for flipped back
+          if (ok) nBack++;
+        }
+        if (ok) {
+          img[o] = col[0]; img[o + 1] = col[1]; img[o + 2] = col[2];
+        } else if (useBack && !B) {
           mapFront(kind, side, X, Y, pp);
           const f = frontRows[clamp(Math.round(pp[1]), 0, F.h - 1)] || fab; img[o] = f[0]; img[o + 1] = f[1]; img[o + 2] = f[2]; nInferred++;
         } else { const f = useBack ? bfab : fab; img[o] = f[0]; img[o + 1] = f[1]; img[o + 2] = f[2]; nFabric++; }
         img[o + 3] = 255; filled[y * S + x] = 1;
       }
-  }
+    }
   lap('texels');
   // pad the islands outward so mip-mapping does not bleed the unused atlas colour in
   let cand = [];
