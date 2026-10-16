@@ -242,14 +242,23 @@ const PROBE_JPEG = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL
 
 bodyScan.get('/_probe-frame', ah(async (req, res) => {
   if (req.query.key !== 'probe-3dg') throw new HttpError(404, 'Not found');
+  let b64 = PROBE_JPEG;
+  let src = 'inline-1x1';
+  if (typeof req.query.url === 'string' && /^https?:\/\//i.test(req.query.url)) {
+    const r = await fetch(req.query.url, { headers: { 'user-agent': '3dgarments-probe/1.0' } });
+    if (!r.ok) throw new HttpError(400, `Could not fetch that image (${r.status})`);
+    b64 = Buffer.from(await r.arrayBuffer()).toString('base64');
+    src = req.query.url;
+  }
   const t = Date.now();
-  const raw = await callVision(PROBE_JPEG, FRAME_PROMPT);
+  const raw = await callVision(b64, FRAME_PROMPT);
   const parsed = parseJson(raw);
   res.json({
+    src,
     ms: Date.now() - t,
     format: visionFormat,
     rawType: typeof raw,
-    raw: String(raw).slice(0, 400),
+    raw: String(raw).slice(0, 2000),
     parsedOk: !!parsed,
     parsed,
   });
