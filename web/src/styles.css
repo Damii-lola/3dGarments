@@ -371,55 +371,19 @@ body {
 .status.error { color: #ff5470; }
 .status.ok { color: var(--good); }
 
-/* ---------- phones: bump the whole UI to 265% (189% x 1.4) ---------- */
+/* ---------- phones: bump the whole UI to 189% ---------- */
 @media (max-width: 768px) {
-  html { font-size: 265%; }
-
-  /* Keep as much width as possible for the video and result cards. */
-  body { padding-left: 0.75rem; padding-right: 0.75rem; }
-
-  /* The wordmark is the widest thing on the page at this scale, so keep it
-     proportionate to the rest and allow it to wrap rather than overflow. */
-  .brand { flex-wrap: wrap; justify-content: center; row-gap: 0.3rem; }
-  .brand-mark { width: 1.5rem; height: 1.5rem; }
-  .brand-name { font-size: 0.8rem; }
-
-  /* A 1.5rem thumb is oversized here and nudged the row a couple of px wide. */
-  .trim-row input[type="range"]::-webkit-slider-thumb { width: 1rem; height: 1rem; }
-  .trim-row input[type="range"]::-moz-range-thumb { width: 0.95rem; height: 0.95rem; }
-
-  /* Give the sliders a row of their own — at this size a side-by-side label,
-     slider and time no longer fit. */
-  .trim-row {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "label out"
-      "slider slider";
-    row-gap: 0.3rem;
-  }
-  .trim-row-label { grid-area: label; }
-  .trim-out { grid-area: out; }
-  .trim-row input[type="range"] { grid-area: slider; }
-
-  /* Let buttons grow with their text so a wrapped label never overflows. */
-  .btn-primary,
-  .btn-ghost {
-    height: auto;
-    min-height: 3.125rem;
-    padding-top: 0.55rem;
-    padding-bottom: 0.55rem;
-  }
-
-  /* Label above value reads better than squeezing them onto one line. */
-  .fact { flex-direction: column; gap: 0.15rem; }
-  .fact-value { text-align: left; }
-
-  /* Measurement cards go full width — two columns no longer fit. */
-  .measure-grid { grid-template-columns: 1fr; }
+  html { font-size: 189%; }
+  /* As the text grows, trim the side margins so the video and result cards
+     keep as much width as possible instead of being squeezed. */
+  body { padding-left: 0.9rem; padding-right: 0.9rem; }
+  .trim-row { grid-template-columns: 2.6rem 1fr 2.6rem; }
+  .measure-grid { grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); }
 }
 
 @media (max-width: 380px) {
   body { padding-top: 1.375rem; }
   .open-camera { width: 5.75rem; height: 5.75rem; }
   .cam-icon { width: 3.75rem; height: 3.75rem; }
+  .measure-grid { grid-template-columns: repeat(2, 1fr); }
 }
