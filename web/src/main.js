@@ -1,31 +1,30 @@
 /* =========================================================
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
-   2. Crop the box to your body (optional) so the AI ignores the background.
+   2. Trim the clip's LENGTH to the part where you turn around.
    3. The AI focuses on you, guesses gender, gauges how thick the clothing is,
       then estimates body measurements and size — subtracting the clothing's
       width. A reconciliation pass tightens the final numbers.
    ========================================================= */
 
-import { extractFrames, extractPreview } from './body-scan/frames.js';
+import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
 import { analyzeBody } from './body-scan/analyze.js';
-import { createCropper } from './body-scan/crop.js';
-
-const MAX_SECONDS = 30;
+import { createTrimmer } from './body-scan/trim.js';
 
 const intro = document.getElementById('intro');
 const openCamera = document.querySelector('.open-camera');
 const input = document.getElementById('video-input');
 
-const cropStep = document.getElementById('crop');
-const cropFrame = document.getElementById('crop-frame');
-const cropStage = document.getElementById('crop-stage');
-const cropBox = document.getElementById('crop-box');
-const cropNote = document.getElementById('crop-note');
+const trimStep = document.getElementById('trim');
+const trimVideo = document.getElementById('trim-video');
+const trimStart = document.getElementById('trim-start');
+const trimEnd = document.getElementById('trim-end');
+const trimStartOut = document.getElementById('trim-start-out');
+const trimEndOut = document.getElementById('trim-end-out');
+const timelineFill = document.getElementById('timeline-fill');
+const trimNote = document.getElementById('trim-note');
 const analyzeBtn = document.getElementById('analyze-btn');
-const fullFrameBtn = document.getElementById('full-frame-btn');
-const resetCropBtn = document.getElementById('reset-crop-btn');
-const startOverCrop = document.getElementById('start-over-crop');
+const startOverTrim = document.getElementById('start-over-trim');
 
 const analysis = document.getElementById('analysis');
 const sizeValue = document.getElementById('size-value');
@@ -39,11 +38,29 @@ const startOverBtn = document.getElementById('start-over-btn');
 
 const statusEl = document.getElementById('status');
 
-const cropper = createCropper({ stage: cropStage, box: cropBox });
+const fmtTime = (s) => {
+  const total = Math.max(0, Math.round(s));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+const trimmer = createTrimmer({
+  video: trimVideo,
+  startInput: trimStart,
+  endInput: trimEnd,
+  fill: timelineFill,
+  onChange: ({ start, end, duration }) => {
+    trimStartOut.textContent = fmtTime(start);
+    trimEndOut.textContent = fmtTime(end);
+    trimNote.textContent = duration
+      ? `Keeping ${fmtTime(start)} to ${fmtTime(end)} · ${Math.max(0, end - start).toFixed(0)}s`
+      : 'Using the whole clip';
+  },
+});
 
 /** The recorded video, held in memory while the user is on the page. */
 let recordedBlob = null;
-let previewImgUrl = null;
+let videoUrl = null;
+let posterUrl = null;
 let analyzing = false;
 
 /* ---------- helpers ---------- */
@@ -64,78 +81,63 @@ const fmtIn = (v) => (v == null ? '—' : `${v}"`);
 function setBusy(busy) {
   analyzing = busy;
   analyzeBtn.disabled = busy;
-  fullFrameBtn.disabled = busy;
-  resetCropBtn.disabled = busy;
-  startOverCrop.disabled = busy;
+  startOverTrim.disabled = busy;
 }
 
 function show(step) {
   intro.hidden = step !== 'camera';
   openCamera.hidden = step !== 'camera';
-  cropStep.hidden = step !== 'crop';
+  trimStep.hidden = step !== 'trim';
   analysis.hidden = step !== 'result';
+}
+
+function releaseMedia() {
+  if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+  if (posterUrl) { URL.revokeObjectURL(posterUrl); posterUrl = null; }
+  try { trimVideo.pause(); } catch { /* ignore */ }
+  trimVideo.removeAttribute('src');
+  trimVideo.removeAttribute('poster');
+  try { trimVideo.load(); } catch { /* ignore */ }
 }
 
 /* ---------- reset ---------- */
 function resetAll() {
-  if (previewImgUrl) {
-    URL.revokeObjectURL(previewImgUrl);
-    previewImgUrl = null;
-  }
-  cropFrame.removeAttribute('src');
+  releaseMedia();
   recordedBlob = null;
   input.value = '';
-  cropper.reset();
+  trimmer.load(0);
   setBusy(false);
   setStatus('');
-  cropNote.textContent = '';
+  trimNote.textContent = '';
   show('camera');
 }
 
-/* ---------- duration ---------- */
-function readDuration(blob) {
-  return new Promise((resolve) => {
-    const probe = document.createElement('video');
-    probe.preload = 'metadata';
-    const url = URL.createObjectURL(blob);
-    const done = (value) => {
-      URL.revokeObjectURL(url);
-      resolve(value);
-    };
-    probe.onloadedmetadata = () => done(Number.isFinite(probe.duration) ? probe.duration : null);
-    probe.onerror = () => done(null);
-    probe.src = url;
-  });
-}
-
-/* ---------- after recording: show the crop step ---------- */
+/* ---------- after recording: show the trim step ---------- */
 async function handleRecording(file) {
   recordedBlob = file;
-  show('crop');
+  show('trim');
   setStatus('Loading your video…');
 
-  const kb = Math.max(1, Math.round(file.size / 1024));
-  const sizeText = kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
-  cropNote.textContent = `Video captured · ${sizeText}`;
+  releaseMedia();
+  videoUrl = URL.createObjectURL(file);
+  trimVideo.src = videoUrl;
+
+  const duration = await readDuration(file);
+  trimmer.load(duration);
 
   try {
-    const preview = await extractPreview(file);
-    previewImgUrl = URL.createObjectURL(preview.blob);
-    cropFrame.src = previewImgUrl;
-    cropStage.style.aspectRatio = `${preview.width} / ${preview.height}`;
-  } catch (e) {
-    cropNote.textContent = `Could not preview the video (${e.message}). You can still tap "Use whole frame".`;
-  }
+    const poster = await extractPoster(file);
+    posterUrl = URL.createObjectURL(poster.blob);
+    trimVideo.poster = posterUrl;
+  } catch { /* poster is optional */ }
 
-  const seconds = await readDuration(file);
-  if (seconds != null) {
-    cropNote.textContent += ` · ${Math.round(seconds)}s`;
-    if (seconds > MAX_SECONDS + 1) {
-      setStatus(`That clip is ${Math.round(seconds)}s — over the 30s guidance. A shorter, slower turn reads better.`, 'error');
-      return;
-    }
+  if (!duration) {
+    setStatus('Could not read the clip length — the whole clip will be used.', 'error');
+  } else if (duration > 30) {
+    setStatus(`Your clip is ${Math.round(duration)}s — trimmed to the first 30s. Adjust the sliders if you like.`, 'ok');
+  } else {
+    setStatus('Scrub the sliders to trim, then analyze.', 'ok');
   }
-  setStatus('Drag the box to cover just you, then analyze.');
 }
 
 /* ---------- analysis ---------- */
@@ -205,8 +207,8 @@ function renderNotes(data) {
 function renderAnalysis(data) {
   sizeValue.textContent = data.size || '—';
   const basis = data.sizeBasis === 'female' ? "women's" : data.sizeBasis === 'male' ? "men's" : '';
-  const rec = data.reconciled ? ' · cross-checked' : '';
-  sizeSub.textContent = basis ? `${basis} sizing${rec}` : rec.trim();
+  const rec = data.reconciled ? 'cross-checked' : '';
+  sizeSub.textContent = [basis ? `${basis} sizing` : '', rec].filter(Boolean).join(' · ');
 
   renderFacts(data);
   renderMeasures(data);
@@ -214,15 +216,15 @@ function renderAnalysis(data) {
   show('result');
 }
 
-async function runAnalysis(useCrop) {
+async function runAnalysis() {
   if (analyzing || !recordedBlob) return;
   setBusy(true);
 
   try {
-    const crop = useCrop ? cropper.getRect() : null;
+    const { from, to } = trimmer.getSpan();
 
-    setStatus('Cropping key frames from your video…');
-    const frames = await extractFrames(recordedBlob, { count: 6, crop });
+    setStatus('Grabbing key frames from your clip…');
+    const frames = await extractFrames(recordedBlob, { count: 6, from, to });
 
     setStatus(`Analyzing ${frames.length} frames — this can take up to 30s…`);
     const data = await analyzeBody(frames);
@@ -250,10 +252,8 @@ input.addEventListener('change', () => {
   handleRecording(file);
 });
 
-analyzeBtn.addEventListener('click', () => runAnalysis(true));
-fullFrameBtn.addEventListener('click', () => runAnalysis(false));
-resetCropBtn.addEventListener('click', () => cropper.reset());
-startOverCrop.addEventListener('click', resetAll);
+analyzeBtn.addEventListener('click', runAnalysis);
+startOverTrim.addEventListener('click', resetAll);
 retakeBtn.addEventListener('click', resetAll);
 startOverBtn.addEventListener('click', resetAll);
 
@@ -265,6 +265,4 @@ openCamera.addEventListener('keydown', (e) => {
   }
 });
 
-window.addEventListener('pagehide', () => {
-  if (previewImgUrl) URL.revokeObjectURL(previewImgUrl);
-});
+window.addEventListener('pagehide', releaseMedia);
