@@ -8,6 +8,10 @@
   </head>
   <body>
     <div id="app">
+      <h1 id="title">Record yourself</h1>
+      <p id="instructions">
+        Stand in place and slowly turn around 360°. Max 30 seconds.
+      </p>
       <button id="camera-box" type="button" aria-label="Open camera">
         <svg viewBox="0 0 24 24">
           <rect x="3" y="7" width="18" height="14" rx="2" ry="2" />
@@ -15,6 +19,19 @@
           <path d="M7 16h10" />
         </svg>
       </button>
+      <div id="camera-view" hidden>
+        <video id="camera-video" autoplay playsinline muted></video>
+        <div id="camera-controls">
+          <button id="record-btn" type="button">Record</button>
+          <button id="stop-btn" type="button" hidden>Stop</button>
+        </div>
+        <p id="camera-status"></p>
+      </div>
+      <div id="result" hidden>
+        <h2>Recording saved</h2>
+        <p id="result-text"></p>
+        <button id="retake-btn" type="button">Record again</button>
+      </div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>
