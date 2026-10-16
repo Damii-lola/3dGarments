@@ -43,7 +43,7 @@ export const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.55, side
  * confident wrong number.
  */
 export const SPAN_RANGES_CM = {
-  shoulder: { width: [30, 56], depth: [26, 54] },
+  shoulder: { width: [32, 56], depth: [26, 54] },
   chest: { width: [22, 46], depth: [15, 36] },
   waist: { width: [20, 50], depth: [13, 40] },
   hips: { width: [24, 52], depth: [16, 42] },

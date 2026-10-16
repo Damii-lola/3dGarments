@@ -107,7 +107,7 @@ const RANGES = {
   chest: [26, 64],
   waist: [20, 60],
   hips: [28, 66],
-  shoulder: [12, 26],
+  shoulder: [14, 26],
   neck: [11, 22],
   arm: [8, 22],
   height: [54, 86],
@@ -123,7 +123,9 @@ STEP 1 - FIND THE PERSON. Ignore the background, furniture, other people, pets, 
 
 STEP 2 - WHICH WAY ARE THEY FACING? "view": front | back | side | three-quarter (a side view is a left or right profile).
 
-STEP 3 - PLACE LANDMARKS. Give each point as x,y on a 0-100 scale of THIS image: x=0 is the left edge and x=100 the right edge; y=0 is the top edge and y=100 the bottom. WHOLE NUMBERS only, no decimals. Points:
+STEP 3 - PLACE LANDMARKS. Give each point as x,y on a 0-100 scale of THIS image: x=0 is the left edge and x=100 the right edge; y=0 is the top edge and y=100 the bottom. WHOLE NUMBERS only, no decimals.
+A labelled 10x10 grid has been drawn over the image to help you: the numbers along the TOP edge give x and the numbers down the LEFT edge give y. Read each landmark against that grid so it lands within a few percent of the right place. The grid is only an overlay — ignore it otherwise, it is not clothing and not part of the scene.
+Points:
   headTop     top of the skull
   chin        bottom of the chin
   neckL, neckR       left/right edges of the neck where it meets the shoulders

@@ -78,6 +78,47 @@ function seek(video, time) {
 const toBlob = (canvas, quality) =>
   new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
 
+/**
+ * Draw a labelled 10x10 grid over the frame before it is sent.
+ *
+ * Vision models place points far more accurately when the image carries its own
+ * ruler, and every measurement the server computes comes from those
+ * coordinates — so a few pixels of grid buys a lot of accuracy. The numbers
+ * along the top are x (0 left, 100 right) and down the left edge are y (0 top,
+ * 100 bottom), which is exactly the scale the model is asked to answer in.
+ */
+function drawGrid(ctx, w, h) {
+  const line = Math.max(1, Math.round(Math.min(w, h) / 420));
+  const fontSize = Math.max(11, Math.round(w / 60));
+
+  ctx.save();
+  ctx.lineWidth = line;
+  ctx.strokeStyle = 'rgba(0, 240, 130, 0.45)';
+  for (let i = 1; i < 10; i += 1) {
+    const x = Math.round((w * i) / 10) + 0.5;
+    const y = Math.round((h * i) / 10) + 0.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  ctx.font = `600 ${fontSize}px sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  for (let i = 1; i < 10; i += 1) {
+    const label = String(i * 10);
+    const tw = ctx.measureText(label).width;
+    const x = (w * i) / 10;
+    const y = (h * i) / 10;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+    ctx.fillRect(x + 2, 2, tw + 6, fontSize + 4);
+    ctx.fillRect(2, y + 2, tw + 6, fontSize + 4);
+    ctx.fillStyle = '#8dffbe';
+    ctx.fillText(label, x + 5, 4);
+    ctx.fillText(label, 5, y + 4);
+  }
+  ctx.restore();
+}
+
 /** Opens the video off-screen, runs `run(video)`, and always cleans up. */
 async function withVideo(file, run) {
   const url = URL.createObjectURL(file);
@@ -138,6 +179,7 @@ export async function extractFrames(file, opts = {}) {
       const t = Math.min(duration - 0.02, t0 + span * ((i + 0.5) / count));
       await seek(video, t);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawGrid(ctx, canvas.width, canvas.height);
       const blob = await toBlob(canvas, quality);
       if (blob) frames.push(new File([blob], `frame-${i}.jpg`, { type: 'image/jpeg' }));
     }
