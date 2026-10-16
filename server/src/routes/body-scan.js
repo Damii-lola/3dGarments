@@ -12,7 +12,9 @@
  *          size, sizeChart, sizeBasis,
  *          notes[], views[], frameCount, reconciled, createdAt
  *        }
- *   GET /api/body-scan/:id -> stored result
+ *
+ * Results are returned inline and deliberately not stored server-side: the flow
+ * is anonymous, and body measurements are not something to keep around.
  *
  * Accuracy strategy:
  *   1. Each frame is analysed by vision with explicit anthropometric reasoning
@@ -29,7 +31,6 @@ import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
-import { db } from '../lib/supabase.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -569,28 +570,5 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
 
   log(`✔ done in ${result.debug.elapsedMs}ms — gender=${gender.guess} basis=${sizeBasis} size=${result.size} seen=${JSON.stringify(seen)} adjusted=${JSON.stringify(final)} reconciled=${reconciled}`);
 
-  try {
-    if (config.supabase.url && config.supabase.serviceRoleKey) {
-      const { error } = await db().from('body_profiles').insert({
-        id: result.id,
-        user_id: req.user?.id || 'anonymous',
-        settings: result,
-      });
-      if (error) console.warn('body_scan: supabase insert failed:', error.message);
-    }
-  } catch (e) { console.warn('body_scan: supabase unavailable:', e.message); }
-
-  res.json(result);
-}));
-
-bodyScan.get('/:id', ah(async (req, res) => {
-  let result;
-  try {
-    if (config.supabase.url && config.supabase.serviceRoleKey) {
-      const { data } = await db().from('body_profiles').select('settings').eq('id', req.params.id).maybeSingle();
-      result = data?.settings;
-    }
-  } catch (e) { console.warn('body_scan: fetch failed:', e.message); }
-  if (!result) throw new HttpError(404, 'Scan not found');
   res.json(result);
 }));
