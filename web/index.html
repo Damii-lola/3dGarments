@@ -14,7 +14,7 @@
         <span class="brand-name">3d<b>Garments</b></span>
       </div>
 
-      <header class="intro">
+      <header class="intro" id="intro">
         <h1>Find your size</h1>
         <p class="lead">
           Record a 360&deg; video of yourself so we can guess your approximate size.
@@ -37,15 +37,31 @@
         </svg>
       </label>
 
-      <section class="result" id="result" hidden>
-        <video id="preview" controls playsinline></video>
-        <p class="result-text" id="result-text"></p>
+      <!-- Step 2: crop to the person before analysing -->
+      <section class="crop" id="crop" hidden>
+        <h2 class="step-title">Crop to yourself</h2>
+        <p class="step-hint">Drag the box so it covers just your body. Everything outside it is ignored, which makes the estimate sharper.</p>
+
+        <div class="crop-stage" id="crop-stage">
+          <img id="crop-frame" alt="A frame from your recording" />
+          <div class="crop-box" id="crop-box">
+            <span class="crop-handle" data-handle="nw"></span>
+            <span class="crop-handle" data-handle="ne"></span>
+            <span class="crop-handle" data-handle="sw"></span>
+            <span class="crop-handle" data-handle="se"></span>
+          </div>
+        </div>
+        <p class="step-note" id="crop-note"></p>
+
         <div class="actions">
           <button class="btn-primary" id="analyze-btn" type="button">Analyze my size</button>
-          <button class="btn-ghost" id="retake-btn" type="button">Record again</button>
+          <button class="btn-ghost" id="full-frame-btn" type="button">Use whole frame</button>
+          <button class="btn-ghost" id="reset-crop-btn" type="button">Reset crop</button>
+          <button class="btn-ghost" id="start-over-crop" type="button">Start over</button>
         </div>
       </section>
 
+      <!-- Step 3: results -->
       <section class="analysis" id="analysis" hidden>
         <div class="size-hero">
           <span class="size-hero-label">Your estimated size</span>
@@ -64,7 +80,8 @@
         <ul class="notes" id="analysis-notes"></ul>
 
         <div class="actions">
-          <button class="btn-ghost" id="again-btn" type="button">Record again</button>
+          <button class="btn-ghost" id="retake-btn" type="button">Record again</button>
+          <button class="btn-ghost" id="start-over-btn" type="button">Start over</button>
         </div>
       </section>
 

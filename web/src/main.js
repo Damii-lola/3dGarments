@@ -1,24 +1,32 @@
 /* =========================================================
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
-   2. We grab key frames from that video.
-   3. The AI focuses on the person, guesses gender, gauges how thick the
-      clothing is, then estimates body measurements and size — subtracting
-      the width the clothing adds.
+   2. Crop the box to your body (optional) so the AI ignores the background.
+   3. The AI focuses on you, guesses gender, gauges how thick the clothing is,
+      then estimates body measurements and size — subtracting the clothing's
+      width. A reconciliation pass tightens the final numbers.
    ========================================================= */
 
-import { extractFrames } from './body-scan/frames.js';
+import { extractFrames, extractPreview } from './body-scan/frames.js';
 import { analyzeBody } from './body-scan/analyze.js';
+import { createCropper } from './body-scan/crop.js';
 
 const MAX_SECONDS = 30;
 
+const intro = document.getElementById('intro');
 const openCamera = document.querySelector('.open-camera');
 const input = document.getElementById('video-input');
-const result = document.getElementById('result');
-const preview = document.getElementById('preview');
-const resultText = document.getElementById('result-text');
+
+const cropStep = document.getElementById('crop');
+const cropFrame = document.getElementById('crop-frame');
+const cropStage = document.getElementById('crop-stage');
+const cropBox = document.getElementById('crop-box');
+const cropNote = document.getElementById('crop-note');
 const analyzeBtn = document.getElementById('analyze-btn');
-const retakeBtn = document.getElementById('retake-btn');
+const fullFrameBtn = document.getElementById('full-frame-btn');
+const resetCropBtn = document.getElementById('reset-crop-btn');
+const startOverCrop = document.getElementById('start-over-crop');
+
 const analysis = document.getElementById('analysis');
 const sizeValue = document.getElementById('size-value');
 const sizeSub = document.getElementById('size-sub');
@@ -26,15 +34,19 @@ const factsEl = document.getElementById('facts');
 const measureGrid = document.getElementById('measure-grid');
 const measuresNote = document.getElementById('measures-note');
 const notesEl = document.getElementById('analysis-notes');
-const againBtn = document.getElementById('again-btn');
+const retakeBtn = document.getElementById('retake-btn');
+const startOverBtn = document.getElementById('start-over-btn');
+
 const statusEl = document.getElementById('status');
+
+const cropper = createCropper({ stage: cropStage, box: cropBox });
 
 /** The recorded video, held in memory while the user is on the page. */
 let recordedBlob = null;
-let previewUrl = null;
+let previewImgUrl = null;
 let analyzing = false;
 
-/* ---------- small helpers ---------- */
+/* ---------- helpers ---------- */
 function setStatus(message, kind = '') {
   statusEl.textContent = message || '';
   statusEl.className = 'status' + (kind ? ' ' + kind : '');
@@ -49,31 +61,38 @@ function el(tag, className, text) {
 
 const fmtIn = (v) => (v == null ? '—' : `${v}"`);
 
-/* ---------- state changes ---------- */
-function showResult() {
-  openCamera.hidden = true;
-  analysis.hidden = true;
-  result.hidden = false;
-  analyzeBtn.disabled = false;
+function setBusy(busy) {
+  analyzing = busy;
+  analyzeBtn.disabled = busy;
+  fullFrameBtn.disabled = busy;
+  resetCropBtn.disabled = busy;
+  startOverCrop.disabled = busy;
 }
 
-function resetToCamera() {
-  if (previewUrl) {
-    URL.revokeObjectURL(previewUrl);
-    previewUrl = null;
+function show(step) {
+  intro.hidden = step !== 'camera';
+  openCamera.hidden = step !== 'camera';
+  cropStep.hidden = step !== 'crop';
+  analysis.hidden = step !== 'result';
+}
+
+/* ---------- reset ---------- */
+function resetAll() {
+  if (previewImgUrl) {
+    URL.revokeObjectURL(previewImgUrl);
+    previewImgUrl = null;
   }
-  preview.removeAttribute('src');
-  preview.load();
+  cropFrame.removeAttribute('src');
   recordedBlob = null;
   input.value = '';
-  result.hidden = true;
-  analysis.hidden = true;
-  openCamera.hidden = false;
-  analyzeBtn.disabled = false;
+  cropper.reset();
+  setBusy(false);
   setStatus('');
+  cropNote.textContent = '';
+  show('camera');
 }
 
-/* ---------- duration check ---------- */
+/* ---------- duration ---------- */
 function readDuration(blob) {
   return new Promise((resolve) => {
     const probe = document.createElement('video');
@@ -83,47 +102,54 @@ function readDuration(blob) {
       URL.revokeObjectURL(url);
       resolve(value);
     };
-    probe.onloadedmetadata = () => {
-      const d = probe.duration;
-      done(Number.isFinite(d) ? d : null);
-    };
+    probe.onloadedmetadata = () => done(Number.isFinite(probe.duration) ? probe.duration : null);
     probe.onerror = () => done(null);
     probe.src = url;
   });
 }
 
-/* ---------- after recording ---------- */
+/* ---------- after recording: show the crop step ---------- */
 async function handleRecording(file) {
   recordedBlob = file;
-  previewUrl = URL.createObjectURL(file);
-  preview.src = previewUrl;
+  show('crop');
+  setStatus('Loading your video…');
 
   const kb = Math.max(1, Math.round(file.size / 1024));
-  resultText.textContent = 'Video captured · ' + (kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB');
+  const sizeText = kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+  cropNote.textContent = `Video captured · ${sizeText}`;
 
-  showResult();
-  setStatus('Loading video…');
+  try {
+    const preview = await extractPreview(file);
+    previewImgUrl = URL.createObjectURL(preview.blob);
+    cropFrame.src = previewImgUrl;
+    cropStage.style.aspectRatio = `${preview.width} / ${preview.height}`;
+  } catch (e) {
+    cropNote.textContent = `Could not preview the video (${e.message}). You can still tap "Use whole frame".`;
+  }
 
   const seconds = await readDuration(file);
-  if (seconds == null) {
-    setStatus('Video captured and held in memory.', 'ok');
-  } else if (seconds > MAX_SECONDS + 1) {
-    setStatus(`That clip is ${Math.round(seconds)}s — over the 30s limit. A shorter clip gives a steadier read.`, 'error');
-  } else {
-    setStatus('Looks good — tap "Analyze my size".', 'ok');
+  if (seconds != null) {
+    cropNote.textContent += ` · ${Math.round(seconds)}s`;
+    if (seconds > MAX_SECONDS + 1) {
+      setStatus(`That clip is ${Math.round(seconds)}s — over the 30s guidance. A shorter, slower turn reads better.`, 'error');
+      return;
+    }
   }
+  setStatus('Drag the box to cover just you, then analyze.');
 }
 
-/* ---------- the analysis ---------- */
+/* ---------- analysis ---------- */
+function fact(label, value) {
+  const row = el('li', 'fact');
+  row.append(el('span', 'fact-label', label), el('span', 'fact-value', value));
+  return row;
+}
+
 function renderFacts(data) {
   factsEl.replaceChildren();
   const g = data.gender || {};
-
-  const genderText =
-    g.guess === 'male' ? 'Male' :
-    g.guess === 'female' ? 'Female' :
-    'Not sure';
-  const genderConf = g.confidence != null ? ` (${Math.round(g.confidence * 100)}% sure)` : '';
+  const genderText = g.guess === 'male' ? 'Male' : g.guess === 'female' ? 'Female' : 'Not sure';
+  const genderConf = g.confidence ? ` (${Math.round(g.confidence * 100)}% sure)` : '';
   factsEl.append(fact('Detected', genderText + genderConf));
 
   const c = data.clothing || {};
@@ -134,17 +160,13 @@ function renderFacts(data) {
     if (c.fit) parts.push(`${c.fit} fit`);
     factsEl.append(fact('Clothing', parts.join(' · ')));
   }
-
   if (data.proportions?.build) factsEl.append(fact('Build', data.proportions.build));
 
   const removed = data.adjusted?.bodyWidthRemovedIn;
   if (removed) factsEl.append(fact('Clothing width removed', `${fmtIn(removed)} around the body`));
-}
 
-function fact(label, value) {
-  const row = el('li', 'fact');
-  row.append(el('span', 'fact-label', label), el('span', 'fact-value', value));
-  return row;
+  const views = (data.views || []).filter(Boolean);
+  if (views.length) factsEl.append(fact('Views read', [...new Set(views)].join(', ')));
 }
 
 function renderMeasures(data) {
@@ -177,32 +199,30 @@ function renderMeasures(data) {
 
 function renderNotes(data) {
   notesEl.replaceChildren();
-  for (const note of data.notes || []) {
-    notesEl.append(el('li', 'note', note));
-  }
+  for (const note of data.notes || []) notesEl.append(el('li', 'note', note));
 }
 
 function renderAnalysis(data) {
   sizeValue.textContent = data.size || '—';
   const basis = data.sizeBasis === 'female' ? "women's" : data.sizeBasis === 'male' ? "men's" : '';
-  sizeSub.textContent = basis ? `${basis} sizing` : '';
+  const rec = data.reconciled ? ' · cross-checked' : '';
+  sizeSub.textContent = basis ? `${basis} sizing${rec}` : rec.trim();
 
   renderFacts(data);
   renderMeasures(data);
   renderNotes(data);
-
-  result.hidden = true;
-  analysis.hidden = false;
+  show('result');
 }
 
-async function runAnalysis() {
+async function runAnalysis(useCrop) {
   if (analyzing || !recordedBlob) return;
-  analyzing = true;
-  analyzeBtn.disabled = true;
+  setBusy(true);
 
   try {
-    setStatus('Grabbing key frames from your video…');
-    const frames = await extractFrames(recordedBlob, { count: 6 });
+    const crop = useCrop ? cropper.getRect() : null;
+
+    setStatus('Cropping key frames from your video…');
+    const frames = await extractFrames(recordedBlob, { count: 6, crop });
 
     setStatus(`Analyzing ${frames.length} frames — this can take up to 30s…`);
     const data = await analyzeBody(frames);
@@ -211,9 +231,7 @@ async function runAnalysis() {
     setStatus('');
   } catch (e) {
     setStatus(e.message || 'Something went wrong during analysis.', 'error');
-    analyzeBtn.disabled = false;
-  } finally {
-    analyzing = false;
+    setBusy(false);
   }
 }
 
@@ -232,9 +250,12 @@ input.addEventListener('change', () => {
   handleRecording(file);
 });
 
-analyzeBtn.addEventListener('click', runAnalysis);
-retakeBtn.addEventListener('click', resetToCamera);
-againBtn.addEventListener('click', resetToCamera);
+analyzeBtn.addEventListener('click', () => runAnalysis(true));
+fullFrameBtn.addEventListener('click', () => runAnalysis(false));
+resetCropBtn.addEventListener('click', () => cropper.reset());
+startOverCrop.addEventListener('click', resetAll);
+retakeBtn.addEventListener('click', resetAll);
+startOverBtn.addEventListener('click', resetAll);
 
 // The icon has role="button": let Enter / Space open the camera too.
 openCamera.addEventListener('keydown', (e) => {
@@ -245,5 +266,5 @@ openCamera.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('pagehide', () => {
-  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  if (previewImgUrl) URL.revokeObjectURL(previewImgUrl);
 });
