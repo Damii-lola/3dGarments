@@ -57,6 +57,7 @@ import {
   HEAD_HEIGHT_CM,
   REGIONS,
   clamp,
+  checkFrame,
   frameQuality,
   frameScale,
   meanY,
@@ -121,7 +122,7 @@ STEP 1 - FIND THE PERSON. Ignore the background, furniture, other people, pets, 
 
 STEP 2 - WHICH WAY ARE THEY FACING? "view": front | back | side | three-quarter (a side view is a left or right profile).
 
-STEP 3 - PLACE LANDMARKS. Give each as x,y in NORMALISED image coordinates: x=0 is the left edge of the image, x=1 the right edge; y=0 the top edge, y=1 the bottom. Three decimals. Points:
+STEP 3 - PLACE LANDMARKS. Give each point as x,y on a 0-100 scale of THIS image: x=0 is the left edge and x=100 the right edge; y=0 is the top edge and y=100 the bottom. WHOLE NUMBERS only, no decimals. Points:
   headTop     top of the skull
   chin        bottom of the chin
   neckL, neckR       left/right edges of the neck where it meets the shoulders
@@ -160,16 +161,16 @@ Respond with ONLY this JSON, no markdown and no prose outside it:
   "genderConfidence": 0.0,
   "build": "average",
   "landmarks": {
-    "headTop": { "x": 0.500, "y": 0.060 },
-    "chin": { "x": 0.500, "y": 0.150 },
-    "neckL": { "x": 0.480, "y": 0.170 }, "neckR": { "x": 0.520, "y": 0.170 },
-    "shoulderL": { "x": 0.370, "y": 0.205 }, "shoulderR": { "x": 0.630, "y": 0.205 },
-    "armpitL": { "x": 0.390, "y": 0.270 }, "armpitR": { "x": 0.610, "y": 0.270 },
-    "waistL": { "x": 0.415, "y": 0.380 }, "waistR": { "x": 0.585, "y": 0.380 },
-    "hipL": { "x": 0.390, "y": 0.460 }, "hipR": { "x": 0.610, "y": 0.460 },
-    "armL": { "x": 0.330, "y": 0.300 }, "armR": { "x": 0.670, "y": 0.300 },
-    "crotch": { "x": 0.500, "y": 0.520 },
-    "footL": { "x": 0.450, "y": 0.960 }, "footR": { "x": 0.550, "y": 0.960 }
+    "headTop": { "x": 50, "y": 6 },
+    "chin": { "x": 50, "y": 15 },
+    "neckL": { "x": 48, "y": 17 }, "neckR": { "x": 52, "y": 17 },
+    "shoulderL": { "x": 37, "y": 21 }, "shoulderR": { "x": 63, "y": 21 },
+    "armpitL": { "x": 39, "y": 27 }, "armpitR": { "x": 61, "y": 27 },
+    "waistL": { "x": 42, "y": 38 }, "waistR": { "x": 58, "y": 38 },
+    "hipL": { "x": 39, "y": 46 }, "hipR": { "x": 61, "y": 46 },
+    "armL": { "x": 33, "y": 30 }, "armR": { "x": 36, "y": 30 },
+    "crotch": { "x": 50, "y": 52 },
+    "footL": { "x": 45, "y": 96 }, "footR": { "x": 55, "y": 96 }
   },
   "visible": { "head": true, "torso": true, "hips": true, "legs": true, "feet": true },
   "references": [],
@@ -372,20 +373,26 @@ function combineClothing(analyses) {
   fit = modal(fitCount);
   density = modal(densityCount);
 
+  const sentence = (s) => {
+    const t = String(s).trim().replace(/\s+/g, ' ');
+    if (!t) return null;
+    return t[0].toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? '' : '.');
+  };
+  const waistband = firstString(analyses, (a) => a.clothing?.waistband);
   const parts = [
-    firstString(analyses, (a) => a.clothing?.hang),
-    firstString(analyses, (a) => a.clothing?.sleeves),
-    firstString(analyses, (a) => a.clothing?.excessFabric),
-    firstString(analyses, (a) => a.clothing?.waistband),
+    sentence(firstString(analyses, (a) => a.clothing?.hang)),
+    sentence(firstString(analyses, (a) => a.clothing?.sleeves)),
+    /lot|heavy|much/i.test(firstString(analyses, (a) => a.clothing?.excessFabric) || '') ? 'Plenty of excess fabric.' : null,
+    waistband && /low|high/i.test(waistband) ? `Waistband sits ${waistband}.` : null,
   ].filter(Boolean);
-  const note = parts.length ? parts.join(' · ').slice(0, 240) : null;
+  const note = parts.length ? parts.join(' ').slice(0, 240) : null;
 
   return {
     items: [...new Set(raw.map((s) => s.toLowerCase()))].slice(0, 6),
     fit,
     density,
     thicknessIn: thickN ? Number((thickSum / thickN).toFixed(2)) : null,
-    waistband: firstString(analyses, (a) => a.clothing?.waistband),
+    waistband: waistband || null,
     note,
   };
 }
@@ -430,6 +437,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   //    than aborting the whole request.
   const frames = [];
   const failures = [];
+  const rejected = [];
 
   await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
@@ -452,9 +460,21 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
           aspect,
         };
         frame.scale = frameScale(frame);
+
+        // A frame whose landmarks are not a human shape is thrown away whole.
+        // Confident nonsense is worse than no measurement.
+        const check = checkFrame(frame);
+        if (check.fatal) {
+          rejected.push({ file: file.originalname, reason: check.notes.join(', ') || 'implausible landmarks' });
+          log(`  frame ${i + 1}/${files.length} REJECTED (${ms}ms) - ${check.notes.join(', ')}`);
+          return;
+        }
+        frame.bad = check.bad;
+        frame.heightBad = check.heightBad;
+
         frames.push(frame);
         const keys = Object.keys(frame.landmarks);
-        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} [${keys.join(',')}] scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width' : 'NONE'}`);
+        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
       } else {
         log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
       }
@@ -464,12 +484,15 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     }
   }));
 
-  log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${failures.length} failed)`);
+  log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${rejected.length} rejected as implausible, ${failures.length} failed)`);
 
   if (frames.length === 0) {
-    log(`x no usable frames after ${Date.now() - startedAt}ms (${failures.length} failed)`);
+    log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     if (failures.length === files.length) {
       throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`);
+    }
+    if (rejected.length) {
+      throw new HttpError(422, `The landmarks we read did not describe a human body (${rejected[0].reason}). Film again with the whole person in shot, standing straight and facing the camera.`);
     }
     throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.');
   }
@@ -482,27 +505,30 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     throw new HttpError(422, 'We could not work out the scale of your video — keep your head fully in frame for the whole turn, or include a door or similar in shot, and try again.');
   }
 
-  const scaleW = scaled.reduce((s, f) => s + frameQuality(f), 0);
-  const cmPerWidth = Math.exp(scaled.reduce((s, f) => s + frameQuality(f) * Math.log(f.scale.cmPerWidth), 0) / scaleW);
+  const scaleWeight = (f) => frameQuality(f) * (f.scale?.reliability ?? 1);
+  const scaleW = scaled.reduce((s, f) => s + scaleWeight(f), 0);
+  const cmPerWidth = Math.exp(scaled.reduce((s, f) => s + scaleWeight(f) * Math.log(f.scale.cmPerWidth), 0) / scaleW);
   const anchors = [...new Set(scaled.flatMap((f) => f.scale.anchors.map((a) => a.detail)))];
 
   // 3. Measure every region from the landmark geometry.
   const measured = {};
   const methods = {};
   const dropped = [];
+  const droppedByCheck = new Set();
   for (const key of Object.keys(REGIONS)) {
     const r = measureRegion(key, frames);
     if (!r) { dropped.push(key); continue; }
+    if (r.skipped) droppedByCheck.add(REGIONS[key].label);
     const range = RANGES[key];
     const v = clamp(r.valueIn, range);
-    r.clamped = v !== r.valueIn;
+    r.clamped = Math.abs(v - r.valueIn) > 0.05;
     r.valueIn = v;
     measured[key] = r;
     methods[key] = {
       label: r.label,
       girthIn: r.girth ? round1(r.valueIn) : null,
       widthIn: round1(r.widthIn),
-      depthIn: round1(r.depthIn),
+      depthIn: r.depthIn == null ? null : round1(r.depthIn),
       depthSource: r.depthSource,
       widthViews: r.widthViews,
       depthViews: r.depthViews,
@@ -512,6 +538,12 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       confidence: r.confidence,
       clamped: r.clamped,
     };
+  }
+
+  // Nothing believable came out: refuse rather than print a made-up size.
+  if (!GIRTH_REGIONS.some((k) => measured[k])) {
+    log('x no chest/waist/hip measurement survived the sanity check');
+    throw new HttpError(422, 'We could read your video but the measurements did not add up to a human body. Stand straight, face the camera with your arms clear of your sides, and keep your whole body in frame.');
   }
 
   // 4. Height: head to floor, only from frames where the feet were actually visible.
@@ -525,12 +557,17 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const shoulderToHip = measured.shoulder && measured.hips ? round2(measured.shoulder.widthIn / measured.hips.widthIn) : null;
   let legToTorso = null;
   for (const f of frames) {
+    if (f.heightBad) continue;
     const top = point(f, 'headTop');
     const crotch = point(f, 'crotch');
     const floorY = meanY(f, 'footL', 'footR');
     if (!top || !crotch || floorY == null) continue;
     const torso = crotch.y - top.y;
-    if (torso > 0.05) { legToTorso = round2((floorY - crotch.y) / torso); break; }
+    const legs = floorY - crotch.y;
+    if (torso > 0.05 && legs > 0.05) {
+      const ratio = legs / torso;
+      if (ratio > 0.5 && ratio < 1.6) { legToTorso = round2(ratio); break; }
+    }
   }
   const build = (() => {
     const counts = {};
@@ -595,6 +632,13 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     if (k === 'neck' || k === 'arm') continue;
     notes.push(`${label(k)} was not visible in the clip, so it was left blank rather than guessed.`);
   }
+  if (droppedByCheck.size) {
+    notes.push(`${[...droppedByCheck].join(' and ')} came out an impossible size in at least one frame, so ${droppedByCheck.size > 1 ? 'those frames were' : 'that frame was'} left out of ${droppedByCheck.size > 1 ? 'their' : 'its'} average.`);
+  }
+  const clampedRegions = GIRTH_REGIONS.filter((k) => measured[k]?.clamped);
+  if (clampedRegions.length) {
+    notes.push(`The ${clampedRegions.map((k) => label(k).toLowerCase()).join(' and ')} reading was outside the plausible range and has been clamped — treat ${clampedRegions.length > 1 ? 'them' : 'it'} as the least reliable number here.`);
+  }
   if (heightIn == null && measured.chest) {
     notes.push('Height was not measured — your feet were not in frame. Film the full body to get it.');
   }
@@ -650,11 +694,13 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     createdAt: new Date().toISOString(),
   };
   if (failures.length) result.frameFailures = failures;
+  if (rejected.length) result.frameRejected = rejected;
 
   result.debug = {
     elapsedMs: Date.now() - startedAt,
     framesReceived: files.length,
     framesUsed: frames.length,
+    framesRejected: rejected.length,
     totalBytes,
     aspect: round2(aspect),
     cmPerImageWidth: round2(cmPerWidth),

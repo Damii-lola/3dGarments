@@ -8,6 +8,7 @@
  */
 
 import {
+  checkFrame,
   ellipsePerimeter,
   frameScale,
   measureHeight,
@@ -167,6 +168,33 @@ checkTrue('pixel values rescaled to 0-1', Math.abs(px.headTop.x - 0.5) < 0.001 &
 checkTrue('array form accepted', Array.isArray(px.chin) === false && Math.abs(px.chin.x - 0.5) < 0.001, 'chin from [500,150]');
 checkTrue('off-frame point dropped', normalizeLandmarks({ a: { x: 1.4, y: 0.5 }, b: { x: 0.5, y: 0.5 } }).a === undefined, 'a removed');
 checkTrue('garbage dropped', Object.keys(normalizeLandmarks({ a: 'x', b: null })).length === 0, 'empty');
+checkTrue('0-100 scale accepted', Math.abs(normalizeLandmarks({ headTop: { x: 50, y: 6 } }).headTop.y - 0.06) < 0.001, normalizeLandmarks({ headTop: { x: 50, y: 6 } }).headTop.y);
+
+console.log('\n== the sanity check: a mis-placed landmark is not a body ==');
+const scrambled = scaled(frontFrame());
+scrambled.landmarks.chin = { x: 0.5, y: 0.9 }; // chin below the feet
+const scrambleCheck = checkFrame(scrambled);
+checkTrue('chin below the shoulders is fatal', scrambleCheck.fatal === true, scrambleCheck.notes.join(', '));
+
+const armsAsChest = scaled(frontFrame());
+armsAsChest.landmarks.armpitL = { x: 0.20, y: 0.30 }; // torso measured across the arms
+armsAsChest.landmarks.armpitR = { x: 0.80, y: 0.30 };
+const armsCheck = checkFrame(armsAsChest);
+checkTrue('a 60 cm "chest" is rejected as a region', armsCheck.bad.has('chest') && !armsCheck.fatal, [...armsCheck.bad].join(',') || 'nothing flagged');
+checkTrue('the rejected region is not measured', measureRegion('chest', [{ ...armsAsChest, bad: armsCheck.bad }]) === null, 'chest -> null');
+checkTrue('a healthy frame flags nothing', checkFrame(front).bad.size === 0 && checkFrame(front).fatal === false, 'clean');
+
+const bigNeck = scaled(frontFrame());
+bigNeck.landmarks.neckL = { x: 0.30, y: 0.20 };
+bigNeck.landmarks.neckR = { x: 0.70, y: 0.20 };
+checkTrue('a 74 cm "neck" is rejected', checkFrame(bigNeck).bad.has('neck'), 'neck flagged');
+
+const crotchBelowFeet = scaled(frontFrame());
+crotchBelowFeet.landmarks.crotch = { x: 0.5, y: 0.99 };
+const legCheck = checkFrame(crotchBelowFeet);
+checkTrue('crotch below the feet only invalidates height', legCheck.fatal === false && legCheck.heightBad === true, 'heightBad');
+checkTrue('height skipped for the bad frame', measureHeight([{ ...crotchBelowFeet, heightBad: true }]) === null, 'height -> null');
+checkTrue('girths still usable from the same frame', measureRegion('chest', [{ ...crotchBelowFeet, bad: legCheck.bad, heightBad: true }]) !== null, 'chest kept');
 
 console.log(`\n${fail === 0 ? 'ALL GOOD' : 'FAILURES'} - ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);
