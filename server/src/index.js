@@ -10,6 +10,7 @@ import { garments } from './routes/garments.js';
 import { me } from './routes/me.js';
 import { groups } from './routes/groups.js';
 import { scan } from './routes/scan.js';
+import { bodyScan } from './routes/body-scan.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
 
@@ -44,6 +45,7 @@ app.use('/api/garments', garments);
 app.use('/api/me', me);
 app.use('/api/groups', groups);
 app.use('/api/scan', scan);
+app.use('/api/body-scan', bodyScan);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
 

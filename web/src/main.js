@@ -12,6 +12,7 @@ import { DEFAULT_POSE, composePose } from './human/poses.js';
 import { createUploads } from './uploads/groups.js';
 import { loadProfile, saveProfile } from './services/profile.js';
 import { SIZE_ORDER, SIZES, applySize, findClosestSize, chestLabel } from './sizes.js';
+import { buildBodyScanCard } from './body-scan/body-scan.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -369,6 +370,20 @@ function buildPanel() {
     group('Skin', null, skin),
     group('Measurements', 'live', ui.stats),
     group('Your size', null, buildSizePicker()),
+    group('Body scan', null, buildBodyScanCard({
+      sex: M.sex,
+      apiUrl: API_URL,
+      onApply: (sizeKey, measurements) => {
+        const size = applySize(M, model, M.sex, sizeKey);
+        if (size) {
+          queueShape();
+          queueReadouts();
+          M._size = sizeKey;
+          M._sizeFromScan = true;
+          save();
+        }
+      },
+    })),
     group('Height & weight', null, height, ui.weight),
     group('Body type', null, ui.build, ui.muscle),
     group('Abdomen & waist', null, abdomen, ui.waist),

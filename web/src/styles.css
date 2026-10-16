@@ -214,6 +214,17 @@ input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .icon-btn:hover { background: rgba(255,255,255,.08); color: var(--text); }
 .icon-btn.danger:hover { background: rgba(255,84,112,.14); color: var(--bad); }
 
+/* generic card panel */
+.card {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 /* buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: var(--radius-sm); border: 1px solid transparent; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, opacity .15s; }
 .btn svg { width: 16px; height: 16px; }
