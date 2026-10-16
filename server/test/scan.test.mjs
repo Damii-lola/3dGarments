@@ -1,5 +1,6 @@
-// node --test test/scan.test.mjs — the real API (a child process) against a fake Supabase: login check, template row,
+// node --test test/scan.test.mjs — the real API (a child process) against a fake Supabase: template row,
 // template model file. Posts a synthetic flat-lay tee (textured backdrop) to /api/scan and checks the texture that comes back.
+// /api/scan is open — no login required.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -49,12 +50,12 @@ const form = async (fields, extra = {}) => {
   if (fields.front !== false) f.append('front', new Blob([await photo()], { type: 'image/jpeg' }), 'front.jpg');
   if (fields.template) f.append('template', fields.template);
   if (fields.size) f.append('size', String(fields.size));
-  return fetch(`${apiBase}/api/scan`, { method: 'POST', headers: { authorization: 'Bearer good', ...extra }, body: f });
+  return fetch(`${apiBase}/api/scan`, { method: 'POST', ...extra, body: f });
 };
 
-test('a scan needs a login', async () => {
-  const r = await form({ template: TEMPLATE_ID }, { authorization: 'Bearer nope' });
-  assert.equal(r.status, 401);
+test('a scan does not need a login', async () => {
+  const r = await form({ template: TEMPLATE_ID });
+  assert.notEqual(r.status, 401, 'scan should be open without a bearer token');
 });
 
 test('a scan needs the front photo and a real template', async () => {

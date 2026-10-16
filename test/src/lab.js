@@ -229,15 +229,13 @@ $('#presets').addEventListener('click', () => { const t = worn?.template; if (wo
 
 /* ------------------------------------------------ photo scanner: photo -> texture, computed by the API */
 let lastScan = null;
-$('#scan-key').value = localStorage.getItem('3dg.labkey') || '';
 async function runScan(front, back) {
-  if (!worn?.base) { $('#scan-out').textContent = 'wear a template first (a .glb template, not the generated ones)'; return null; }
-  const templateId = worn.template?.id;
-  if (!/^[0-9a-f-]{36}$/i.test(templateId || '')) { $('#scan-out').textContent = 'this template is not in Supabase (no id): pick one from the list'; return null; }
+  if (!worn) { $('#scan-out').textContent = 'wear a template first'; return null; }
   $('#scan-out').textContent = 'scanning on the server… (a sleeping free instance can take a minute)';
-  const key = $('#scan-key').value.trim(); localStorage.setItem('3dg.labkey', key);
   const t0 = performance.now();
-  const res = await scanOnServer({ front, back, templateId, labKey: key, apiUrl: params.get('api') || API_URL, size: 2048 });
+  const template = worn instanceof BodyGarment ? worn.scanMesh() : (worn.template?.id || null);
+  if (!template) { $('#scan-out').textContent = 'this template has no geometry to paint on'; return null; }
+  const res = await scanOnServer({ front, back, template, apiUrl: params.get('api') || API_URL, size: 2048 });
   await worn.setTexture(res.dataUrl); worn.setColor('#ffffff');
   stage.invalidate(6);
   lastScan = res;

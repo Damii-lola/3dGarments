@@ -24,7 +24,7 @@ app.use(cors({
     cb(new HttpError(403, `Origin ${origin} not allowed (add it to CORS_ORIGINS)`));
   },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type', 'X-Scan-Key'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
   maxAge: 86400,
 }));
 app.use(express.json({ limit: '256kb' }));

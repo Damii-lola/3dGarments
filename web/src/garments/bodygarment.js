@@ -440,6 +440,16 @@ export class BodyGarment {
     return { vertices: n, minMm: d[0] * 1000, p1Mm: d[Math.floor(n * 0.01)] * 1000, medianMm: d[Math.floor(n / 2)] * 1000, touching: d.filter((x) => x < 0.003).length / n };
   }
 
+  /** Export this garment's rest mesh as {pos, nrm, uv, index} for the server-side scanner. */
+  scanMesh() {
+    const g = this.geometry;
+    const pos = new Float32Array(g.attributes.position.array);
+    const nrm = new Float32Array(g.attributes.normal.array);
+    const uv = new Float32Array(g.attributes.uv.array);
+    const idx = g.index;
+    const index = idx ? Uint32Array.from(idx.array) : Uint32Array.from({ length: pos.length / 3 }, (_, i) => i);
+    return { pos, nrm, uv, index };
+  }
   setColor(c) { this.material.color.set(c); }
   /** texture map: a THREE.Texture, an image URL, or null */
   async setTexture(t) {
