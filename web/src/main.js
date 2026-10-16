@@ -1,46 +1,30 @@
 /**
- * 3dGarments — virtual fitting room. Build the model (sex, skin, measurements, body shape) on a live
- * 3D preview.
+ * 3dGarments — size finder.
+ * One unified flow: scan your body from a video, or pick your usual size.
+ * No 3D model — just your recommended clothing size and measurements.
  */
 import './styles.css';
-import { createStage } from './scene/stage.js';
-import { Human } from './human/human.js';
-import {
-  RANGES, ModelController, fmtIn, IN, LB, DEFAULT_TONE, toneGradient, BUILDS, ABDOMEN, SHAPE_DEFAULTS,
-} from './human/body.js';
-import { DEFAULT_POSE, composePose } from './human/poses.js';
-import { createUploads } from './uploads/groups.js';
 import { loadProfile, saveProfile } from './services/profile.js';
 import { SIZE_ORDER, SIZES, applySize, findClosestSize, chestLabel } from './sizes.js';
 import { buildBodyScanCard } from './body-scan/body-scan.js';
+import { API_URL } from './services/config.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* ================================================================ state */
 
-const modelDefaults = (sex = 'female') => ({ sex, ...RANGES[sex].defaults, tone: DEFAULT_TONE, ...SHAPE_DEFAULTS });
-/**
- * Each model keeps its own settings: switching sex swaps to the other set, and switching back
- * brings every edit back. Saved in localStorage, and per device in Supabase (services/profile.js).
- *   profile = { sex, models: { female: {...}, male: {...} }, updated }
- */
 const STORE = '3dg.tryon.v3';
-const withDefaults = (sex, m) => ({ ...modelDefaults(sex), ...(m || {}), sex });
-function readProfile(raw) {
-  if (!raw?.models) return null;
-  return { sex: RANGES[raw.sex] ? raw.sex : 'female', updated: raw.updated || 0, models: { female: withDefaults('female', raw.models.female), male: withDefaults('male', raw.models.male) } };
-}
-let profile = { sex: 'female', updated: 0, models: { female: modelDefaults('female'), male: modelDefaults('male') } };
+
+let profile = { sex: 'female', updated: 0, models: { female: { sex: 'female' }, male: { sex: 'male' } } };
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-  const v2 = JSON.parse(localStorage.getItem('3dg.tryon.v2') || 'null');   // one model only: keep it
-  if (readProfile(saved)) profile = readProfile(saved);
-  else if (v2?.sex && RANGES[v2.sex]) { profile.sex = v2.sex; profile.models[v2.sex] = withDefaults(v2.sex, v2); }
+  if (saved?.models) profile = saved;
 } catch { /* private mode / bad JSON */ }
+
 let M = profile.models[profile.sex];
 let saveTimer = null;
-let sizeSelected = null;   // last size the user picked via the size picker
+
 const save = () => {
   profile.updated = Date.now();
   clearTimeout(saveTimer);
@@ -50,49 +34,20 @@ const save = () => {
 
 const params = new URLSearchParams(location.search);
 if (params.get('model') === 'male' || params.get('model') === 'female') { profile.sex = params.get('model'); M = profile.models[profile.sex]; }
-if (params.get('tone') != null && !Number.isNaN(+params.get('tone'))) M.tone = Math.min(1, Math.max(0, +params.get('tone')));
 
 /* ================================================================ toasts */
 
+const toasts = $('#toasts');
 function toast(msg, type = 'info', ms = 3600) {
+  if (!toasts) return;
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.textContent = msg;
-  $('#toasts').append(el);
+  toasts.append(el);
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, ms);
 }
 
 /* ================================================================ UI kit */
-
-function paint(input) {
-  const lo = +input.min, hi = +input.max, v = +input.value;
-  const p = ((v - lo) / (hi - lo)) * 100;
-  input.style.setProperty('--p', `${p}%`);
-  const z = ((0 - lo) / (hi - lo)) * 100; // centred sliders fill from the middle
-  input.style.setProperty('--a', `${Math.min(p, z)}%`);
-  input.style.setProperty('--b', `${Math.max(p, z)}%`);
-}
-
-/**
- * @param o { label, min, max, step, value, fmt(v) → output text, onInput(v), ends: [left, right], centred }
- * The element gets set(v) (silent), setRange(min, max) and out(text).
- */
-function slider({ label, min, max, step = 0.01, value, fmt = () => '', onInput, ends, centred = false }) {
-  const el = document.createElement('label');
-  el.className = `slider${centred ? ' centred' : ''}`;
-  el.innerHTML = `<div class="slider-head"><span>${esc(label)}</span><output></output></div><input type="range" min="${min}" max="${max}" step="${step}" />`
-    + (ends ? `<div class="slider-ends"><span>${esc(ends[0])}</span><span>${esc(ends[1])}</span></div>` : '');
-  const input = $('input', el), out = $('output', el);
-  el.set = (v) => { input.value = v; paint(input); };
-  el.setRange = (lo, hi) => { input.min = lo; input.max = hi; paint(input); };
-  el.out = (t) => { out.textContent = t; };
-  el.set(value);
-  el.out(fmt(+input.value));
-  input.addEventListener('input', () => { paint(input); el.out(fmt(+input.value)); onInput(+input.value); });
-  // double-click / double-tap: back to the sculpted model
-  if (centred) input.addEventListener('dblclick', () => { el.set(0); el.out(fmt(0)); onInput(0); });
-  return el;
-}
 
 function chips(options, value, onPick, { cls = '' } = {}) {
   const el = document.createElement('div');
@@ -116,91 +71,51 @@ function group(title, note, ...children) {
   return s;
 }
 
-const cm = (v) => `${v.toFixed(1)} cm`;
-const cmIn = (v) => `${Math.round(v)} cm · ${(v / IN).toFixed(1)}″`;
-const kgLb = (kg) => `${kg.toFixed(1)} kg · ${Math.round(kg * LB)} lb`;
+/* ---------------------------------------------------------------- size result readout */
 
-/* ================================================================ scene + human */
-
-const stage = createStage($('#stage-canvas'));
-let human = null;
-let model = null; // ModelController (human/body.js)
-let ui = {};     // live controls + readouts
-
-/** apply the shape now; measurements (weight, girths) follow a beat later */
-function applyShape() {
-  if (!human) return;
-  model.applyShape();
-  stage.invalidate(3, true);
-  stage.setSubjectHeight(human.heightM);
-  queueReadouts();
-  save();
-}
-let shapeRaf = 0;
-const queueShape = () => { cancelAnimationFrame(shapeRaf); shapeRaf = requestAnimationFrame(applyShape); };
-const applyLook = () => { if (human) { model.applyLook(); stage.invalidate(3, true); save(); } };
-
-let readTimer = 0, readLast = 0;
-function queueReadouts() {
-  clearTimeout(readTimer);
-  const wait = Math.max(0, 90 - (performance.now() - readLast)); // at most ~11× a second while dragging
-  readTimer = setTimeout(readouts, wait);
-}
-
-/** every number on the panel, from the body as it is now — they all move together */
-function readouts() {
-  readLast = performance.now();
-  if (!human || !ui.weight) return;
-  const s = model.solve();
-  const kg = model.weight(s), bmi = model.bmi(kg), g = model.girths(s);
-  const [wLo, wHi] = model.weightRange();
-  ui.weight.setRange(Math.floor(wLo * 2) / 2, Math.ceil(wHi * 2) / 2);
-  if (!ui.weight.dragging) ui.weight.set(kg);
-  ui.weight.out(kgLb(kg));
-  const female = M.sex === 'female';
-  const whr = g.waist / g.hips;
-  ui.stats.innerHTML = [
-    ['Height', `${Math.round(M.height * IN)} cm`, fmtIn(M.height).split(' · ')[1]],
-    ['Weight', `${kg.toFixed(1)} kg`, `BMI ${bmi.toFixed(1)}`],
-    [female ? 'Bust' : 'Chest', `${Math.round(g.bust)} cm`, female ? `bra ${g.bra}` : `${(g.bust / IN).toFixed(1)}″`],
-    ['Waist', `${Math.round(g.waist)} cm`, `${(g.waist / IN).toFixed(1)}″`],
-    ['Hips', `${Math.round(g.hips)} cm`, `${(g.hips / IN).toFixed(1)}″`],
-    ['Thigh', `${Math.round(g.thigh)} cm`, g.gap > 0.4 ? `gap ${g.gap.toFixed(1)} cm` : 'touching'],
-  ].map(([k, v, n]) => `<div class="stat"><span>${k}</span><b>${v}</b><small>${esc(n)}</small></div>`).join('');
-  ui.waist.out(`${cmIn(g.waist)} · WHR ${whr.toFixed(2)}`);
-  ui.bust.out(female ? `${cmIn(g.bust)} · ${g.bra}` : cmIn(g.bust));
-  ui.hips.out(cmIn(g.hips));
-  ui.glutes.out(cmIn(g.hips));
-  ui.thighs.out(`${cmIn(g.thigh)}`);
-  // the body type that matches (muscle tone + BMI), if any
-  const match = Object.entries(BUILDS).find(([, b]) => Math.abs(b.muscle - M.muscle) < 0.05 && Math.abs(b.bmi[M.sex] - bmi) < 1.2);
-  ui.build.select(match ? match[0] : '');
+/** Show the currently-applied size (from scan or quick pick) as a readout. */
+function renderSizeResult() {
+  const el = $('#size-result');
+  if (!el) return;
+  const sizeKey = M._size;
+  const size = sizeKey && SIZES[M.sex]?.[sizeKey];
+  if (!size) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:12px;">No size picked yet. Scan your body or choose a size below.</p>`;
+    return;
+  }
+  const chest = chestLabel(M.sex);
+  const fromScan = M._sizeFromScan ? ' (from body scan)' : '';
+  el.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+      <b style="font-size:16px;">Your size: <span style="color:var(--accent);font-size:22px;">${sizeKey}</span></b>
+      <span style="font-size:11px;color:var(--muted);">${fromScan}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11.5px;color:var(--muted);">
+      <div><b>${chest}</b><br><span style="color:var(--text);">${size.chest ?? size.bust}″</span></div>
+      <div><b>Waist</b><br><span style="color:var(--text);">${size.waist}″</span></div>
+      <div><b>Hips</b><br><span style="color:var(--text);">${size.hips}″</span></div>
+      <div><b>Height</b><br><span style="color:var(--text);">${size.height}″</span></div>
+      <div><b>Weight</b><br><span style="color:var(--text);">${size.weight} kg</span></div>
+      <div><b>Build</b><br><span style="color:var(--text);">${size.build}</span></div>
+    </div>
+  `;
 }
 
-/* ================================================================ the panel */
-
-const breadth = (v) => {
-  const d = RANGES[M.sex].defaults.width;
-  return v < d - 2.5 ? 'narrow' : v > d + 2.5 ? 'broad' : 'neutral';
-};
-
-let uploads = null; // the garment photo section: built once, kept across panel rebuilds
-
-/* ---------------------------------------------------------------- size picker */
+/* ---------------------------------------------------------------- quick size picker (part of size finding) */
 
 /**
- * Build the "Your size" panel section: a quick clothing-size picker plus a
- * guided measurement entry. Nobody knows their shoulder width or body-fat
- * percentage off the top of their head, so this lets them pick the size they
- * usually wear (or enter chest/waist/hips/height) and we set the body to match.
+ * Quick size picker integrated into the size finder: choose your usual size
+ * without scanning. This is an alternative to the body scan above it.
  */
 function buildSizePicker() {
+  let sizeSelected = M._size || null;
+
   const title = document.createElement('h3');
-  title.textContent = 'Your size';
+  title.textContent = 'Or pick your size';
 
   const intro = document.createElement('div');
   intro.style.cssText = 'font-size:11.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:6px;';
-  intro.textContent = 'I usually wear';
+  intro.textContent = "I usually wear";
 
   const sizeChips = chips(
     SIZE_ORDER.map((k) => [k, k]),
@@ -211,23 +126,22 @@ function buildSizePicker() {
 
   const applyBtn = document.createElement('button');
   applyBtn.className = 'btn btn-primary grow';
-  applyBtn.textContent = 'Apply to my body';
+  applyBtn.textContent = 'Apply this size';
   applyBtn.addEventListener('click', () => {
     if (!sizeSelected) { toast('Pick a size first'); return; }
-    const size = applySize(M, model, M.sex, sizeSelected);
+    const size = applySize(M, M.sex, sizeSelected);
     if (size) {
-      toast(`Applied size ${sizeSelected}`);
-      queueShape();
-      queueReadouts();
-      // remember the choice on this model's profile
       M._size = sizeSelected;
+      M._sizeFromScan = false;
+      toast(`Applied size ${sizeSelected}`);
+      renderSizeResult();
       save();
     }
   });
 
   const measureNote = document.createElement('div');
   measureNote.style.cssText = 'border-top:1px solid var(--line-2);padding-top:8px;margin-top:10px;font-size:11.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);';
-  measureNote.textContent = 'Or tell me your measurements';
+  measureNote.textContent = 'Or enter your measurements';
 
   const row = document.createElement('div');
   row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:8px;margin-top:6px;';
@@ -264,176 +178,61 @@ function buildSizePicker() {
     if (!h || !c || !w || !hp) { toast('Fill in all four measurements'); return; }
     const key = findClosestSize(M.sex, { height: h, chest: c, waist: w, hips: hp });
     if (!key) { toast("Couldn't match a size"); return; }
-    sizeSelected = key;
-    sizeChips.select(key);
-    const size = applySize(M, model, M.sex, key);
+    const size = applySize(M, M.sex, key);
     if (size) {
-      toast(`Closest match: size ${key}`);
-      queueShape();
-      queueReadouts();
       M._size = key;
+      M._sizeFromScan = false;
+      toast(`Closest match: size ${key}`);
+      renderSizeResult();
       save();
     }
   });
 
-  const result = document.createElement('div');
-  result.id = 'sz-result';
-  result.style.cssText = 'font-size:12px;color:var(--good);margin-top:6px;min-height:16px;';
-
-  return group('Your size', null, intro, sizeChips, applyBtn, measureNote, row, findBtn, result);
+  return group('Or pick your size', null, intro, sizeChips, applyBtn, measureNote, row, findBtn);
 }
+
+/* ---------------------------------------------------------------- panel */
 
 function buildPanel() {
   const host = $('#panel');
-  uploads ||= createUploads({ toast });
   host.innerHTML = '';
-  ui = {};
 
   const sex = chips([['female', 'Female'], ['male', 'Male']], M.sex, (v) => {
     if (v === M.sex) return;
     profile.sex = v;
-    M = profile.models[v];          // that model's own settings, exactly as they were left
-    model.model = M;
-    applyShape();
-    applyLook();
+    M = profile.models[v];
     buildPanel();
   }, { cls: 'seg big' });
 
-  const skin = slider({ label: '', min: 0, max: 1, step: 0.001, value: M.tone ?? DEFAULT_TONE, onInput: (v) => { M.tone = v; applyLook(); } });
-  skin.classList.add('tone');
-  skin.querySelector('.slider-head').remove();
-  skin.querySelector('input').style.setProperty('--track', toneGradient());
-
-  ui.stats = document.createElement('div');
-  ui.stats.className = 'stats';
-
-  // height & weight: weight is the body's own (volume × density) — every other control moves it,
-  // and moving it re-solves the body fat, which reshapes belly, waist, hips, bust, thighs and arms
-  const [hLo, hHi] = model.reach('height');
-  const height = slider({
-    label: 'Height', min: hLo, max: hHi, step: 0.5, value: M.height, fmt: (v) => `${fmtIn(v)} · ${Math.round(v * IN)} cm`,
-    onInput: (v) => { M.height = v; queueShape(); },
-  });
-  ui.weight = slider({
-    label: 'Weight', min: 30, max: 150, step: 0.5, value: 60,
-    onInput: (v) => { model.setWeight(v); M.build = null; queueShape(); },
-  });
-  const w = $('input', ui.weight);
-  w.addEventListener('pointerdown', () => { ui.weight.dragging = true; });
-  w.addEventListener('pointerup', () => { ui.weight.dragging = false; queueReadouts(); });
-  w.addEventListener('change', () => { ui.weight.dragging = false; queueReadouts(); });
-
-  // body type: muscle tone + a typical weight for the height
-  ui.build = chips(Object.entries(BUILDS).map(([k, b]) => [k, b.label]), M.build || '', (v) => {
-    model.setBuild(v);
-    ui.muscle.set(M.muscle);
-    ui.muscle.out(M.muscle < -0.5 ? 'soft' : M.muscle < -0.15 ? 'smooth' : M.muscle <= 0.15 ? 'natural' : M.muscle < 0.5 ? 'toned' : 'defined');
-    queueShape();
-  }, { cls: 'grid4' });
-  const L = model.limits;
-  ui.muscle = slider({
-    label: 'Muscle tone', min: L.muscle[0], max: L.muscle[1], step: 0.01, value: M.muscle, centred: true, ends: ['Soft', 'Defined'],
-    fmt: (v) => (v < -0.5 ? 'soft' : v < -0.15 ? 'smooth' : v <= 0.15 ? 'natural' : v < 0.5 ? 'toned' : 'defined'),
-    onInput: (v) => { M.muscle = v; queueShape(); },
-  });
-
-  const abdomen = chips(Object.entries(ABDOMEN).map(([k, a]) => [k, a.label]), M.abdomen, (v) => { M.abdomen = v; queueShape(); }, { cls: 'grid2' });
-  const prop = (key, label, ends) => slider({ label, min: -1, max: 1, step: 0.01, value: M[key] || 0, centred: true, ends, onInput: (v) => { M[key] = v; queueShape(); } });
-  ui.waist = prop('waist', 'Waist', ['Cinched', 'Thick']);
-  ui.bust = prop('bust', M.sex === 'female' ? 'Bust' : 'Pecs', ['Smaller', 'Fuller']);
-  const chest = prop('chest', 'Chest width', ['Narrow', 'Wide']);
-
-  const [wLo, wHi] = model.reach('width');
-  const shoulders = slider({
-    label: 'Shoulder breadth', min: wLo, max: wHi, step: 0.5, value: M.width, fmt: (v) => `${cm(v)} · ${breadth(v)}`,
-    onInput: (v) => { M.width = v; queueShape(); },
-  });
-  const posture = slider({
-    label: 'Posture', min: -1, max: 1, step: 0.01, value: M.posture || 0, centred: true, ends: ['Upright', 'Rounded'],
-    fmt: (v) => (v < -0.33 ? 'upright' : v > 0.33 ? 'rounded' : 'neutral'),
-    onInput: (v) => { M.posture = v; queueShape(); },
-  });
-
-  ui.glutes = prop('glutes', 'Glutes', ['Flatter', 'Fuller']);
-  ui.hips = prop('hips', 'Hip width', ['Narrow', 'Wide']);
-  ui.thighs = prop('thighs', 'Thighs', ['Slimmer', 'Fuller']);
-
-  const reset = document.createElement('button');
-  reset.className = 'link';
-  reset.type = 'button';
-  reset.textContent = 'Reset body shape';
-  reset.addEventListener('click', () => { model.resetShape(); applyShape(); buildPanel(); });
+  const sizeResult = document.createElement('div');
+  sizeResult.id = 'size-result';
+  sizeResult.style.cssText = 'border:1px solid var(--line-2);border-radius:var(--radius);background:var(--card);padding:16px;';
+  renderSizeResult();
 
   host.append(
-    uploads,
-    group('Model', null, sex),
-    group('Skin', null, skin),
-    group('Measurements', 'live', ui.stats),
-    group('Your size', null, buildSizePicker()),
+    group('Find your size', null, sex, sizeResult),
     group('Body scan', null, buildBodyScanCard({
       sex: M.sex,
       apiUrl: API_URL,
       onApply: (sizeKey, measurements) => {
-        const size = applySize(M, model, M.sex, sizeKey);
+        const size = applySize(M, M.sex, sizeKey);
         if (size) {
-          queueShape();
-          queueReadouts();
           M._size = sizeKey;
           M._sizeFromScan = true;
+          toast(`Applied size ${sizeKey} from body scan`);
+          renderSizeResult();
           save();
         }
       },
     })),
-    group('Height & weight', null, height, ui.weight),
-    group('Body type', null, ui.build, ui.muscle),
-    group('Abdomen & waist', null, abdomen, ui.waist),
-    group(M.sex === 'female' ? 'Bust & chest' : 'Chest', null, ui.bust, chest),
-    group('Shoulders & posture', null, shoulders, posture),
-    group('Glutes & thighs', null, ui.glutes, ui.hips, ui.thighs),
-    reset,
+    buildSizePicker(),
   );
-  readouts();
 }
 
 /* ================================================================ boot */
 
-async function boot() {
-  stage.setLighting({ preset: 'soft', rotation: 0, intensity: 1 });
-  await stage.setEnvironment({ color: '#e9e6e1' });
-
-  human = await Human.load();
-  model = new ModelController(human, M);
-  model.apply();
-  human.setPose(composePose(DEFAULT_POSE));
-  stage.root.add(human.object);
-  stage.setSubjectHeight(human.heightM);
-  stage.setView('front', { instant: true });
+function boot() {
   buildPanel();
-  stage.invalidate(4);
-  $('#loader').classList.add('done');
-  // build the other body's shape targets while idle, so switching sex is instant
-  const other = human.bodies[M.sex === 'female' ? 'male' : 'female'];
-  (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(() => other.ensureShape(), { timeout: 4000 });
-  window.__3dg = { stage, human, model, get state() { return M; }, get profile() { return profile; }, applyShape, buildPanel, ready: true };
-
-  // this device's copy in the cloud: take it if it is newer (e.g. local data was cleared),
-  // otherwise make sure the cloud has ours
-  const cloud = readProfile(await loadProfile());
-  if (cloud && cloud.updated > profile.updated) {
-    profile = cloud;
-    M = profile.models[profile.sex];
-    model.model = M;
-    model.applyShape();
-    model.applyLook();
-    stage.setSubjectHeight(human.heightM);
-    stage.invalidate(4);
-    buildPanel();
-    try { localStorage.setItem(STORE, JSON.stringify(profile)); } catch { /* ignore */ }
-  } else if (profile.updated) saveProfile(profile, 0);
 }
 
-boot().catch((err) => {
-  console.error(err);
-  $('#loader').innerHTML = `<span class="error">Couldn't load the 3D model: ${esc(err.message)}</span>`;
-  toast(err.message, 'error', 8000);
-});
+boot();

@@ -33,13 +33,12 @@ button, input { font: inherit; color: inherit; }
 svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 [hidden] { display: none !important; }
 
-/* ---------- layout: one panel, the preview fills the rest ---------- */
+/* ---------- layout: full-width panel, no 3D stage ---------- */
 .app {
   height: 100dvh;
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
   grid-template-rows: 60px minmax(0, 1fr);
-  grid-template-areas: 'top top' 'panel stage';
+  grid-template-areas: 'top' 'panel';
 }
 .topbar {
   grid-area: top;
@@ -67,7 +66,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .panel {
   grid-area: panel;
   background: var(--panel);
-  border-right: 1px solid var(--line);
+  border-right: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 18px 20px 28px;
@@ -76,13 +75,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   scrollbar-color: #2a2d37 transparent;
 }
 
-/* ---------- stage ---------- */
-.stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #e9e6e1; }
-.stage-canvas { position: absolute; inset: 0; }
-.stage-canvas canvas { display: block; touch-action: none; }
-
-.loader { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; color: var(--muted); background: var(--bg); transition: opacity .5s; z-index: 3; }
-.loader.done { opacity: 0; pointer-events: none; }
+/* ---------- stage removed ---------- */
+.stage, .stage-canvas, .loader { display: none !important; }
 .loader .error { color: var(--bad); max-width: 360px; text-align: center; }
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line-2); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 

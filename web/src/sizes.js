@@ -37,8 +37,9 @@ export const SIZES = {
 
 const BUILD_MUSCLE = { slender: 0, athletic: 0.6, soft: -0.8, plus: -0.5 };
 
-/** Apply a clothing size to the model state + 3D body. Returns the size object applied. */
-export function applySize(M, model, sex, sizeKey) {
+/** Apply a clothing size to the model state. No 3D model needed — just sets
+ *  the measurements on M so the panel can display them. Returns the size object applied. */
+export function applySize(M, sex, sizeKey) {
   const size = SIZES[sex]?.[sizeKey];
   if (!size) return null;
   Object.assign(M, {
@@ -52,10 +53,8 @@ export function applySize(M, model, sex, sizeKey) {
     thighs: size.thighs,
     chest: size.chest ?? 0,
     bust: size.bust ?? 0,
+    weight: size.weight,
   });
-  model.applyShape();
-  model.setWeight(size.weight);
-  model.applyShape();
   return size;
 }
 
