@@ -8,6 +8,15 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
+    <!-- The sky. Three fields of stars, each on its own tile, each sliding one
+         whole tile per cycle so the loop is invisible and nothing ever snaps
+         back. Decoration only, so it is hidden from assistive tech. -->
+    <div class="sky" aria-hidden="true">
+      <span class="sky-layer sky-near"></span>
+      <span class="sky-layer sky-mid"></span>
+      <span class="sky-layer sky-far"></span>
+    </div>
+
     <main class="stage">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
