@@ -1,17 +1,18 @@
 /* =========================================================
    3dGarments — Find your size
-   Tapping the camera circle hands off to the phone's native
-   camera app to record a 360° video.
+   Tapping the camera icon offers a 360° recording in the phone's
+   own camera app, or a video already on the device.
    Sizes are in rem so the whole UI scales from one root value
    (bumped to 189% on phones).
    ========================================================= */
 
 :root {
-  /* The page's old flat colour. The page itself is a gradient with stars now,
-     but a panel full of numbers still sits on this exact colour: opaque, so
-     nothing behind it drifts through the digits. */
-  --bg: #0d0e12;
-  --panel: #15171e;
+  /* The fill for anything that has to be solid. The page itself is a gradient
+     with stars, but a panel full of numbers sits on one flat colour: --bg is the
+     panel, and --panel is the card on it, one step up so the grid still reads as
+     a grid. */
+  --bg: #15181f;
+  --panel: #1d212a;
   --text: #eef0f4;
   --muted: #8b90a0;
   --faint: #5d6272;
@@ -696,9 +697,9 @@ body::before {
   padding: 0.72rem 0.72rem 0.62rem;
   border: 1px solid transparent;
   border-radius: 0.8rem;
-  /* Opaque too, one step up from the black panel it sits on, so the grid still
-     reads as a grid. The states below are written as solid colours for the same
-     reason: a translucent hover would show the black through it and step *down*
+  /* Opaque too, one step up from the panel it sits on, so the grid still reads
+     as a grid. The states below are written as solid colours for the same
+     reason: a translucent hover would show the panel through it and step *down*
      in lightness instead of up. */
   background: var(--panel);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
@@ -733,7 +734,7 @@ body::before {
 .measure:hover::after { opacity: 1; }
 .measure:hover {
   border-color: var(--line-2);
-  background: #272930;
+  background: #2f333c;
   transform: translateY(-2px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
@@ -749,7 +750,7 @@ body::before {
 .measure.holding,
 .measure.picked {
   border-color: rgba(255, 91, 58, 0.55);
-  background: #261c20;
+  background: #2e262c;
 }
 .measure.picked .measure-value { color: var(--accent-2); }
 .measure.holding::after {
