@@ -70,6 +70,7 @@ import {
   round1,
   round2,
   sawRegion,
+  spanX,
 } from '../lib/bodyGeometry.js';
 
 const upload = multer({
@@ -181,6 +182,37 @@ Respond with ONLY this JSON, no markdown and no prose outside it:
   "camera": { "angle": "eye-level", "distance": "medium", "sharpness": 0.7, "lighting": 0.8 },
   "confidence": 0.0
 }`;
+
+/**
+ * One analysed frame, as numbers rather than prose: what the model placed, what
+ * that works out to in centimetres, and which of those readings the sanity check
+ * refused. Attached to the 422 replies so a refusal can be EXPLAINED instead of
+ * guessed at — a failed scan that says nothing is impossible to act on.
+ */
+function frameDigest(f, reason) {
+  const spans = {};
+  for (const key of Object.keys(REGIONS)) {
+    const span = spanX(f, REGIONS[key].left, REGIONS[key].right);
+    spans[key] = span == null || !f.scale ? null : round2(span * f.scale.cmPerWidth);
+  }
+  return {
+    file: f.file,
+    ...(reason ? { reason } : {}),
+    view: f.view,
+    gender: f.gender,
+    confidence: f.confidence,
+    visible: f.visible,
+    cmPerWidth: f.scale ? round2(f.scale.cmPerWidth) : null,
+    reliability: f.scale ? round2(f.scale.reliability) : null,
+    headUnitsCorrection: f.scale ? f.scale.headUnitsCorrection : null,
+    anchors: f.scale ? f.scale.anchors.map((a) => a.detail) : [],
+    landmarksPlaced: Object.keys(f.landmarks || {}),
+    spansCm: spans,
+    droppedRegions: [...(f.bad || [])],
+    heightBad: !!f.heightBad,
+    landmarks: f.landmarks,
+  };
+}
 
 /* ---------------- Cloudflare helpers ---------------- */
 
@@ -450,6 +482,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const frames = [];
   const failures = [];
   const rejected = [];
+  const unreadable = [];
 
   await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
@@ -459,6 +492,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
         const frame = {
+          file: file.originalname,
           view: normView(parsed.view),
           gender: normGender(parsed.gender),
           genderConfidence: Number(parsed.genderConfidence) || 0,
@@ -477,7 +511,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
         // Confident nonsense is worse than no measurement.
         const check = checkFrame(frame);
         if (check.fatal) {
-          rejected.push({ file: file.originalname, reason: check.notes.join(', ') || 'implausible landmarks' });
+          rejected.push(frameDigest(frame, check.notes.join(', ') || 'implausible landmarks'));
           log(`  frame ${i + 1}/${files.length} REJECTED (${ms}ms) - ${check.notes.join(', ')}`);
           return;
         }
@@ -488,6 +522,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
         const keys = Object.keys(frame.landmarks);
         log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
       } else {
+        unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400) });
         log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
       }
     } catch (e) {
@@ -500,21 +535,25 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
 
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
+    const details = { diagnostics: { rejected, unreadable, failures } };
     if (failures.length === files.length) {
-      throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`);
+      throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`, details);
     }
     if (rejected.length) {
-      throw new HttpError(422, `The landmarks we read did not describe a human body (${rejected[0].reason}). Film again with the whole person in shot, standing straight and facing the camera.`);
+      throw new HttpError(422, `The landmarks we read did not describe a human body (${rejected[0].reason}). Film again with the whole person in shot, standing straight and facing the camera.`, details);
     }
-    throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.');
+    throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.', details);
   }
+
+  /** Everything the model reported, for a refusal we have to justify. */
+  const diagnostics = { frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
 
   // 2. Scale. Without an anchor there are no centimetres, so say so rather than
   //    inventing numbers.
   const scaled = frames.filter((f) => f.scale);
   if (!scaled.length) {
     log('x no frame had a usable scale anchor (no head, no reference object)');
-    throw new HttpError(422, 'We could not work out the scale of your video — keep your head fully in frame for the whole turn, or include a door or similar in shot, and try again.');
+    throw new HttpError(422, 'We could not work out the scale of your video — keep your head fully in frame for the whole turn, or include a door or similar in shot, and try again.', { diagnostics });
   }
 
   const scaleWeight = (f) => frameQuality(f) * (f.scale?.reliability ?? 1);
@@ -566,7 +605,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   // Nothing believable came out: refuse rather than print a made-up size.
   if (!GIRTH_REGIONS.some((k) => measured[k])) {
     log('x no chest/waist/hip measurement survived the sanity check');
-    throw new HttpError(422, 'We could read your video but the measurements did not add up to a human body. Stand straight, face the camera with your arms clear of your sides, and keep your whole body in frame.');
+    log(`  diagnostics=${JSON.stringify(diagnostics)}`);
+    throw new HttpError(422, 'We could read your video but the measurements did not add up to a human body. Stand straight, face the camera with your arms clear of your sides, and keep your whole body in frame.', { diagnostics });
   }
 
   // 4. Height: head to floor, only from frames where the feet were actually visible.
@@ -747,6 +787,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     cmPerImageWidth: round2(cmPerWidth),
     anchors,
     reconciled: result.reconciled,
+    diagnostics,
   };
 
   log(`done in ${result.debug.elapsedMs}ms - gender=${gender.guess} basis=${sizeBasis} size=${result.size} scale=${round2(cmPerWidth)}cm/width anchors=[${anchors.join('; ')}]`);
