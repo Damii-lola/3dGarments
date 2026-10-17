@@ -56,10 +56,13 @@ export function analyzeBody(frames, opts = {}) {
   const url = `${API_URL}/api/body-scan`;
   const bytes = frames.reduce((s, f) => s + f.size, 0);
   log('POST', url, '(frames)');
-  log('frames', frames.length, 'totalBytes', bytes, frames.map((f) => f.size));
+  log('frames', frames.length, 'totalBytes', bytes, frames.map((f) => f.size), 'gender', opts.gender);
 
   const form = new FormData();
   for (const frame of frames) form.append('frames', frame, frame.name);
+  // The user's own answer about who the video is of. It decides the size chart
+  // and which of the two measurement sheets is read, so it is never guessed.
+  if (opts.gender) form.append('gender', opts.gender);
 
   return request(url, { method: 'POST', body: form }, { timeoutMs: 180000, ...opts });
 }
@@ -76,6 +79,7 @@ export function analyzeGeometry(measured, opts = {}) {
   const body = {
     source: 'pose',
     model: measured.model,
+    gender: opts.gender || 'unsure',
     aspect: measured.width && measured.height ? measured.width / measured.height : undefined,
     frames: measured.frames.map((f) => ({
       landmarks: f.landmarks,
@@ -88,7 +92,7 @@ export function analyzeGeometry(measured, opts = {}) {
     })),
   };
   log('POST', url, '(on-device geometry)');
-  log('frames', body.frames.length, 'aspect', body.aspect, 'model', body.model,
+  log('frames', body.frames.length, 'aspect', body.aspect, 'measuring-for', body.gender, 'model', body.model,
     body.frames.map((f) => `${f.view} conf=${Number(f.confidence).toFixed(2)} n=${Object.keys(f.landmarks).length}`));
 
   return request(url, {

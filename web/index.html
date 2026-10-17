@@ -63,8 +63,20 @@
 
         <p class="step-note" id="trim-note"></p>
 
+        <!-- The gender group decides the head-length constant, the size chart AND
+             which of the two measurement sheets is read, so it is asked rather
+             than guessed: a silhouette cannot tell a bust from a chest. -->
+        <fieldset class="who">
+          <legend class="who-legend">Who is this video of?</legend>
+          <div class="who-buttons">
+            <button type="button" class="who-btn" data-gender="male" aria-pressed="false">A man</button>
+            <button type="button" class="who-btn" data-gender="female" aria-pressed="false">A woman</button>
+          </div>
+          <p class="who-hint">Men's and women's sheets measure different things, so pick the right one.</p>
+        </fieldset>
+
         <div class="actions">
-          <button class="btn-primary" id="analyze-btn" type="button">Analyze my size</button>
+          <button class="btn-primary" id="analyze-btn" type="button" disabled>Analyze my size</button>
           <button class="btn-ghost" id="start-over-trim" type="button">Start over</button>
         </div>
       </section>
@@ -80,7 +92,7 @@
         <ul class="facts" id="facts"></ul>
 
         <div class="measures">
-          <h2 class="measures-title">Body estimate</h2>
+          <h2 class="measures-title" id="measures-title">What we measured</h2>
           <div class="measure-grid" id="measure-grid"></div>
           <p class="measures-note" id="measures-note"></p>
 

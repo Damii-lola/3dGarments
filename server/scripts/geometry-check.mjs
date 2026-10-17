@@ -16,6 +16,7 @@ import {
   normalizeLandmarks,
   toIn,
 } from '../src/lib/bodyGeometry.js';
+import { buildCatalogue } from '../src/lib/catalogue.js';
 
 let pass = 0;
 let fail = 0;
@@ -111,6 +112,88 @@ function sideFrame(overrides = {}) {
 
 const scaled = (f) => ({ ...f, scale: frameScale(f) });
 
+/** A frame as the route hands it to the engine: scaled, then sanity-checked. */
+function ready(frame) {
+  const f = scaled(frame);
+  const c = checkFrame(f);
+  return { ...f, bad: c.bad, heightBad: c.heightBad };
+}
+
+/**
+ * A male 176.25 cm tall (7.5 head-heights) carrying every named line a tailor's
+ * sheet asks for, positioned where the anatomy actually puts them: the armpit
+ * line at 48 cm below the crown, the waist at 71, the hip line at 87, the
+ * crotch at 94, the knee at 128, the floor at 176.25.
+ */
+function catalogFrame() {
+  const aspect = 0.75;
+  const headY = 0.095;
+  const cmPerWidth = 23.5 / (headY / aspect);
+  const P = (cm) => cm / cmPerWidth;
+  const headTopY = 0.06;
+  const Y = (cm) => headTopY + P(cm) * aspect;
+  /** A pair `cm` apart, centred `cmx` from the body's centre line. */
+  const at = (cm, down, cmx = 0) => ({
+    L: { x: 0.5 + P(cmx - cm / 2), y: Y(down) },
+    R: { x: 0.5 + P(cmx + cm / 2), y: Y(down) },
+  });
+  const pt = (cmx, down) => ({ x: 0.5 + P(cmx), y: Y(down) });
+
+  const head = at(15, 12);
+  const neck = at(12, 26);
+  const shoulders = at(46, 31);
+  const upperChest = at(37, 48);
+  const bust = at(38, 54);
+  const underbust = at(34, 59);
+  const waist = at(33, 71);
+  const lowWaist = at(35, 82);
+  const hips = at(36, 87);
+  const arm = at(11, 40, -20);
+  const elbow = at(8, 71, -20.5);
+  const wrist = at(5.5, 91, -21);
+  const knee = at(12, 128, -7);
+  const calf = at(11, 145, -7);
+  const highAnkle = at(8, 160, -7);
+  const ankle = at(7, 168, -7);
+
+  return {
+    view: 'front',
+    gender: 'male',
+    aspect,
+    confidence: 0.85,
+    camera: { sharpness: 0.85, lighting: 0.85 },
+    visible: { head: true, torso: true, hips: true, legs: true, feet: true },
+    references: [],
+    landmarks: {
+      headTop: { x: 0.5, y: headTopY },
+      chin: { x: 0.5, y: Y(23.5) },
+      headL: head.L, headR: head.R,
+      neckL: neck.L, neckR: neck.R,
+      nape: { x: 0.5, y: Y(26) },
+      shoulderL: shoulders.L, shoulderR: shoulders.R,
+      upperChestL: upperChest.L, upperChestR: upperChest.R,
+      armpitL: bust.L, armpitR: bust.R,
+      underbustL: underbust.L, underbustR: underbust.R,
+      waistL: waist.L, waistR: waist.R,
+      lowWaistL: lowWaist.L, lowWaistR: lowWaist.R,
+      hipL: hips.L, hipR: hips.R,
+      armL: arm.L, armR: arm.R,
+      elbowL: elbow.L, elbowR: elbow.R,
+      wristL: wrist.L, wristR: wrist.R,
+      kneeL: knee.L, kneeR: knee.R,
+      calfL: calf.L, calfR: calf.R,
+      highAnkleL: highAnkle.L, highAnkleR: highAnkle.R,
+      ankleL: ankle.L, ankleR: ankle.R,
+      shoulderJL: pt(-19, 31), shoulderJR: pt(19, 31),
+      elbowJL: pt(-20.5, 71), elbowJR: pt(20.5, 71),
+      wristJL: pt(-21, 91), wristJR: pt(21, 91),
+      kneeJL: pt(-7, 128), kneeJR: pt(7, 128),
+      crotch: { x: 0.5, y: Y(94) },
+      footL: { x: 0.47, y: Y(176.25) }, footR: { x: 0.53, y: Y(176.25) },
+    },
+  };
+}
+
 console.log('\n== ellipse perimeter (sanity) ==');
 check('circle r=10 cm -> 2*pi*10 cm, in inches', toIn(ellipsePerimeter(10, 10)), toIn(2 * Math.PI * 10), 0.001);
 
@@ -198,6 +281,64 @@ const legCheck = checkFrame(crotchBelowFeet);
 checkTrue('crotch below the feet only invalidates height', legCheck.fatal === false && legCheck.heightBad === true, 'heightBad');
 checkTrue('height skipped for the bad frame', measureHeight([{ ...crotchBelowFeet, heightBad: true }]) === null, 'height -> null');
 checkTrue('girths still usable from the same frame', measureRegion('chest', [{ ...crotchBelowFeet, bad: legCheck.bad, heightBad: true }]) !== null, 'chest kept');
+
+console.log('\n== the catalogue: every category the clip actually showed ==');
+const men = buildCatalogue({ frames: [ready(catalogFrame())], gender: 'male' });
+const item = (c, key) => c.items.find((i) => i.key === key) || null;
+const near = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
+
+checkTrue('the men\'s sheet is read out of one front frame', men.items.length >= 20, `${men.items.length} items`);
+checkTrue('chest is a chest girth', near(item(men, 'chest')?.in, 39, 43), `chest ${item(men, 'chest')?.in} in`);
+checkTrue('head, neck, waist, lower waist and hips all come out', ['head', 'neck', 'waist', 'lowWaist', 'hips'].every((k) => item(men, k)), men.items.slice(0, 6).map((i) => i.label).join(', '));
+checkTrue('nape to waist is a real length', near(item(men, 'napeToWaist')?.in, 15, 19), `nape->waist ${item(men, 'napeToWaist')?.in} in`);
+checkTrue('armscye depth is the shoulder-to-armpit drop', near(item(men, 'armholeDepth')?.in, 5, 8), `armscye ${item(men, 'armholeDepth')?.in} in`);
+checkTrue('sleeve length runs shoulder -> elbow -> wrist', near(item(men, 'sleeveLength')?.in, 21, 26), `sleeve ${item(men, 'sleeveLength')?.in} in`);
+checkTrue('the jersey sleeve starts at the nape, so it is longer', item(men, 'sleeveJersey')?.in > item(men, 'sleeveLength')?.in, `${item(men, 'sleeveJersey')?.in} vs ${item(men, 'sleeveLength')?.in} in`);
+checkTrue('waist to knee, hip and floor are all measured', [item(men, 'waistToKnee'), item(men, 'waistToHip'), item(men, 'waistToFloor')].every((i) => near(i?.in, 3, 50)), `waist->knee ${item(men, 'waistToKnee')?.in}, ->hip ${item(men, 'waistToHip')?.in}, ->floor ${item(men, 'waistToFloor')?.in} in`);
+checkTrue('body rise is the waist-to-crotch drop', near(item(men, 'bodyRise')?.in, 8, 11), `rise ${item(men, 'bodyRise')?.in} in`);
+checkTrue('crotch length is the rise twice over, plus the seat depth', item(men, 'crotchLength')?.in > 25, `crotch ${item(men, 'crotchLength')?.in} in`);
+checkTrue('total height comes out as the body was drawn', near(item(men, 'totalHeight')?.in, 68, 71), `height ${item(men, 'totalHeight')?.in} in`);
+checkTrue('knee, calf, high ankle and ankle are measured', ['knee', 'calf', 'highAnkle', 'ankle'].every((k) => item(men, k)), ['knee', 'calf', 'highAnkle', 'ankle'].map((k) => item(men, k)?.in).join(', '));
+checkTrue('a cuff is quoted from the measured wrist', item(men, 'cuffShirts')?.in >= item(men, 'wrist')?.in, `wrist ${item(men, 'wrist')?.in} -> cuff ${item(men, 'cuffShirts')?.in} in`);
+
+console.log('\n== the catalogue: what the clip did NOT show is simply absent ==');
+checkTrue('X-Shoulder needs a frame showing the back', item(men, 'xShoulder') === null, 'omitted');
+checkTrue('X-Back needs a frame showing the back', item(men, 'xBack') === null, 'omitted');
+checkTrue('X-Front is read from the front frame', near(item(men, 'xFront')?.in, 14, 17), `x-front ${item(men, 'xFront')?.in} in`);
+checkTrue('Back Width is the same line, from any frame', item(men, 'backWidth') !== null, `back width ${item(men, 'backWidth')?.in} in`);
+checkTrue('a bare ankle is not a trouser bottom', item(men, 'trouserBottom') === null, 'omitted');
+checkTrue('jeans bottom needs jeans to have been seen', item(men, 'jeansBottom') === null, 'omitted');
+checkTrue('no women\'s categories on a men\'s sheet', !item(men, 'bust') && !item(men, 'dart') && !item(men, 'topArm'), 'clean');
+
+const trouser = ready(catalogFrame());
+const wide = { L: { x: 0.5 - 0.0485, y: trouser.landmarks.ankleL.y }, R: { x: 0.5 + 0.0485, y: trouser.landmarks.ankleR.y } };
+trouser.landmarks.ankleL = wide.L;
+trouser.landmarks.ankleR = wide.R;
+const trouserCheck = checkFrame(trouser);
+trouser.bad = trouserCheck.bad;
+const trousered = buildCatalogue({ frames: [trouser], gender: 'male' });
+checkTrue('fabric across the ankle becomes a trouser bottom width', near(item(trousered, 'trouserBottom')?.in, 6, 9), `trouser bottom ${item(trousered, 'trouserBottom')?.in} in`);
+checkTrue('and the ankle tape is not read off the trouser leg', item(trousered, 'ankle') === null, 'ankle omitted');
+checkTrue('jeans bottom still waits for jeans to be seen', item(trousered, 'jeansBottom') === null, 'omitted');
+
+const women = buildCatalogue({ frames: [ready(catalogFrame())], gender: 'female' });
+checkTrue('bust is the full bust line', near(item(women, 'bust')?.in, 39, 43), `bust ${item(women, 'bust')?.in} in`);
+checkTrue('a woman\'s chest is the upper chest, above the bust', item(women, 'chest')?.in < item(women, 'bust')?.in, `chest ${item(women, 'chest')?.in} vs bust ${item(women, 'bust')?.in} in`);
+checkTrue('dart is what the bust takes in over the underbust', near(item(women, 'dart')?.in, 1, 5), `dart ${item(women, 'dart')?.in} in`);
+checkTrue('top arm, wrist and the leg tapes are all there', ['topArm', 'wrist', 'ankle', 'highAnkle'].every((k) => item(women, k)), ['topArm', 'wrist', 'ankle', 'highAnkle'].map((k) => item(women, k)?.in).join(', '));
+checkTrue('no men\'s categories on a women\'s sheet', !item(women, 'xShoulder') && !item(women, 'xBack') && !item(women, 'crotchLength') && !item(women, 'totalHeight'), 'clean');
+
+console.log('\n== the catalogue: an upper-body clip measures the upper body ==');
+const upperOnly = ready(catalogFrame());
+for (const k of ['hipL', 'hipR', 'lowWaistL', 'lowWaistR', 'kneeL', 'kneeR', 'kneeJL', 'kneeJR',
+  'calfL', 'calfR', 'highAnkleL', 'highAnkleR', 'ankleL', 'ankleR', 'footL', 'footR', 'crotch',
+  'wristL', 'wristR', 'wristJL', 'wristJR', 'elbowL', 'elbowR', 'elbowJL', 'elbowJR']) delete upperOnly.landmarks[k];
+upperOnly.visible = { head: true, torso: true, hips: false, legs: false, feet: false };
+const upper = buildCatalogue({ frames: [upperOnly], gender: 'male' });
+checkTrue('the upper-body categories are still read', item(upper, 'chest') !== null && item(upper, 'neck') !== null && item(upper, 'shoulder') !== null, `${upper.items.length} items`);
+checkTrue('and nothing below the waist is in the list', !item(upper, 'waistToFloor') && !item(upper, 'knee') && !item(upper, 'ankle') && !item(upper, 'totalHeight') && !item(upper, 'bodyRise'), 'omitted');
+checkTrue('every item that IS listed carries a number', upper.items.every((i) => Number.isFinite(i.in) && i.in > 0), 'all measured');
+checkTrue('each item can say how it was worked out', upper.items.every((i) => typeof i.how === 'string' && i.how.length > 8), upper.items[0]?.how);
 
 console.log('\n== a mis-placed head is corrected against adult proportions ==');
 // The model put the chin too high, so the head reads short and the body looks

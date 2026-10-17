@@ -122,11 +122,12 @@ export function loadPoseEngine({ onProgress } = {}) {
  *
  * @param {File|Blob} file recorded video
  * @param {{count?: number, from?: number, to?: number, maxWidth?: number,
+ *          gender?: 'male'|'female'|'unsure',
  *          onProgress?: (msg: string) => void}} [opts]
  * @returns {Promise<{frames: object[], seen: object[], width: number, height: number, model: string}>}
  */
 export async function analyzePose(file, opts = {}) {
-  const { count = 6, from = 0, to = 1, maxWidth = 720, onProgress } = opts;
+  const { count = 6, from = 0, to = 1, maxWidth = 720, gender = 'unsure', onProgress } = opts;
   const engine = await loadPoseEngine({ onProgress });
 
   return withVideo(file, async (video) => {
@@ -184,6 +185,9 @@ export async function analyzePose(file, opts = {}) {
         world: det.worldLandmarks,
         imgW: canvas.width,
         imgH: canvas.height,
+        // The head-length constant — and so every centimetre — follows the group
+        // the user said they are in.
+        gender,
       });
       if (!measured) {
         log('frame', i, 'silhouette unusable');
@@ -227,6 +231,7 @@ export async function analyzePose(file, opts = {}) {
           landmarks: measured.landmarks,
           cmPerWidth: measured.debug.headCmPerWidth || 0,
           sideOn: measured.view === 'side',
+          headCm: measured.debug.headCm,
         }),
       });
     }

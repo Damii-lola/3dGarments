@@ -281,6 +281,73 @@ check('the height is refused, not faked', skirt.visible.feet, false);
 check('no foot landmarks', skirt.landmarks.footL === undefined, true);
 check('the torso is still measured', Boolean(skirt.landmarks.armpitL), true);
 
+console.log('\n— the named lines a tailor\'s sheet asks for —');
+// The same body with everything the catalogue can read: ears for the head's
+// breadth, wrists, and the arm carried down past the hip so the wrist row is on
+// the arm and not on the torso.
+function limbBody() {
+  const m = body({ armsClear: true });
+  fill(m, 171, 200, 40, 54);
+  fill(m, 171, 200, 146, 160);
+  return m;
+}
+function fullJoints() {
+  const lm = joints();
+  lm[7] = { x: 0.44, y: 0.12, visibility: 1 };   // left ear  (col 88, row 48)
+  lm[8] = { x: 0.56, y: 0.12, visibility: 1 };   // right ear (col 112)
+  lm[15] = { x: 0.235, y: 0.45, visibility: 1 }; // left wrist  (col 47, row 180)
+  lm[16] = { x: 0.765, y: 0.45, visibility: 1 };
+  return lm;
+}
+const full = measureSilhouette({ mask: limbBody(), maskW: W, maskH: H, lm: fullJoints(), world: agreeWorld(fullJoints()), imgW: W, imgH: H });
+check('the head is read across the ears, widened to the skull', span(full, 'headL', 'headR'), 13.4, 1.5);
+check('and sits at the ear row', yOf(full, 'headL'), 12, 1.5);
+check('an armscye line is read at the first row the arms clear', Boolean(full.landmarks.upperChestL), true);
+check('and never sits below the chest line', yOf(full, 'upperChestL') <= yOf(full, 'armpitL'), true);
+check('underbust between the chest and the waist', yOf(full, 'armpitL') < yOf(full, 'underbustL') && yOf(full, 'underbustL') < yOf(full, 'waistL'), true);
+check('lower waist between the waist and the hips', yOf(full, 'waistL') < yOf(full, 'lowWaistL') && yOf(full, 'lowWaistL') < yOf(full, 'hipL'), true);
+check('the elbow is one arm across (14 px)', span(full, 'elbowL', 'elbowR'), 7, 1.5);
+check('the wrist is one arm across', span(full, 'wristL', 'wristR'), 7, 1.5);
+check('the knee is one leg across (24 px)', span(full, 'kneeL', 'kneeR'), 12, 1.5);
+check('calf, high ankle and ankle too', Boolean(full.landmarks.calfL && full.landmarks.highAnkleL && full.landmarks.ankleL), true);
+check('the leg lines run knee -> calf -> ankle', yOf(full, 'kneeL') < yOf(full, 'calfL') && yOf(full, 'calfL') < yOf(full, 'highAnkleL') && yOf(full, 'highAnkleL') < yOf(full, 'ankleL'), true);
+check('joint points for a sleeve: shoulder, elbow, wrist', Boolean(full.landmarks.shoulderJL && full.landmarks.elbowJL && full.landmarks.wristJL), true);
+check('the nape is the middle of the neck', Math.abs(full.landmarks.nape.x - full.landmarks.neckL.x - (span(full, 'neckL', 'neckR') / 2)) < 0.01, true);
+
+// Both legs inside one run — a wide skirt, or trousers loose enough to merge.
+// The run is as wide as the body, which is not a knee, so no knee is reported.
+const merged = body({ armsClear: true });
+fill(merged, 200, 379, 72, 128);
+const mergedRun = measureSilhouette({ mask: merged, maskW: W, maskH: H, lm: fullJoints(), imgW: W, imgH: H });
+check('legs merged into one run are not a knee', mergedRun.landmarks.kneeL === undefined, true);
+check('but the torso is still read', Boolean(mergedRun.landmarks.armpitL), true);
+
+// A side-on frame: the ears overlap in x and the head's breadth is not visible.
+const sideEars = measureSilhouette({ mask: sideBody(), maskW: W, maskH: H, lm: fullJoints(), world: sideWorld(), imgW: W, imgH: H });
+check('no head breadth claimed from a side-on head', sideEars.landmarks.headL === undefined, true);
+
+// Arm hanging against the ribs: one blob with the torso, so no elbow.
+const gluedArm = measureSilhouette({ mask: body({ armsClear: false }), maskW: W, maskH: H, lm: fullJoints(), imgW: W, imgH: H });
+check('an arm that is one blob with the torso is not an elbow', gluedArm.landmarks.elbowL === undefined, true);
+
+// A forearm that narrows toward the wrist — which is what a forearm does. The
+// widest row under the wrist joint is the forearm's near end, so the wrist has to
+// be taken as the narrowest point between the elbow and the joint.
+function taperArmBody() {
+  const m = body({ armsClear: true });
+  for (let y = 150; y <= 205; y += 1) {
+    for (let x = 20; x < 58; x += 1) m[y * W + x] = 0;
+    for (let x = 143; x <= 180; x += 1) m[y * W + x] = 0;
+  }
+  taper(m, 150, 180, 40, 64, 46, 58);
+  taper(m, 150, 180, 136, 160, 142, 154);
+  return m;
+}
+const taperRun = measureSilhouette({ mask: taperArmBody(), maskW: W, maskH: H, lm: fullJoints(), imgW: W, imgH: H });
+check('the elbow is read at its own row (16 px)', span(taperRun, 'elbowL', 'elbowR'), 8, 1);
+check('the wrist is the narrowest point of the forearm (12 px), not the joint row', span(taperRun, 'wristL', 'wristR'), 6, 1);
+check('and it sits above the wrist joint', yOf(taperRun, 'wristL') <= yOf(taperRun, 'wristJL') + 0.01, true);
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log('failed: ' + failures.join(', '));

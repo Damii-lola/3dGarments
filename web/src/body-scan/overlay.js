@@ -74,16 +74,18 @@ function wash(ctx, mask, maskW, maskH, w, h) {
 }
 
 /** The joints, and the rows the widths came from. */
-function rows(ctx, lm, w, h, cmPerWidth, sideOn) {
+function rows(ctx, lm, w, h, cmPerWidth, sideOn, headCm) {
   const X = (v) => (v / 100) * w;
   const Y = (v) => (v / 100) * h;
   const label = labeller(ctx);
   const thin = Math.max(1, Math.round(w / 300));
 
   // The pose's joint lines: the arm line is what decides whether a row can be
-  // trusted, so it is drawn even when no row was measured from it.
+  // trusted, so it is drawn even when no row was measured from it. The limb
+  // joints are here too — a sleeve length is a tape between them.
   ctx.fillStyle = 'rgba(238, 240, 244, 0.75)';
-  for (const key of ['shoulderL', 'shoulderR', 'armL', 'armR', 'neckL', 'neckR']) {
+  for (const key of ['shoulderL', 'shoulderR', 'armL', 'armR', 'neckL', 'neckR',
+    'shoulderJL', 'shoulderJR', 'elbowJL', 'elbowJR', 'wristJL', 'wristJR', 'kneeJL', 'kneeJR']) {
     const p = lm[key];
     if (!p) continue;
     ctx.beginPath();
@@ -103,7 +105,7 @@ function rows(ctx, lm, w, h, cmPerWidth, sideOn) {
     ctx.lineTo(X(lm.chin.x), Y(lm.chin.y));
     ctx.stroke();
     ctx.restore();
-    label(`head ${HEAD_LENGTH_CM}cm`, X(lm.headTop.x) + 4, Y(lm.chin.y), '#3ddc97');
+    label(`head ${headCm}cm`, X(lm.headTop.x) + 4, Y(lm.chin.y), '#3ddc97');
   }
 
   if (lm.shoulderL && lm.shoulderR) {
@@ -164,6 +166,7 @@ export function drawMeasuredFrame({
   landmarks = null,
   cmPerWidth = 0,
   sideOn = false,
+  headCm = HEAD_LENGTH_CM,
   maxWidth = 360,
   quality = 0.7,
 }) {
@@ -182,7 +185,7 @@ export function drawMeasuredFrame({
   ctx.fillRect(0, 0, w, h);
 
   if (mask && maskW && maskH) wash(ctx, mask, maskW, maskH, w, h);
-  if (landmarks) rows(ctx, landmarks, w, h, cmPerWidth, sideOn);
+  if (landmarks) rows(ctx, landmarks, w, h, cmPerWidth, sideOn, headCm);
 
   try {
     return canvas.toDataURL('image/jpeg', quality);

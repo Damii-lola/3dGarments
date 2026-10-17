@@ -72,6 +72,7 @@ import {
   sawRegion,
   spanX,
 } from '../lib/bodyGeometry.js';
+import { buildCatalogue } from '../lib/catalogue.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -483,17 +484,21 @@ function geometryFrames(body) {
   return {
     frames,
     aspect: body.aspect,
+    // The user picks who is being measured. It decides the head-length constant
+    // (and so every centimetre), which size chart applies, AND which of the two
+    // category groups is computed — so it is never guessed from the silhouette.
+    gender: normGender(body.gender),
     model: typeof body.model === 'string' ? body.model.slice(0, 80) : 'on-device pose',
   };
 }
 
 /** Turn the browser's per-frame numbers into the frame objects the engine reads. */
-function addGeometryFrames(geo, aspect, frames, rejected) {
+function addGeometryFrames(geo, aspect, frames, rejected, gender) {
   geo.frames.forEach((raw, i) => {
     const frame = {
       file: `pose-${i + 1}`,
       view: normView(raw.view),
-      gender: normGender(raw.gender),
+      gender: gender !== 'unsure' ? gender : normGender(raw.gender),
       genderConfidence: 0,
       build: null,
       landmarks: normalizeLandmarks(raw.landmarks),
@@ -541,8 +546,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   // vision model. Both end in the same deterministic measurement engine.
   if (geo) {
     const aspect = clamp(Number(geo.aspect) || 0.75, [0.3, 3]);
-    log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}`);
-    addGeometryFrames(geo, aspect, frames, rejected);
+    log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}, measuring for=${geo.gender}`);
+    addGeometryFrames(geo, aspect, frames, rejected, geo.gender);
     return finishScan(res, {
       frames,
       rejected,
@@ -553,6 +558,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       totalBytes: 0,
       sourceModel: `on-device pose (${geo.model})`,
       poseNotes: [...new Set(geo.frames.flatMap((f) => (Array.isArray(f.notes) ? f.notes : [])))],
+      gender: geo.gender,
       startedAt,
     });
   }
@@ -565,6 +571,9 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   if (!files || files.length === 0) throw new HttpError(400, 'Upload at least one frame');
 
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  // The form's gender field is the user's own choice and wins over the model's
+  // guess; the guess is only used when nobody said.
+  const chosenGender = normGender(req.body?.gender);
 
   // The frame's true aspect ratio decides how a vertical normed distance (y is
   // normalised by height) converts into the same unit as a horizontal one. Read
@@ -586,7 +595,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
         const frame = {
           file: file.originalname,
           view: normView(parsed.view),
-          gender: normGender(parsed.gender),
+          gender: chosenGender !== 'unsure' ? chosenGender : normGender(parsed.gender),
           genderConfidence: Number(parsed.genderConfidence) || 0,
           build: typeof parsed.build === 'string' ? parsed.build : null,
           landmarks: normalizeLandmarks(parsed.landmarks),
@@ -643,6 +652,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     totalBytes,
     sourceModel: config.cloudflare.visionModel,
     poseNotes: [],
+    gender: chosenGender,
     startedAt,
   });
 }));
@@ -652,7 +662,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, startedAt }) {
+function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, rejected, unreadable, failures } };
@@ -686,7 +696,20 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     scaled.reduce((s, f) => s + scaleWeight(f) * (f.scale.headUnitsCorrection ?? 1), 0) / scaleW,
   );
 
-  // 3. Measure every region from the landmark geometry.
+  // 3. Who is being measured, and what they are wearing. Both are settled first:
+  //    the gender group decides which categories exist at all, and the clothing
+  //    decides whether a leg opening can be called a trouser bottom.
+  //
+  //    The user's own answer is the answer. It sets the head constant (and so
+  //    every centimetre), the size chart, and which of the two category groups
+  //    is computed — none of which may be inferred from a silhouette.
+  const gender = chosenGender && chosenGender !== 'unsure'
+    ? { guess: chosenGender, confidence: 1, chosen: true, scores: {} }
+    : { ...pickGender(frames), chosen: false };
+  const clothing = combineClothing(frames);
+  const removed = (clothing.thicknessIn || 0) * 2;
+
+  // 4. Measure every region from the landmark geometry.
   const measured = {};
   const methods = {};
   const dropped = [];
@@ -701,10 +724,16 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       continue;
     }
     if (r.skipped) droppedByCheck.add(REGIONS[key].label);
+    // The core girths have hand-written plausibility ranges; everything else is
+    // already bounded by the span ranges the frame check applied.
     const range = RANGES[key];
-    const v = clamp(r.valueIn, range);
-    r.clamped = Math.abs(v - r.valueIn) > 0.05;
-    r.valueIn = v;
+    if (range) {
+      const v = clamp(r.valueIn, range);
+      r.clamped = Math.abs(v - r.valueIn) > 0.05;
+      r.valueIn = v;
+    } else {
+      r.clamped = false;
+    }
     measured[key] = r;
     methods[key] = {
       label: r.label,
@@ -722,21 +751,27 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     };
   }
 
+  // 5. The catalogue: every category a tailor's sheet asks for that this video
+  //    actually shows, in the group for the gender chosen. Anything the clip
+  //    never showed simply is not in here — nothing is estimated, and nothing
+  //    absent is mentioned.
+  const catalogue = buildCatalogue({ frames, gender: gender.guess, clothing });
+
   // Nothing believable came out: refuse rather than print a made-up size.
-  if (!GIRTH_REGIONS.some((k) => measured[k])) {
-    log('x no chest/waist/hip measurement survived the sanity check');
+  if (!catalogue.items.length) {
+    log('x no measurement survived the sanity check');
     log(`  diagnostics=${JSON.stringify(diagnostics)}`);
     throw new HttpError(422, 'We could read your video but the measurements did not add up to a human body. Stand straight, face the camera with your arms clear of your sides, and keep your whole body in frame.', { diagnostics });
   }
 
-  // 4. Height: head to floor, only from frames where the feet were actually visible.
+  // 6. Height: head to floor, only from frames where the feet were actually visible.
   const h = measureHeight(frames);
   const heightIn = h ? clamp(h.in, RANGES.height) : null;
   const headUnitsToHeight = h
     ? round1(h.in * CM_PER_IN / (HEAD_HEIGHT_CM[scaled[0].gender] || HEAD_HEIGHT_CM.unsure))
     : null;
 
-  // 5. Proportions, computed from the same geometry.
+  // 7. Proportions, computed from the same geometry.
   const shoulderToHip = measured.shoulder && measured.hips ? round2(measured.shoulder.widthIn / measured.hips.widthIn) : null;
   let legToTorso = null;
   for (const f of frames) {
@@ -759,12 +794,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     return best ? best[0] : null;
   })();
 
-  // 6. Gender and clothing.
-  const gender = pickGender(frames);
-  const clothing = combineClothing(frames);
-  const removed = (clothing.thicknessIn || 0) * 2;
-
-  // 7. As seen over the clothes, then minus the clothing width.
+  // 8. As seen over the clothes, then minus the clothing width.
   const seen = {
     chest: round1(measured.chest?.valueIn),
     bust: round1(measured.chest?.valueIn),
@@ -804,49 +834,29 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     }
   }
 
-  // 9. Notes — including exactly which gaps we refused to fill.
+  // 9. Notes. Only ever about what WAS measured, or about the video itself.
+  //    A category the clip did not contain is simply absent from the list
+  //    above — announcing the blank would suggest we had an opinion about it.
   const notes = [];
-  const label = (k) => REGIONS[k]?.label || k;
   // Caveats the on-device measurement raised itself (arms not clear, feet out of
   // shot). They come first because they explain everything below them.
   for (const n of poseNotes) notes.push(n);
-  // A blank the device caused itself (arms merged with the torso in every usable
-  // frame) needs its own explanation: the generic "not visible" note would be a
-  // lie, and a silent gap reads as a bug. Only said when the blank survived every
-  // frame, so it can never contradict a number we did report.
   const poseGaps = new Set(frames.flatMap((f) => (Array.isArray(f.unmeasured) ? f.unmeasured : [])));
   if (poseGaps.has('torso') && !measured.chest && !measured.waist && !measured.hips) {
-    notes.push('Arms were not clear of your sides in any frame, so chest, waist and hips were left blank rather than measured around an arm.');
+    notes.push('Your arms were not clear of your sides in any frame, so the tape could not pass around your body. Hold them a little away from you next time.');
   }
   if (poseGaps.has('arm') && !measured.arm) {
-    notes.push('Your upper arm was not held clear of your body in any frame, so arm width was left out.');
+    notes.push('Your arm was not held clear of your body in any frame, so no tape could be taken around a limb.');
   }
-  const visibleRegions = GIRTH_REGIONS.filter((k) => measured[k]);
-  if (visibleRegions.length) {
-    notes.push(`Measured from what is visible in the clip: ${visibleRegions.map((k) => label(k).toLowerCase()).join(', ')}${heightIn != null ? ' and full height' : ''}.`);
-  }
-  for (const k of dropped) {
-    if (k === 'neck' || k === 'arm') continue;
-    if (sawRegion(frames, k)) continue; // explained by the rejection note below
-    notes.push(`${label(k)} was not visible in the clip, so it was left blank rather than guessed.`);
-  }
-  if (rejectedEverywhere.length) {
-    const joined = rejectedEverywhere.length > 1
-      ? `${rejectedEverywhere.slice(0, -1).join(', ')} and ${rejectedEverywhere[rejectedEverywhere.length - 1]}`
-      : rejectedEverywhere[0];
-    notes.push(`${joined}: the span came out impossible in every frame that showed ${rejectedEverywhere.length > 1 ? 'them' : 'it'}, so ${rejectedEverywhere.length > 1 ? 'they were' : 'it was'} left blank rather than guessed.`);
-  }
-  if (droppedByCheck.size) {
-    const list = [...droppedByCheck];
-    const joined = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0];
-    notes.push(`${joined}: at least one frame measured an impossible span for ${list.length > 1 ? 'these' : 'this'}, so that reading was discarded rather than averaged in.`);
+  if (rejectedEverywhere.length || droppedByCheck.size) {
+    notes.push('One reading came out impossible for a human body in every frame that showed it, so it was left out rather than guessed.');
   }
   const clampedRegions = GIRTH_REGIONS.filter((k) => measured[k]?.clamped);
   if (clampedRegions.length) {
-    notes.push(`The ${clampedRegions.map((k) => label(k).toLowerCase()).join(' and ')} reading was outside the plausible range and has been clamped — treat ${clampedRegions.length > 1 ? 'them' : 'it'} as the least reliable number here.`);
+    notes.push('A girth read outside the plausible range and has been clamped — treat it as the least reliable number here.');
   }
   if (heightIn == null && (measured.chest || measured.waist || measured.hips)) {
-    notes.push('Height was not measured — your feet were not in frame. Film the full body to get it.');
+    notes.push('Your feet were not in shot, so nothing that needs the floor could be read. Keep your whole body in frame.');
   }
   if (headUnitsCorrection && Math.abs(headUnitsCorrection - 1) > 0.02) {
     const pct = Math.round(Math.abs(headUnitsCorrection - 1) * 100);
@@ -861,14 +871,18 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     );
   }
   if (clothing.note) notes.push(clothing.note);
-  if (gender.guess === 'unsure') notes.push('Gender was ambiguous in the video, so the size was picked from the body proportions alone.');
+  if (gender.chosen) {
+    notes.push(`Read against the ${gender.guess === 'female' ? 'women' : 'men'}'s measurement sheet, as you chose.`);
+  } else if (gender.guess === 'unsure') {
+    notes.push('You did not say who this video was for, so the size was picked from the body proportions alone.');
+  }
   if (size && adjusted.chest != null) {
     const key = sizeBasis === 'female' ? 'bust' : 'chest';
     const d = adjusted.chest - CHARTS[sizeBasis][size.sizeKey][key];
     if (d > 1.5) notes.push(`Size ${size.sizeKey} chest/bust may be snug.`);
     else if (d < -2) notes.push(`Size ${size.sizeKey} chest may be loose.`);
   } else {
-    notes.push('No size was given: without a chest or bust measurement there is nothing honest to put on the chart. A straight-on front view is what sizes you.');
+    notes.push('No size was given: a size needs a straight-on front view with your arms clear of your sides.');
   }
   if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} — a slower turn gives a steadier estimate.`);
   if (h && h.views > 1 && h.spread > 3) {
@@ -895,7 +909,9 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       height: heightIn != null
         ? { in: round1(heightIn), headUnits: headUnitsToHeight, views: h.views || 0, spread: round2(h.spread ?? 0) }
         : null,
-      dropped,
+      // What WAS measured, by name. What was not is not listed anywhere: an
+      // absent category is absent, never announced.
+      measured: Object.keys(measured),
       frames: frames.map((f) => ({
         view: f.view,
         landmarks: Object.keys(f.landmarks).length,
@@ -905,10 +921,14 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     size: size?.sizeKey || null,
     sizeChart: size?.row || null,
     sizeBasis: size ? sizeBasis : null,
+    // The catalogue: every category the video actually showed, in the group for
+    // the gender chosen. This is the list the user is shown, and it is the whole
+    // list — nothing absent is listed, and nothing listed is an estimate.
+    catalogue,
     notes,
     views: frames.map((f) => f.view),
     frameCount: frames.length,
-    reconciled: frames.length > 1 && visibleRegions.length > 0,
+    reconciled: frames.length > 1 && catalogue.items.length > 0,
     createdAt: new Date().toISOString(),
   };
   if (failures.length) result.frameFailures = failures;

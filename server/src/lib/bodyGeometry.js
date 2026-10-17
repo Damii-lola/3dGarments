@@ -21,18 +21,45 @@ export const HEAD_HEIGHT_CM = { male: 23.5, female: 22.5, unsure: 23.0 };
  */
 export const TARGET_HEAD_UNITS = 7.5;
 export const HEAD_UNIT_CORRECTION_LIMIT = 0.08;
-/** Width:depth of a cross-section, used only when no side view exists. */
-export const DEPTH_RATIO = { chest: 0.72, waist: 0.76, hips: 0.80, neck: 0.92, arm: 0.90 };
-
-/** The landmark pair that spans each region. */
-export const REGIONS = {
-  shoulder: { left: 'shoulderL', right: 'shoulderR', label: 'Shoulder', girth: false },
-  chest: { left: 'armpitL', right: 'armpitR', label: 'Chest', girth: true, ratio: 'chest' },
-  waist: { left: 'waistL', right: 'waistR', label: 'Waist', girth: true, ratio: 'waist' },
-  hips: { left: 'hipL', right: 'hipR', label: 'Hips', girth: true, ratio: 'hips' },
-  neck: { left: 'neckL', right: 'neckR', label: 'Neck', girth: true, ratio: 'neck' },
-  arm: { left: 'armL', right: 'armR', label: 'Upper arm', girth: true, ratio: 'arm' },
+/**
+ * Width:depth of a cross-section, used only when no side view exists. A torso
+ * is wider than it is deep; a head is the other way round.
+ */
+export const DEPTH_RATIO = {
+  head: 1.30, neck: 0.92, upperChest: 0.72, chest: 0.72, underbust: 0.74,
+  waist: 0.76, lowWaist: 0.78, hips: 0.80,
+  arm: 0.92, elbow: 0.88, wrist: 0.75,
+  knee: 0.88, calf: 0.88, ankle: 0.80,
 };
+
+/**
+ * Every region a landmark pair can span. Each is measured the same way — the
+ * horizontal separation of the pair, in the frame's own scale — and only the
+ * pair's meaning differs. `girth: true` means the pair describes a closed
+ * cross-section whose perimeter can be computed from a width and a depth.
+ */
+export const REGIONS = {
+  head: { left: 'headL', right: 'headR', label: 'Head', girth: true, ratio: 'head' },
+  neck: { left: 'neckL', right: 'neckR', label: 'Neck', girth: true, ratio: 'neck' },
+  shoulder: { left: 'shoulderL', right: 'shoulderR', label: 'Shoulder', girth: false },
+  upperChest: { left: 'upperChestL', right: 'upperChestR', label: 'Chest', girth: true, ratio: 'upperChest' },
+  chest: { left: 'armpitL', right: 'armpitR', label: 'Chest / bust', girth: true, ratio: 'chest' },
+  underbust: { left: 'underbustL', right: 'underbustR', label: 'Underbust', girth: true, ratio: 'underbust' },
+  waist: { left: 'waistL', right: 'waistR', label: 'Waist', girth: true, ratio: 'waist' },
+  lowWaist: { left: 'lowWaistL', right: 'lowWaistR', label: 'Lower waist', girth: true, ratio: 'lowWaist' },
+  hips: { left: 'hipL', right: 'hipR', label: 'Hips', girth: true, ratio: 'hips' },
+  arm: { left: 'armL', right: 'armR', label: 'Upper arm', girth: true, ratio: 'arm' },
+  elbow: { left: 'elbowL', right: 'elbowR', label: 'Elbow', girth: true, ratio: 'elbow' },
+  wrist: { left: 'wristL', right: 'wristR', label: 'Wrist', girth: true, ratio: 'wrist' },
+  knee: { left: 'kneeL', right: 'kneeR', label: 'Knee', girth: true, ratio: 'knee' },
+  calf: { left: 'calfL', right: 'calfR', label: 'Calf', girth: true, ratio: 'calf' },
+  highAnkle: { left: 'highAnkleL', right: 'highAnkleR', label: 'High ankle', girth: true, ratio: 'ankle' },
+  ankle: { left: 'ankleL', right: 'ankleR', label: 'Ankle', girth: true, ratio: 'ankle' },
+  // The garment across the leg at the ankle: a flat width, not a girth, and only
+  // a real reading when it is wider than a bare ankle could be.
+  hem: { left: 'ankleL', right: 'ankleR', label: 'Leg opening', girth: false },
+};
+/** The girths a size cannot be worked out without. */
 export const GIRTH_REGIONS = ['chest', 'waist', 'hips'];
 export const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.55, side: 1.0 };
 
@@ -50,11 +77,24 @@ export const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.55, side
  */
 export const SPAN_RANGES_CM = {
   shoulder: { width: [32, 58], depth: [26, 54] },
-  chest: { width: [22, 50], depth: [15, 36] },
-  waist: { width: [20, 52], depth: [13, 40] },
-  hips: { width: [24, 56], depth: [16, 42] },
+  head: { width: [12, 21], depth: [15, 26] },
   neck: { width: [8, 17], depth: [7, 17] },
+  upperChest: { width: [22, 50], depth: [15, 36] },
+  chest: { width: [22, 50], depth: [15, 36] },
+  underbust: { width: [19, 48], depth: [13, 38] },
+  waist: { width: [20, 52], depth: [13, 40] },
+  lowWaist: { width: [20, 52], depth: [13, 40] },
+  hips: { width: [24, 56], depth: [16, 42] },
   arm: { width: [6, 18], depth: [5, 18] },
+  elbow: { width: [5, 14], depth: [4, 14] },
+  wrist: { width: [3.5, 10], depth: [3, 10] },
+  knee: { width: [8, 21], depth: [7, 20] },
+  calf: { width: [7, 21], depth: [6, 20] },
+  highAnkle: { width: [5, 15], depth: [4, 14] },
+  ankle: { width: [5, 15], depth: [4, 14] },
+  // A trouser leg opening is 9-34 cm across; a bare ankle is ~6.5 and cannot be
+  // mistaken for one, because it simply fails this range.
+  hem: { width: [9, 34], depth: [9, 32] },
 };
 
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
@@ -352,9 +392,14 @@ export function sawRegion(frames, key) {
  * Measure one region across every frame: width from front/back frames, depth
  * from side frames, then a girth from the ellipse they describe. Returns null
  * when the landmark pair was never visible.
+ *
+ * `opts.views` restricts which frames count — "across the back" and "from the
+ * front" are the same line seen twice, and a tailor asking for X-Back wants the
+ * reading from the back, not whichever frame happened to be clearest.
  */
-export function measureRegion(key, frames) {
+export function measureRegion(key, frames, opts = {}) {
   const spec = REGIONS[key];
+  const views = opts.views || null;
   const widths = [];
   const depths = [];
   const viewsUsed = new Set();
@@ -362,6 +407,7 @@ export function measureRegion(key, frames) {
 
   for (const f of frames) {
     if (!f.scale) continue;
+    if (views && !views.includes(f.view)) continue;
     if (f.bad?.has(key)) { skipped += 1; continue; } // failed the sanity check
     const span = spanX(f, spec.left, spec.right);
     if (span == null || span < 0.005) continue; // landmark pair never placed
@@ -406,4 +452,83 @@ export function measureRegion(key, frames) {
     spread: w.spread,
     confidence: round2(confidence),
   };
+}
+
+/**
+ * The y of a body row, whichever way the landmarks name it: a pair (waistL/R,
+ * footL/R) averages, a single point (headTop, crotch) stands alone. One helper,
+ * so a measurement below can name its rows the way a tailor does.
+ */
+export function rowOf(frame, name) {
+  const single = point(frame, name);
+  if (single) return single.y;
+  return meanY(frame, `${name}L`, `${name}R`);
+}
+
+/** Rows whose position depends on the floor or the seat being real. */
+const FLOOR_ROWS = new Set(['crotch', 'foot']);
+
+/**
+ * A distance DOWN the body between two rows, in inches.
+ *
+ * The frame's scale is centimetres per image WIDTH, so a vertical distance in
+ * normalised y has to be divided by the aspect ratio to reach the same unit —
+ * which is what spanY does. Every sample must also land inside the item's
+ * plausible range: a camera looking up at the subject foreshortens every
+ * vertical, and a foreshortened torso length is not a torso length.
+ */
+export function measureVertical(frames, spec) {
+  const { from, to, views = null, range = null } = spec;
+  const needsFloor = FLOOR_ROWS.has(from) || FLOOR_ROWS.has(to);
+  const samples = [];
+  for (const f of frames) {
+    if (!f.scale) continue;
+    if (needsFloor && f.heightBad) continue;
+    if (views && !views.includes(f.view)) continue;
+    const a = rowOf(f, from);
+    const b = rowOf(f, to);
+    if (a == null || b == null) continue;
+    const span = spanY(f, a, b);
+    if (!(span > 0.005)) continue;
+    const inches = toIn(span * f.scale.cmPerWidth);
+    if (range && (inches < range[0] || inches > range[1])) continue;
+    samples.push({ value: inches, weight: frameQuality(f) });
+  }
+  const m = robustMean(samples);
+  return m ? { in: m.value, n: m.n, spread: m.spread } : null;
+}
+
+/**
+ * The length of a path through joint landmarks — the arm, for a sleeve length.
+ * Each segment is measured in the frame plane and converted with that frame's
+ * scale. Side-on frames are excluded by the caller: an arm pointing at the lens
+ * is foreshortened into nothing.
+ */
+export function measurePath(frames, spec) {
+  const {
+    points, views = ['front', 'back', 'three-quarter'], range = null, sides = ['L', 'R'],
+  } = spec;
+  const samples = [];
+  for (const f of frames) {
+    if (!f.scale) continue;
+    if (views && !views.includes(f.view)) continue;
+    const perSide = [];
+    for (const side of sides) {
+      const pts = points.map((name) => point(f, `${name}${side}`) || point(f, name));
+      if (pts.some((p) => !p)) continue;
+      let span = 0;
+      for (let i = 1; i < pts.length; i += 1) {
+        const dx = pts[i].x - pts[i - 1].x;
+        const dy = (pts[i].y - pts[i - 1].y) / f.aspect;
+        span += Math.hypot(dx, dy);
+      }
+      const inches = toIn(span * f.scale.cmPerWidth);
+      if (range && (inches < range[0] || inches > range[1])) continue;
+      perSide.push(inches);
+    }
+    if (!perSide.length) continue;
+    samples.push({ value: perSide.reduce((s, v) => s + v, 0) / perSide.length, weight: frameQuality(f) });
+  }
+  const m = robustMean(samples);
+  return m ? { in: m.value, n: m.n, spread: m.spread } : null;
 }

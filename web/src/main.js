@@ -64,6 +64,7 @@ const analysis = document.getElementById('analysis');
 const sizeValue = document.getElementById('size-value');
 const sizeSub = document.getElementById('size-sub');
 const factsEl = document.getElementById('facts');
+const measuresTitle = document.getElementById('measures-title');
 const measureGrid = document.getElementById('measure-grid');
 const measuresNote = document.getElementById('measures-note');
 const mathEl = document.getElementById('math');
@@ -73,6 +74,8 @@ const retakeBtn = document.getElementById('retake-btn');
 const startOverBtn = document.getElementById('start-over-btn');
 
 const statusEl = document.getElementById('status');
+
+const whoButtons = [...document.querySelectorAll('.who-btn')];
 
 const seenEl = document.getElementById('seen');
 const seenNote = document.getElementById('seen-note');
@@ -105,6 +108,14 @@ let videoUrl = null;
 let posterUrl = null;
 let analyzing = false;
 
+/**
+ * Who the video is of, as the user answered. 'unsure' until they pick: the
+ * gender group decides the head-length constant (and so every centimetre), the
+ * size chart, and which of the two measurement sheets is computed, and none of
+ * those may be guessed from a silhouette.
+ */
+let chosenGender = 'unsure';
+
 /** The frames the last measurement looked at, for "What the app saw". */
 let lastSeen = [];
 let lastSeenNote = '';
@@ -130,9 +141,25 @@ function el(tag, className, text) {
 
 const fmtIn = (v) => (v == null ? '—' : `${v}"`);
 
+/** Analyze is only live once the group has been picked and nothing is running. */
+function updateAnalyzeEnabled() {
+  analyzeBtn.disabled = analyzing || chosenGender === 'unsure';
+}
+
+/** Record the group the user picked and show which one is on. */
+function setGender(value) {
+  chosenGender = value;
+  for (const btn of whoButtons) {
+    const on = btn.dataset.gender === value;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  updateAnalyzeEnabled();
+}
+
 function setBusy(busy) {
   analyzing = busy;
-  analyzeBtn.disabled = busy;
+  updateAnalyzeEnabled();
   startOverTrim.disabled = busy;
 }
 
@@ -283,9 +310,15 @@ function fact(label, value) {
 function renderFacts(data) {
   factsEl.replaceChildren();
   const g = data.gender || {};
-  const genderText = g.guess === 'male' ? 'Male' : g.guess === 'female' ? 'Female' : 'Not sure';
-  const genderConf = g.confidence ? ` (${Math.round(g.confidence * 100)}% sure)` : '';
-  factsEl.append(fact('Detected', genderText + genderConf));
+  // The group is the user's own answer, not a guess — so say which sheet is
+  // being read rather than pretending the video told us.
+  if (g.chosen) {
+    factsEl.append(fact('Measuring for', g.guess === 'female' ? 'women' : 'men'));
+  } else {
+    const genderText = g.guess === 'male' ? 'Male' : g.guess === 'female' ? 'Female' : 'Not sure';
+    const genderConf = g.confidence ? ` (${Math.round(g.confidence * 100)}% sure)` : '';
+    factsEl.append(fact('Detected', genderText + genderConf));
+  }
 
   const c = data.clothing || {};
   if (c.items?.length || c.density || c.fit) {
@@ -304,34 +337,33 @@ function renderFacts(data) {
   if (views.length) factsEl.append(fact('Views read', [...new Set(views)].join(', ')));
 }
 
+/**
+ * The catalogue: every category this clip actually showed, in the group the
+ * user picked. The list IS the answer, so a category the video never contained
+ * is not listed at all — no blank rows, no "not measured" placeholders.
+ */
 function renderMeasures(data) {
   measureGrid.replaceChildren();
-  const m = data.adjusted || {};
-  const female = data.sizeBasis === 'female';
-  const chestLabel = female ? 'Bust' : data.sizeBasis === 'male' ? 'Chest' : 'Chest / bust';
+  const items = data.catalogue?.items || [];
+  const group = data.catalogue?.group;
+  measuresTitle.textContent = group === 'female' ? "What we measured (women's sheet)"
+    : group === 'male' ? "What we measured (men's sheet)"
+      : 'What we measured';
 
-  const items = [
-    [chestLabel, fmtIn(m.chest)],
-    ['Waist', fmtIn(m.waist)],
-    ['Hips', fmtIn(m.hips)],
-    ['Shoulder', fmtIn(m.shoulder)],
-    ['Neck', fmtIn(m.neck)],
-    ['Upper arm', fmtIn(m.arm)],
-    ['Height', fmtIn(m.height)],
-  ];
-  for (const [label, value] of items) {
+  for (const item of items) {
     const cell = el('div', 'measure');
-    cell.append(el('span', 'measure-label', label), el('span', 'measure-value', value));
+    cell.append(el('span', 'measure-label', item.label), el('span', 'measure-value', `${item.in}"`));
     measureGrid.append(cell);
   }
 
-  const seenChest = data.measurements?.chest;
-  const removed = m.bodyWidthRemovedIn;
-  if (seenChest != null && removed) {
-    measuresNote.textContent = `Measured about ${fmtIn(seenChest)} over the clothing, then widened down by ${removed}" to estimate the body itself.`;
-  } else {
-    measuresNote.textContent = 'Computed from the visible landmarks in your video — not a tape measure.';
+  if (!items.length) {
+    measuresNote.textContent = 'Nothing in this clip could be measured.';
+    return;
   }
+  const removed = data.adjusted?.bodyWidthRemovedIn;
+  measuresNote.textContent = removed
+    ? `Read off your video over your clothes, then widened down by ${removed}" for the body underneath. Categories your clip did not show are not listed.`
+    : 'Each number was read off the landmarks in your video, over your clothes. Categories your clip did not show are simply not listed.';
 }
 
 /**
@@ -342,18 +374,10 @@ function renderMeasures(data) {
 function renderMath(data) {
   mathList.replaceChildren();
   const g = data.geometry || {};
-  const methods = g.methods || {};
   const rows = [];
 
-  for (const key of ['chest', 'waist', 'hips', 'neck', 'arm', 'shoulder']) {
-    const m = methods[key];
-    if (!m) continue;
-    if (m.girthIn != null) {
-      rows.push(`${m.label}: ${m.widthIn}" wide × ${m.depthIn}" deep (${m.depthSource}) → perimeter ${m.girthIn}"`);
-    } else {
-      rows.push(`${m.label}: ${m.widthIn}" across (${m.widthView ?? m.widthViews} view${(m.widthViews ?? 1) === 1 ? '' : 's'})`);
-    }
-  }
+  // One line per measured category, straight from the engine's own working.
+  for (const item of data.catalogue?.items || []) rows.push(`${item.label}: ${item.how}`);
 
   const h = g.height;
   if (h) {
@@ -363,10 +387,6 @@ function renderMath(data) {
   if (g.scale) {
     const anchors = (g.scale.anchors || []).join(', ');
     rows.push(`Scale: ${g.scale.cmPerImageWidth} cm per image width${anchors ? ` — anchored on ${anchors}` : ''}`);
-  }
-
-  if (g.dropped?.length) {
-    rows.push(`Left blank (not measurable from this clip): ${g.dropped.join(', ')}`);
   }
   if (g.scale?.headUnitsCorrection && Math.abs(g.scale.headUnitsCorrection - 1) > 0.02) {
     rows.push(`Head-length correction: ×${g.scale.headUnitsCorrection} (adult proportions are 7.1–7.9 heads tall)`);
@@ -418,6 +438,7 @@ async function runAnalysis() {
           from,
           to,
           maxWidth: 720,
+          gender: chosenGender,
           onProgress: (msg) => setStatus(msg),
         });
         log('on-device measurement', measured);
@@ -443,6 +464,7 @@ async function runAnalysis() {
           }
           setStatus(`Sending ${measured.frames.length} measurements…`);
           data = await analyzeGeometry(measured, {
+            gender: chosenGender,
             onTick: (s) => setStatus(`Working out your measurements… ${s}s`),
           });
         } else {
@@ -477,6 +499,7 @@ async function runAnalysis() {
       // The tick keeps the status moving so it never looks frozen.
       setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
       data = await analyzeBody(frames, {
+        gender: chosenGender,
         onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`),
       });
     }
@@ -516,6 +539,9 @@ input.addEventListener('change', () => {
 });
 
 analyzeBtn.addEventListener('click', runAnalysis);
+for (const btn of whoButtons) {
+  btn.addEventListener('click', () => setGender(btn.dataset.gender));
+}
 startOverTrim.addEventListener('click', resetAll);
 retakeBtn.addEventListener('click', resetAll);
 startOverBtn.addEventListener('click', resetAll);
@@ -540,27 +566,38 @@ if (new URLSearchParams(location.search).has('demo')) {
     sizeBasis: 'male',
     reconciled: true,
     frameCount: 6,
-    gender: { guess: 'male', confidence: 0.82 },
+    gender: { guess: 'male', confidence: 1, chosen: true },
     clothing: { items: ['t-shirt', 'jeans'], fit: 'regular', density: 'light', thicknessIn: 0.15 },
     measurements: { chest: 41.2, waist: 36.4, hips: 40.2, shoulder: 18.3, neck: 14.6, arm: 13.1, height: 71.1 },
     adjusted: { chest: 40.9, waist: 36.1, hips: 39.9, shoulder: 18.0, neck: 14.6, arm: 13.1, height: 71.1, bodyWidthRemovedIn: 0.3 },
     proportions: { build: 'average', shoulderToHip: 1.15, legToTorso: 0.95 },
+    catalogue: {
+      group: 'male',
+      items: [
+        { key: 'head', label: 'Head', in: 22.7, cm: 57.7, how: '5.9" across x 7.7" deep (1.3x width) -> perimeter 22.7"' },
+        { key: 'neck', label: 'Neck Size', in: 14.6, cm: 37.1, how: '4.7" across x 4.3" deep (side view x2) -> perimeter 14.6"' },
+        { key: 'chest', label: 'Chest', in: 41.2, cm: 104.6, how: '15.0" across x 10.6" deep (side view x2) -> perimeter 41.2"' },
+        { key: 'waist', label: 'Waist', in: 36.4, cm: 92.5, how: '13.0" across x 9.8" deep (side view x2) -> perimeter 36.4"' },
+        { key: 'hips', label: 'Hip/Seat', in: 40.2, cm: 102.1, how: '14.2" across x 11.0" deep (side view x2) -> perimeter 40.2"' },
+        { key: 'shoulder', label: 'Shoulder', in: 18.3, cm: 46.5, how: '18.3" across the shoulders, from 3 frames' },
+        { key: 'xBack', label: 'X-Back', in: 18.0, cm: 45.7, how: '18.0" across your back at armpit level, read from the frames showing your back, from 2 frames' },
+        { key: 'napeToWaist', label: 'Nape to waist', in: 17.4, cm: 44.2, how: '17.4" from the nape of your neck to your waist line, from 4 frames' },
+        { key: 'sleeveLength', label: 'Sleeve Length', in: 24.1, cm: 61.2, how: '24.1" from the shoulder point, through the elbow, to the wrist bone, from 3 frames' },
+        { key: 'waistToKnee', label: 'Waist to Knee', in: 22.4, cm: 56.9, how: '22.4" from your waist line to your knee, from 4 frames' },
+        { key: 'waistToFloor', label: 'Waist to Floor', in: 41.4, cm: 105.2, how: '41.4" from your waist line to the floor, from 4 frames' },
+        { key: 'calf', label: 'Calf', in: 14.6, cm: 37.1, how: '5.0" across x 4.4" deep (0.88x width) -> perimeter 14.6"' },
+        { key: 'ankle', label: 'Ankle', in: 8.6, cm: 21.8, how: '3.0" across x 2.4" deep (0.8x width) -> perimeter 8.6"' },
+        { key: 'totalHeight', label: 'Total Height', in: 71.1, cm: 180.6, how: '71.1" from the crown of your head to the floor, from 4 frames' },
+      ],
+    },
     geometry: {
       aspect: 0.75,
       scale: { cmPerImageWidth: 185.53, anchors: ['23.5 cm head'] },
-      methods: {
-        chest: { label: 'Chest', girthIn: 41.2, widthIn: 15.0, depthIn: 10.6, depthSource: 'side view x2', widthViews: 3, widthView: 3, confidence: 0.86 },
-        waist: { label: 'Waist', girthIn: 36.4, widthIn: 13.0, depthIn: 9.8, depthSource: 'side view x2', widthViews: 3, widthView: 3, confidence: 0.84 },
-        hips: { label: 'Hips', girthIn: 40.2, widthIn: 14.2, depthIn: 11.0, depthSource: 'side view x2', widthViews: 3, widthView: 3, confidence: 0.83 },
-        neck: { label: 'Neck', girthIn: 14.6, widthIn: 4.7, depthIn: 4.3, depthSource: 'side view x2', widthViews: 4, widthView: 4, confidence: 0.8 },
-        arm: { label: 'Upper arm', girthIn: 13.1, widthIn: 4.3, depthIn: 3.9, depthSource: 'side view x2', widthViews: 4, widthView: 4, confidence: 0.75 },
-        shoulder: { label: 'Shoulder', girthIn: null, widthIn: 18.3, widthViews: 3, widthView: 3, depthSource: '', confidence: 0.8 },
-      },
+      methods: {},
       height: { in: 71.1, headUnits: 7.5, views: 4, spread: 0.4 },
-      dropped: [],
     },
     notes: [
-      'Measured from what is visible in the clip: chest, waist, hips and full height.',
+      'Read against the men\'s measurement sheet, as you chose.',
       'Clothing (t-shirt, jeans) · light density · regular fit — about 0.3 in of width subtracted from the body estimate.',
       'Depth came from the side-on frames, so the girths are measured rather than modelled.',
     ],

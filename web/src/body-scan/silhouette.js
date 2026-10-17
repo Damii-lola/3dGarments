@@ -37,6 +37,13 @@ export const HEAD_NECK_RATIO = 0.88;
  */
 export const HEAD_LENGTH_CM = 23.5;
 /**
+ * The same constant per group. A man's head and a woman's are not the same
+ * length, and every other number is scaled by this one, so the user's own
+ * answer is worth about 4% on every measurement. 23.5 cm stays the default for
+ * a clip nobody labelled.
+ */
+export const HEAD_LENGTH_CM_BY_GENDER = { male: 23.5, female: 22.5, unsure: 23.0 };
+/**
  * Head length as a multiple of the eye-to-mouth distance, from adult face
  * proportions: the eye line is the head's midpoint and the mouth line sits a
  * third of the way from the eyes to the chin, so eye-to-mouth is a third of the
@@ -45,6 +52,14 @@ export const HEAD_LENGTH_CM = 23.5;
 export const FACE_HEAD_FACTOR = 3;
 /** How far an arm's joint line must clear the torso before its row counts. */
 const ARM_MARGIN_FRAC = 0.015;
+/**
+ * Head breadth against the distance between the pose's two ear landmarks. The
+ * model marks each ear at its own centre, and the skull reaches about a twelfth
+ * further out on each side — the same kind of published proportion as
+ * HEAD_NECK_RATIO, and the only reason a head circumference read off the ears
+ * comes out the size of a hat rather than a head.
+ */
+export const HEAD_EAR_BREADTH_FACTOR = 1.12;
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -131,6 +146,8 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   const vis = (i) => Number(lm[i]?.visibility) || 0;
   const row = (ny) => Math.round(ny * maskH);
   const margin = ARM_MARGIN_FRAC * maskW;
+  /** The head length this scale is anchored to, for the group being measured. */
+  const headCm = HEAD_LENGTH_CM_BY_GENDER[String(gender).toLowerCase()] || HEAD_LENGTH_CM;
 
   // ---- extent of the silhouette ----
   let topRow = -1;
@@ -219,6 +236,30 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   };
   /** A gap narrower than this is mask noise, not an arm held clear. */
   const gapMinPx = Math.max(2, Math.round(maskW * 0.012));
+
+  /**
+   * The mask run at a row nearest a joint, optionally required to sit OUTSIDE
+   * the torso run — a limb lying against the body is one blob with it, and a
+   * "limb" that measures as wide as the torso is the torso.
+   */
+  const runNear = (rowY, targetX, outside = false) => {
+    const y = Math.max(0, Math.min(maskH - 1, Math.round(rowY)));
+    if (!(y > topRow) || y >= botRow) return null;
+    const runs = rowRuns(mask, maskW, maskH, y);
+    if (!runs.length) return null;
+    let pool = runs;
+    if (outside) {
+      const torso = runAt(runs, centre);
+      if (torso) pool = runs.filter((r) => r.x1 < torso.x0 - 1 || r.x0 > torso.x1 + 1);
+    }
+    if (!pool.length) return null;
+    let best = null;
+    for (const r of pool) {
+      const d = Math.abs((r.x0 + r.x1) / 2 - targetX);
+      if (!best || d < best.d) best = { r, d };
+    }
+    return best ? best.r : null;
+  };
 
   const poseScale = metricScale({ lm, world, imgW, imgH });
 
@@ -354,6 +395,18 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     notes.push('In some frames your arms were close to your sides, so those readings came from lower down the torso — hold your arms a little clear for the truest numbers.');
   }
 
+  // ---- further named lines on the torso ----
+  // Armscye line: where the arms first clear the body, which is the armpit.
+  const upperChestRow = firstClear > 0 ? firstClear : -1;
+  // Underbust: a fixed third of the way down from the bust line to the waist,
+  // which is where a tape goes. Positional, so it means the same line in every
+  // frame rather than wherever a row happens to be narrowest.
+  const underbustRow = chestRow > 0 && waistRow > chestRow + 3
+    ? Math.round(lerp(chestRow, waistRow, 0.35)) : -1;
+  // Lower waist: midway between the waist line and the hip line.
+  const lowWaistRow = waistRow > 0 && hipRow > waistRow + 3
+    ? Math.round(lerp(waistRow, hipRow, 0.5)) : -1;
+
   // ---- upper-arm width: the arm run midway between shoulder and elbow ----
   const armRow = Math.round(lerp(shoulderRow, elbowRow, 0.5));
   let armRun = null;
@@ -400,7 +453,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   // measured from joints rather than from hair: when it agrees with the face, the
   // hair really is hair. When it does not, the frame is dropped back to the mask,
   // which is what the clips with short hair and no headwear already needed.
-  const faceCmPerPx = faceHeadPx > 4 ? HEAD_LENGTH_CM / faceHeadPx : 0;
+  const faceCmPerPx = faceHeadPx > 4 ? headCm / faceHeadPx : 0;
   const poseAgrees = poseScale && faceCmPerPx > 0
     && Math.abs(Math.log(faceCmPerPx / poseScale.cmPerPx)) < Math.log(1.15);
   const useFace = faceHeadPx > 4 && maskHeadPx > 4
@@ -444,6 +497,37 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     landmarks[`${key}L`] = P(edge.x0, y);
     landmarks[`${key}R`] = P(edge.x1, y);
   }
+  // Further named lines on the torso: the armscye line, the underbust line and
+  // the lower waist. Each is the same measured span as the chest, waist and hips
+  // — one more place a tape goes.
+  for (const [name, y] of [['upperChest', upperChestRow], ['underbust', underbustRow], ['lowWaist', lowWaistRow]]) {
+    const edge = y > 0 ? spanAt.get(y) : null;
+    if (!edge) continue;
+    // The armscye line sits right under the shoulder line, so unlike the rows
+    // above there is no "too close to the shoulder" test here — only a row
+    // pinned to the bottom of the frame is refused.
+    if (y <= shoulderRow || y > botRow - 2) continue;
+    landmarks[`${name}L`] = P(edge.x0, y);
+    landmarks[`${name}R`] = P(edge.x1, y);
+  }
+
+  // Head breadth: the ears, not the hair. The mask's head run is hair-inclusive
+  // at least as often as it is a skull (a headscarf, an afro), and a head
+  // measured wide reports a head like a bucket. The pose's two ear landmarks sit
+  // on the skull, so they are what the breadth is read from — and only from a
+  // frame the head faces the camera in, because ears seen in profile overlap.
+  if (!sideOn && vis(7) > 0.4 && vis(8) > 0.4) {
+    const a = lm[7];
+    const b = lm[8];
+    const y = Math.round(((a.y + b.y) / 2) * maskH);
+    const x0 = Math.min(a.x, b.x) * maskW;
+    const x1 = Math.max(a.x, b.x) * maskW;
+    // Widened to the skull on each side of the ears' own line.
+    const mid = (x0 + x1) / 2;
+    const half = ((x1 - x0) / 2) * HEAD_EAR_BREADTH_FACTOR;
+    if (x1 - x0 >= 4) { landmarks.headL = P(mid - half, y); landmarks.headR = P(mid + half, y); }
+  }
+
   if (armRun) { landmarks.armL = P(armRun.x0, armRow); landmarks.armR = P(armRun.x1, armRow); }
 
   const legsVisible = !feetCut || (vis(25) > 0.5 && vis(27) > 0.5);
@@ -457,6 +541,81 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
       landmarks.footL = P(runs[0].x0 + runs[0].w * 0.25, botRow);
       landmarks.footR = P(runs[0].x0 + runs[0].w * 0.75, botRow);
     }
+  }
+
+  // ---- limbs ----
+  // A limb is read the same way the torso is: the mask run at that row. The L/R
+  // pair is emitted as one run's width around the mid-point of whatever limbs
+  // were found, because it is the WIDTH that is wanted and a knee is a knee
+  // whichever leg it is on. A run as wide as the body itself is both legs at
+  // once — a skirt, or trousers loose enough to merge — and is refused here
+  // rather than reported as a limb.
+  const hipSpan = hipRow > 0 ? spanAt.get(hipRow) : null;
+  const refW = shoulderRun?.w || (hipSpan ? hipSpan.x1 - hipSpan.x0 : 0) || maskW * 0.25;
+  /** The limb run at one row, or null when nothing there is limb-sized. */
+  const limbAt = (y, xs, { outside = false, maxFrac = 0.5 } = {}) => {
+    const found = [];
+    for (const x of xs) {
+      const r = runNear(y, x, outside);
+      if (!r || r.w < 2 || r.w > refW * maxFrac) continue;
+      found.push(r);
+    }
+    if (!found.length) return null;
+    found.sort((a, b) => a.w - b.w);
+    const w = found[Math.floor(found.length / 2)].w;
+    const mid = found.reduce((s, r) => s + (r.x0 + r.x1) / 2, 0) / found.length;
+    return { w, mid };
+  };
+  const putLimb = (name, y, hit) => {
+    if (!hit) return null;
+    landmarks[`${name}L`] = P(hit.mid - hit.w / 2, y);
+    landmarks[`${name}R`] = P(hit.mid + hit.w / 2, y);
+    return hit.w;
+  };
+
+  if (elbowRow > shoulderRow + 6 && vis(13) > 0.4 && vis(14) > 0.4) {
+    putLimb('elbow', elbowRow, limbAt(elbowRow, [lm[13].x * maskW, lm[14].x * maskW], { outside: true, maxFrac: 0.35 }));
+  }
+  if (vis(15) > 0.4 && vis(16) > 0.4) {
+    const wristRow = Math.round(((lm[15].y + lm[16].y) / 2) * maskH);
+    if (wristRow > elbowRow + 4 && wristRow < botRow) {
+      // The wrist is the NARROWEST point between the elbow and the wrist joint.
+      // The pose marks a joint, and the mask row under a joint is the forearm's
+      // near end, which would report a wrist as thick as an arm.
+      const xs = [lm[15].x * maskW, lm[16].x * maskW];
+      let best = null;
+      for (let y = elbowRow + 4; y <= wristRow; y += 1) {
+        const hit = limbAt(y, xs, { outside: true, maxFrac: 0.2 });
+        if (hit && (!best || hit.w < best.hit.w)) best = { y, hit };
+      }
+      if (best) putLimb('wrist', best.y, best.hit);
+    }
+  }
+
+  const kneeRow = Math.round(((lm[25].y + lm[26].y) / 2) * maskH);
+  // The legs are only read when the pose is sure of them and the body was not
+  // cropped: a skirt hem looks exactly like a knee joint to a pose model.
+  const legClean = !bodyCropped && vis(25) > 0.4 && vis(26) > 0.4 && vis(27) > 0.4 && vis(28) > 0.4
+    && kneeRow > hipRowLM + 2 && ankleRow > kneeRow + 6;
+  if (legClean) {
+    const legXs = (t) => [lerp(lm[25].x, lm[27].x, t) * maskW, lerp(lm[26].x, lm[28].x, t) * maskW];
+    for (const [name, t, maxFrac] of [['knee', 0, 0.5], ['calf', 0.35, 0.5], ['highAnkle', 0.78, 0.45]]) {
+      const y = Math.round(lerp(kneeRow, ankleRow, t));
+      putLimb(name, y, limbAt(y, legXs(t), { maxFrac }));
+    }
+    if (!feetCut) putLimb('ankle', ankleRow, limbAt(ankleRow, legXs(1), { maxFrac: 0.45 }));
+  }
+
+  // Joint points, for anything measured ALONG a limb: a sleeve length is a tape
+  // from the shoulder point to the wrist bone, not a width. Only joints the pose
+  // is sure of are sent — a confident-looking sleeve length off a guessed wrist
+  // would be a fabricated number.
+  for (const [name, i] of [['shoulderJL', 11], ['shoulderJR', 12], ['elbowJL', 13], ['elbowJR', 14], ['wristJL', 15], ['wristJR', 16], ['kneeJL', 25], ['kneeJR', 26]]) {
+    if (vis(i) > 0.4) landmarks[name] = P(lm[i].x * maskW, lm[i].y * maskH);
+  }
+  if (neckRow > 0) {
+    const r = torsoAt(neckRow);
+    if (r) landmarks.nape = P((r.x0 + r.x1) / 2, neckRow);
   }
 
   // ---- which way the person is facing (detected near the top, before widths) ----
@@ -493,7 +652,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
       topRow, botRow, neckRow, chinRow, shoulderRow, elbowRow, armRow, hipRowLM, crotchRow,
       usableRows: usable.length,
       verdicts,
-      rows: { chestRow, waistRow, hipRow },
+      rows: { chestRow, waistRow, hipRow, upperChestRow, underbustRow, lowWaistRow, kneeRow },
       widths: {
         shoulder: shoulderRun?.w ?? null,
         neck: neckRow > 0 ? widthAt(neckRow) : null,
@@ -510,7 +669,8 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
         face: faceHeadPx ? r1(faceHeadPx) : null,
         topRow: headTopRow,
       },
-      headCmPerWidth: headHeightPx > 0 ? (HEAD_LENGTH_CM / headHeightPx) * maskW : null,
+      headCmPerWidth: headHeightPx > 0 ? (headCm / headHeightPx) * maskW : null,
+      headCm,
       poseCmPerWidth: poseScale ? poseScale.cmPerPx * imgW : null,
       poseSpread: poseScale ? poseScale.spread : null,
       mask: [maskW, maskH],
