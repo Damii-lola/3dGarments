@@ -479,7 +479,10 @@ function bestSize(sex, girth) {
  */
 function geometryFrames(body) {
   if (!body || body.source !== 'pose' || !Array.isArray(body.frames)) return null;
-  const frames = body.frames.filter((f) => f && f.landmarks && typeof f.landmarks === 'object').slice(0, 8);
+  // Take everything the device measured, not a handful: every extra view of the
+  // chest is another frame the tape is read from, and one frame deciding a size
+  // is exactly how a good clip gets a bad number.
+  const frames = body.frames.filter((f) => f && f.landmarks && typeof f.landmarks === 'object').slice(0, 16);
   if (!frames.length) return null;
   return {
     frames,
@@ -885,7 +888,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     // to be modelled rather than seen from the side, the size can honestly sit a
     // size either way — and saying so is better than sounding certain.
     if (measured.chest && !measured.chest.depthMeasured) {
-      notes.push(`Size ${size.sizeKey} is read from your front width alone — no side-on frame gave a clean body depth — so it could sit one size either way.`);
+      const v = measured.chest.widthViews;
+      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — no side-on frame gave a clean body depth — so it could sit one size either way.`);
     }
   } else {
     notes.push('No size was given: a size needs a straight-on front view with your arms clear of your sides.');

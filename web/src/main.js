@@ -433,8 +433,12 @@ async function runAnalysis() {
     let data = null;
     if (!forceLlm) {
       try {
+        // Sample the whole turn densely. Each measurement is then a robust mean
+        // over many views instead of a lucky frame, and the side-on part of the
+        // turn is more likely to be caught while it is actually clean — which is
+        // what stops the depth having to be modelled at all.
         const measured = await analyzePose(recordedBlob, {
-          count: 6,
+          count: 16,
           from,
           to,
           maxWidth: 720,
