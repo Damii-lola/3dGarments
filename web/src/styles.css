@@ -136,6 +136,65 @@ body {
 }
 .step-note { margin: 0; font-size: 0.82rem; color: var(--faint); }
 
+/* The known-size calibration. Closed by default: it is the thing that makes the
+   numbers exact, not the thing that gets in the way of a first try. */
+.calib {
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+.calib-summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink, #f2f2f4);
+  list-style: none;
+}
+.calib-summary::-webkit-details-marker { display: none; }
+.calib-summary::before { content: '+ '; color: var(--accent); font-weight: 700; }
+.calib[open] .calib-summary::before { content: '- '; }
+.calib-hint { margin: 0.5rem 0 0.7rem; font-size: 0.82rem; color: var(--faint); line-height: 1.5; }
+.calib-field { display: grid; gap: 0.3rem; margin-bottom: 0.6rem; }
+.calib-field-label { font-size: 0.78rem; color: var(--faint); }
+.calib-field select,
+.calib-field input[type="range"] { width: 100%; }
+.calib-field select {
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  border: 1px solid var(--line-2);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+}
+/* The stage is the frame itself: the canvas keeps the clip's proportions and the
+   dots are placed in percentages of it, so a mark on the canvas is a mark on the
+   frame at any size the canvas is drawn. */
+.calib-stage {
+  position: relative;
+  display: block;
+  margin: 0.2rem 0 0.6rem;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+}
+.calib-stage canvas { display: block; width: 100%; height: auto; }
+.calib-dot {
+  position: absolute;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin: -0.7rem 0 0 -0.7rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+  touch-action: none;
+}
+.calib-dot:active { cursor: grabbing; }
+.calib-dot:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
 /* Who the video is of. Asked, never guessed: the group decides the head-length
    constant, the size chart and which measurement sheet is read. */
 .who {

@@ -81,7 +81,13 @@ export function analyzeGeometry(measured, opts = {}) {
     model: measured.model,
     gender: opts.gender || 'unsure',
     aspect: measured.width && measured.height ? measured.width / measured.height : undefined,
+    // A known-size object the user marked on one frame. It outweighs the head
+    // ruler, and it belongs to that frame alone: the camera moves, so a scale
+    // that was right one moment is not right the next.
+    references: Array.isArray(opts.references) ? opts.references.slice(0, 4) : [],
     frames: measured.frames.map((f) => ({
+      // The time this frame was taken from, so a marked object finds its frame.
+      t: f.t,
       landmarks: f.landmarks,
       visible: f.visible,
       view: f.view,
@@ -90,12 +96,16 @@ export function analyzeGeometry(measured, opts = {}) {
       turn: f.turn,
       gender: f.gender,
       confidence: f.confidence,
+      // Sharpness and how well lit the frame really was, read from its pixels
+      // rather than handed over as a neutral constant.
+      camera: f.camera,
       notes: f.notes,
       unmeasured: f.unmeasured,
     })),
   };
   log('POST', url, '(on-device geometry)');
   log('frames', body.frames.length, 'aspect', body.aspect, 'measuring-for', body.gender, 'model', body.model,
+    'references', body.references.length,
     body.frames.map((f) => `${f.view} conf=${Number(f.confidence).toFixed(2)} n=${Object.keys(f.landmarks).length}`));
 
   return request(url, {

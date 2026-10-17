@@ -63,6 +63,40 @@
 
         <p class="step-note" id="trim-note"></p>
 
+        <!-- Scale is the single biggest source of error in the whole pipeline:
+             every centimetre comes from an assumed head length, so a 4% head
+             error moves every measurement by 4%. An object of a known size,
+             marked on one frame, sets the scale outright. -->
+        <details class="calib" id="calib">
+          <summary class="calib-summary">Make it exact &mdash; mark something of a known size</summary>
+          <p class="calib-hint">Hold something you know the size of in one frame &mdash; a bank card flat against your chest, an A4 sheet, a ruler &mdash; then find that frame below and drag the two dots onto its ends. The app then measures you against that instead of against your head, which is the biggest single source of error left.</p>
+
+          <label class="calib-field">
+            <span class="calib-field-label">What are you holding?</span>
+            <select id="calib-what">
+              <option value="">Nothing &mdash; use my head instead</option>
+              <option value="card">A bank card (8.56 cm)</option>
+              <option value="a4short">An A4 sheet, short edge (21.0 cm)</option>
+              <option value="a4long">An A4 sheet, long edge (29.7 cm)</option>
+              <option value="ruler">A 30 cm ruler (30 cm)</option>
+              <option value="door">A standard door (203 cm)</option>
+            </select>
+          </label>
+
+          <label class="calib-field" id="calib-time-field" hidden>
+            <span class="calib-field-label">Frame</span>
+            <input type="range" id="calib-time" min="0" max="100" step="0.25" value="0" />
+          </label>
+
+          <div class="calib-stage" id="calib-stage" hidden>
+            <canvas id="calib-canvas" width="360" height="640"></canvas>
+            <button type="button" class="calib-dot" id="calib-dot-a" aria-label="First end of the object"></button>
+            <button type="button" class="calib-dot" id="calib-dot-b" aria-label="Second end of the object"></button>
+          </div>
+
+          <p class="step-note" id="calib-note"></p>
+        </details>
+
         <!-- The gender group decides the head-length constant, the size chart AND
              which of the two measurement sheets is read, so it is asked rather
              than guessed: a silhouette cannot tell a bust from a chest. -->

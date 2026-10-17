@@ -15,6 +15,7 @@ import { extractFrames, extractPoster, readDuration } from './body-scan/frames.j
 import { analyzeBody, analyzeGeometry } from './body-scan/analyze.js';
 import { analyzePose } from './body-scan/pose.js';
 import { createTrimmer } from './body-scan/trim.js';
+import { createCalibrator } from './body-scan/calibrate.js';
 
 /** ?llm=1 — skip the on-device measurement and use the vision model instead. */
 const forceLlm = new URLSearchParams(location.search).get('llm') === '1';
@@ -60,6 +61,14 @@ const trimNote = document.getElementById('trim-note');
 const analyzeBtn = document.getElementById('analyze-btn');
 const startOverTrim = document.getElementById('start-over-trim');
 
+const calibCanvas = document.getElementById('calib-canvas');
+const calibDotA = document.getElementById('calib-dot-a');
+const calibDotB = document.getElementById('calib-dot-b');
+const calibWhat = document.getElementById('calib-what');
+const calibTime = document.getElementById('calib-time');
+const calibStage = document.getElementById('calib-stage');
+const calibNote = document.getElementById('calib-note');
+
 const analysis = document.getElementById('analysis');
 const sizeValue = document.getElementById('size-value');
 const sizeSub = document.getElementById('size-sub');
@@ -100,6 +109,24 @@ const trimmer = createTrimmer({
       ? `Keeping ${fmtTime(start)} to ${fmtTime(end)} · ${Math.max(0, end - start).toFixed(0)}s`
       : 'Using the whole clip';
   },
+});
+
+/**
+ * The one marked object of a known size, if the user marked one. It is sent with
+ * the measurements and outweighs the head ruler, so it is held here rather than
+ * read off the DOM at send time.
+ */
+let markedReference = null;
+const calibrator = createCalibrator({
+  video: trimVideo,
+  canvas: calibCanvas,
+  dotA: calibDotA,
+  dotB: calibDotB,
+  select: calibWhat,
+  timeInput: calibTime,
+  stage: calibStage,
+  note: calibNote,
+  onChange: (ref) => { markedReference = ref; },
 });
 
 /** The recorded video, held in memory while the user is on the page. */
@@ -262,6 +289,7 @@ function resetAll() {
   recordedBlob = null;
   input.value = '';
   trimmer.load(0);
+  calibrator.clear();
   setBusy(false);
   setStatus('');
   trimNote.textContent = '';
@@ -281,6 +309,7 @@ async function handleRecording(file) {
 
   const duration = await readDuration(file);
   trimmer.load(duration);
+  calibrator.load(duration);
   log('duration', duration);
 
   try {
@@ -470,6 +499,9 @@ async function runAnalysis() {
           setStatus(`Sending ${measured.frames.length} measurements…`);
           data = await analyzeGeometry(measured, {
             gender: chosenGender,
+            // The user's own known size, if they marked one. It is the strongest
+            // anchor there is, and it belongs to the frame it was marked on.
+            references: markedReference ? [markedReference] : [],
             onTick: (s) => setStatus(`Working out your measurements… ${s}s`),
           });
         } else {

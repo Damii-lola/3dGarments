@@ -70,6 +70,7 @@ import {
   point,
   round1,
   round2,
+  round3,
   sawRegion,
   spanX,
 } from '../lib/bodyGeometry.js';
@@ -213,6 +214,8 @@ function frameDigest(f, reason) {
     ...(reason ? { reason } : {}),
     view: f.view,
     turn: round1(frameTurn(f)),
+    camera: f.camera,
+    references: (f.references || []).map((r) => `${r.what} (${r.knownCm} cm)`),
     gender: f.gender,
     confidence: f.confidence,
     visible: f.visible,
@@ -489,16 +492,123 @@ function geometryFrames(body) {
   return {
     frames,
     aspect: body.aspect,
+    // Marked size references, each carrying the time of the frame it was marked
+    // on so it can be attached to that frame and no other.
+    references: Array.isArray(body.references) ? body.references : [],
     // The user picks who is being measured. It decides the head-length constant
     // (and so every centimetre), which size chart applies, AND which of the two
-    // category groups is computed — so it is never guessed from the silhouette.
+    // category groups is computed - so it is never guessed from the silhouette.
     gender: normGender(body.gender),
     model: typeof body.model === 'string' ? body.model.slice(0, 80) : 'on-device pose',
   };
 }
 
 /** Turn the browser's per-frame numbers into the frame objects the engine reads. */
-function addGeometryFrames(geo, aspect, frames, rejected, gender) {
+/**
+ * A marked object belongs to the frame it was marked on, and nowhere else.
+ *
+ * A frame's scale is its own — the camera moves, the subject steps nearer or
+ * further, and a size that was right a moment ago is not right now. So each
+ * reference goes to its nearest sampled frame (measured in the frame's own time)
+ * and no other.
+ */
+function assignReferences(geoFrames, refs) {
+  const out = geoFrames.map(() => []);
+  if (!Array.isArray(refs) || !refs.length) return out;
+  for (const r of refs.slice(0, 4)) {
+    const rt = Number(r?.t);
+    if (!Number.isFinite(rt)) continue;
+    let best = -1;
+    let bestGap = Infinity;
+    geoFrames.forEach((f, i) => {
+      const gap = Math.abs(Number(f?.t) - rt);
+      if (Number.isFinite(gap) && gap < bestGap) { bestGap = gap; best = i; }
+    });
+    if (best >= 0) out[best].push(r);
+  }
+  return out;
+}
+
+/**
+ * Score each frame's sharpness and lighting from what the device measured.
+ *
+ * Sharpness is scored RELATIVE to the sharpest frames of the same clip: an
+ * absolute threshold would punish a whole clip for being soft, when the only
+ * thing that matters for averaging frames together is which of them are the
+ * blurriest. Lighting is absolute, because a frame that is blown out or pitch
+ * dark is worth less wherever it came from.
+ */
+function scoreCamera(frames) {
+  const vars = frames
+    .map((f) => Number(f.cameraRaw?.lapVar))
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
+  const p90 = vars.length ? vars[Math.min(vars.length - 1, Math.floor(vars.length * 0.9))] : null;
+  for (const f of frames) {
+    const lap = Number(f.cameraRaw?.lapVar);
+    const luma = Number(f.cameraRaw?.luma);
+    const clipped = Number(f.cameraRaw?.clipped);
+    const sharpness = Number.isFinite(lap) && p90
+      ? clamp(0.2 + 0.8 * Math.min(1, lap / p90), [0.05, 1])
+      : 0.75;
+    const exposure = Number.isFinite(luma) ? clamp(1 - Math.abs(luma - 128) / 110, [0, 1]) : 0.75;
+    const clip = Number.isFinite(clipped) ? clamp(1 - clipped * 6, [0, 1]) : 1;
+    f.camera = {
+      sharpness: round2(sharpness),
+      lighting: round2(0.5 * exposure + 0.5 * clip),
+      lapVar: Number.isFinite(lap) ? Math.round(lap) : null,
+      luma: Number.isFinite(luma) ? Math.round(luma) : null,
+    };
+    delete f.cameraRaw;
+  }
+}
+
+/**
+ * Let one marked object set the scale for the whole clip.
+ *
+ * An object marked on one frame, used only on that frame, does almost nothing:
+ * the other fifteen frames still hang off an assumed head length. But the head
+ * and the object are measured in the SAME frame, at the same distance, so the
+ * ratio between the two scale estimates is not a property of how far away the
+ * camera was — it is a property of the assumed head constant and of how well
+ * the head was found in that frame. That ratio applies to every frame of the
+ * clip, so one marked bank card corrects fifteen unmarked frames.
+ *
+ * Bounded, because beyond a modest head error the likelier story is that the
+ * object was marked wrong, and then correcting the whole clip with it would be
+ * worse than leaving the head ruler alone.
+ */
+function calibrateScale(frames) {
+  let ratio = null;
+  let what = null;
+  let knownCm = null;
+  for (const f of frames) {
+    if (!f.scale || !(f.references || []).length) continue;
+    const head = f.scale.anchors.find((a) => a.what === 'head length');
+    const ref = f.scale.anchors.find((a) => a.what !== 'head length');
+    if (!head || !ref || !(head.cmPerWidth > 0) || !(ref.cmPerWidth > 0)) continue;
+    ratio = ref.cmPerWidth / head.cmPerWidth;
+    what = ref.what;
+    knownCm = Number((f.references[0] || {}).knownCm) || null;
+    break;
+  }
+  if (!ratio || ratio < 0.7 || ratio > 1.4) return null;
+  let applied = 0;
+  for (const f of frames) {
+    const head = f.scale?.anchors.find((a) => a.what === 'head length');
+    if (!head) continue;
+    f.scale = { ...f.scale, cmPerWidth: head.cmPerWidth * ratio, referenceRatio: round3(ratio) };
+    // Breadths are judged in centimetres, so they are judged again against the
+    // new scale rather than the one they were first checked with.
+    const check = checkFrame(f);
+    f.bad = check.bad;
+    f.heightBad = check.heightBad;
+    applied += 1;
+  }
+  return applied ? { ratio: round3(ratio), what, knownCm, applied } : null;
+}
+
+function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = []) {
   geo.frames.forEach((raw, i) => {
     const frame = {
       file: `pose-${i + 1}`,
@@ -508,10 +618,12 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender) {
       build: null,
       landmarks: normalizeLandmarks(raw.landmarks),
       visible: raw.visible && typeof raw.visible === 'object' ? raw.visible : {},
-      references: [],
+      references: Array.isArray(refByFrame[i]) ? refByFrame[i] : [],
       clothing: {},
-      // Sharpness and lighting are not measured on the device. Hold them neutral
-      // so they neither help nor hurt one frame against another.
+      // Sharpness and lighting as the device actually measured them: the raw
+      // Laplacian variance and mean luma. scoreCamera() turns them into weights,
+      // scoring sharpness against the other frames of the same clip.
+      cameraRaw: raw.camera && typeof raw.camera === 'object' ? raw.camera : null,
       camera: { sharpness: 0.75, lighting: 0.75 },
       confidence: clamp(Number(raw.confidence) || 0.6, [0.05, 1]),
       aspect,
@@ -557,7 +669,15 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   if (geo) {
     const aspect = clamp(Number(geo.aspect) || 0.75, [0.3, 3]);
     log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}, measuring for=${geo.gender}`);
-    addGeometryFrames(geo, aspect, frames, rejected, geo.gender);
+    const refByFrame = assignReferences(geo.frames, geo.references);
+    const withRefs = refByFrame.filter((r) => r.length).length;
+    if (withRefs) log(`  ${withRefs} frame(s) carry a user-marked size reference`);
+    addGeometryFrames(geo, aspect, frames, rejected, geo.gender, refByFrame);
+    scoreCamera(frames);
+    const calibrated = calibrateScale(frames);
+    if (calibrated) {
+      log(`  scale set from ${calibrated.what} across ${calibrated.applied} frame(s): head ruler x${calibrated.ratio}`);
+    }
     return finishScan(res, {
       frames,
       rejected,
@@ -881,6 +1001,15 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     );
   }
   if (clothing.note) notes.push(clothing.note);
+  // If the user marked something of a known size, say so: it is the difference
+  // between a scale that was assumed and a scale that was measured.
+  const marked = frames.map((f) => (f.references || [])[0]).find(Boolean);
+  if (marked) {
+    const applied = frames.filter((f) => f.scale?.referenceRatio).length;
+    notes.push(applied
+      ? `Your scale came from ${marked.what} (${marked.knownCm} cm) that you marked, applied across ${applied} frame${applied === 1 ? '' : 's'} — so the numbers are set against a known size rather than an assumed head length.`
+      : `You marked ${marked.what}, but the frame it was on had no usable head, so the scale stayed on the head ruler.`);
+  }
   if (gender.chosen) {
     notes.push(`Read against the ${gender.guess === 'female' ? 'women' : 'men'}'s measurement sheet, as you chose.`);
   } else if (gender.guess === 'unsure') {
@@ -896,7 +1025,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     // size either way — and saying so is better than sounding certain.
     if (measured.chest && !measured.chest.depthMeasured) {
       const v = measured.chest.widthViews;
-      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — no side-on frame gave a clean body depth — so it could sit one size either way.`);
+      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — no frame turned far enough to show body depth — so it could sit one size either way.`);
     }
   } else {
     notes.push('No size was given: a size needs a straight-on front view with your arms clear of your sides.');
@@ -906,10 +1035,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     notes.push(`Your height read ${Math.round(h.spread)} in apart between frames, so film from further back — the whole body needs to fit in shot the whole way round.`);
   }
   if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
-    const sawSide = frames.some((f) => f.view === 'side');
-    notes.push(sawSide
-      ? 'Your side-on frame was not clear enough to read body depth from, so it was modelled from the front width instead — stand straight with your arms down for the sideways part of the turn.'
-      : 'No clear side-on frame, so body depth was modelled from the front width rather than measured.');
+    const profiled = frames.filter((f) => frameTurn(f) >= 70).length;
+    const turned = frames.filter((f) => frameTurn(f) >= 20 && frameTurn(f) < 70).length;
+    notes.push(profiled || turned
+      ? `The frames turned far enough to show body depth (${profiled} in profile, ${turned} at three-quarter) were not clear enough to read it from, so it was modelled from your front width instead — stand straight with your arms down and pause at the side as you turn.`
+      : 'No frame was turned far enough to show body depth, so it was modelled from your front width rather than measured. Turn slowly through a full profile — three-quarter is already enough.');
   }
 
   const result = {

@@ -26,6 +26,52 @@ const MODELS = [
 
 const log = (...args) => console.log('[3dg:pose]', ...args);
 
+/**
+ * How sharp and how well lit this frame really is, read from its own pixels.
+ *
+ * Sharpness is the variance of the Laplacian — a blurred frame has almost no
+ * high-frequency content, so its second derivative is nearly flat. Lighting is
+ * the mean luma plus how much of the frame is blown out. Both used to be handed
+ * to the engine as a neutral 0.75, which meant a motion-blurred frame weighed
+ * exactly as much as a crisp one when the frames were averaged. The raw
+ * numbers go up and the server scores them, because sharpness only means
+ * anything next to the other frames of the same clip.
+ */
+function readCameraQuality(ctx, w, h) {
+  if (!w || !h) return null;
+  let data;
+  try {
+    ({ data } = ctx.getImageData(0, 0, w, h));
+  } catch {
+    return null; // a tainted canvas is not worth failing a scan over
+  }
+  const n = w * h;
+  const lum = new Float32Array(n);
+  let lit = 0;
+  let clipped = 0;
+  for (let i = 0; i < n; i += 1) {
+    const y = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+    lum[i] = y;
+    lit += y;
+    if (y > 245) clipped += 1;
+  }
+  let sum = 0;
+  let sumSq = 0;
+  let k = 0;
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const i = y * w + x;
+      const lap = 4 * lum[i] - lum[i - 1] - lum[i + 1] - lum[i - w] - lum[i + w];
+      sum += lap;
+      sumSq += lap * lap;
+      k += 1;
+    }
+  }
+  const mean = k ? sum / k : 0;
+  const variance = k ? Math.max(0, sumSq / k - mean * mean) : 0;
+  return { lapVar: variance, luma: lit / n, clipped: clipped / n };
+}
+
 /** How many frames are kept as pictures — each one costs a JPEG in the page. */
 const MAX_SKETCHES = 4;
 
@@ -200,7 +246,7 @@ export async function analyzePose(file, opts = {}) {
         continue;
       }
 
-      frames.push({ index: i, t, ...measured });
+      frames.push({ index: i, t, ...measured, camera: readCameraQuality(ctx, canvas.width, canvas.height) });
       log('frame', i, `t=${t.toFixed(1)}s`, `view=${measured.view}`, `conf=${measured.confidence.toFixed(2)}`,
         `head cm/width=${measured.debug.headCmPerWidth ? measured.debug.headCmPerWidth.toFixed(1) : 'none'}`,
         `pose cm/width=${measured.debug.poseCmPerWidth ? measured.debug.poseCmPerWidth.toFixed(1) : 'none'}`,
