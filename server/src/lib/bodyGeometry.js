@@ -41,12 +41,18 @@ export const VIEW_WEIGHT = { front: 1.0, back: 0.95, 'three-quarter': 0.55, side
  * region — a span, not a circumference. Anything outside these is a mis-placed
  * landmark, not an unusual person, and gets dropped before it can become a
  * confident wrong number.
+ *
+ * The width ceilings are deliberately generous: a heavily built man really does
+ * reach a 50 cm chest breadth and a 58 cm shoulder span, and dropping those as
+ * "impossible" is worse than keeping them. What they still catch is the common
+ * failure — the arms hanging against the torso and being measured as part of it,
+ * which reads 60-70 cm across.
  */
 export const SPAN_RANGES_CM = {
-  shoulder: { width: [32, 56], depth: [26, 54] },
-  chest: { width: [22, 46], depth: [15, 36] },
-  waist: { width: [20, 50], depth: [13, 40] },
-  hips: { width: [24, 52], depth: [16, 42] },
+  shoulder: { width: [32, 58], depth: [26, 54] },
+  chest: { width: [22, 50], depth: [15, 36] },
+  waist: { width: [20, 52], depth: [13, 40] },
+  hips: { width: [24, 56], depth: [16, 42] },
   neck: { width: [8, 17], depth: [7, 17] },
   arm: { width: [6, 18], depth: [5, 18] },
 };
