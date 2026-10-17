@@ -128,7 +128,7 @@ STEP 3 - PLACE LANDMARKS. Give each point as x,y on a 0-100 scale of THIS image:
 A labelled 10x10 grid has been drawn over the image to help you: the numbers along the TOP edge give x and the numbers down the LEFT edge give y. Read each landmark against that grid so it lands within a few percent of the right place. The grid is only an overlay — ignore it otherwise, it is not clothing and not part of the scene.
 Points:
   headTop     top of the skull
-  chin        bottom of the chin
+  chin        the LOWEST point of the chin/jaw, below the mouth - not the mouth, not the lip
   neckL, neckR       left/right edges of the neck where it meets the shoulders
   shoulderL, shoulderR   the outer bony corners of the shoulders
   armpitL, armpitR   left/right edges of the TORSO at armpit/chest level - the torso only, NOT the arms
@@ -137,7 +137,13 @@ Points:
   armL, armR         the left and right edges of ONE upper arm (use the arm on the left of the image), midway between shoulder and elbow
   crotch      where the legs meet
   footL, footR       left/right feet where they touch the floor
-CRITICAL: "left/right" ALWAYS means the horizontal extremes in THIS image. In a front or back view a left/right pair measures body WIDTH. In a side view the same pair measures body DEPTH, front to back. If a landmark is hidden, cropped, or you cannot see it clearly, OMIT that key completely - do not guess it.
+CRITICAL: "left/right" ALWAYS means the horizontal extremes in THIS image. In a front or back view a left/right pair measures body WIDTH. In a side view the same pair measures body DEPTH, front to back.
+
+TWO MISTAKES RUIN THE MEASUREMENT. Check your own answer against both before you reply:
+
+  1. DESCRIBING A TYPICAL BODY INSTEAD OF THIS ONE. The person may be small in the frame, off-centre, closer or further from the camera, and may run off the edges of the image. Put every point exactly where the body is in THIS image, even if that bunches all of your points into one small part of it. A tidy, centred, symmetrical set of points is a warning sign that you have drawn an average person instead of looking at this one - look again.
+
+  2. PLACING WHAT YOU CANNOT SEE. If the frame cuts the person off at the hips, there is no crotch, no feet and no floor contact: OMIT crotch, footL and footR, and set visible.legs and visible.feet to false. Never place a point you cannot see, and never place one where a part would be if it were in shot. The head is what every measurement is scaled from, so read the chin with particular care: a head measured half its real size doubles every measurement.
 
 STEP 4 - WHAT IS VISIBLE. visible: { head, torso, hips, legs, feet } - true only if that part is actually in frame.
 
@@ -157,7 +163,12 @@ STEP 6 - CLOTHING AND CAMERA, described plainly (these explain the fabric, they 
 
 STEP 7 - WHO. gender: male | female | unsure with genderConfidence 0-1, judged from build, shoulder-to-hip ratio, waist taper and chest shape. Hair and clothing are only weak hints. Also give build: slim | lean | average | broad | muscular | heavyset | petite.
 
-Respond with ONLY this JSON, no markdown and no prose outside it:
+HOW THE POINTS RELATE ON A REAL STANDING ADULT - a check on your own answer, never a substitute for looking at the frame:
+  - the whole body is about 7.5 head-lengths tall, so in a full-body frame the head is about 1/7.5 of the person's height
+  - the bony shoulder corners are about 2.1 head-lengths apart
+  - the chest is a little narrower than the shoulders, the waist narrower again, and the hips a little wider than the waist
+
+Respond with ONLY this JSON, no markdown and no prose outside it. The numbers in it are only the FORMAT, and happen to describe one full-body portrait frame with the person filling it: they are not an answer to copy, and the person in your frame may sit in a completely different part of the image.
 {
   "personVisible": true,
   "view": "front",
@@ -165,16 +176,16 @@ Respond with ONLY this JSON, no markdown and no prose outside it:
   "genderConfidence": 0.0,
   "build": "average",
   "landmarks": {
-    "headTop": { "x": 50, "y": 6 },
-    "chin": { "x": 50, "y": 15 },
-    "neckL": { "x": 48, "y": 17 }, "neckR": { "x": 52, "y": 17 },
-    "shoulderL": { "x": 37, "y": 21 }, "shoulderR": { "x": 63, "y": 21 },
-    "armpitL": { "x": 39, "y": 27 }, "armpitR": { "x": 61, "y": 27 },
-    "waistL": { "x": 42, "y": 38 }, "waistR": { "x": 58, "y": 38 },
-    "hipL": { "x": 39, "y": 46 }, "hipR": { "x": 61, "y": 46 },
-    "armL": { "x": 33, "y": 30 }, "armR": { "x": 36, "y": 30 },
+    "headTop": { "x": 50, "y": 5 },
+    "chin": { "x": 50, "y": 17 },
+    "neckL": { "x": 45, "y": 20 }, "neckR": { "x": 55, "y": 20 },
+    "shoulderL": { "x": 28, "y": 24 }, "shoulderR": { "x": 72, "y": 24 },
+    "armpitL": { "x": 31, "y": 31 }, "armpitR": { "x": 69, "y": 31 },
+    "waistL": { "x": 35, "y": 42 }, "waistR": { "x": 65, "y": 42 },
+    "hipL": { "x": 34, "y": 47 }, "hipR": { "x": 66, "y": 47 },
+    "armL": { "x": 21, "y": 32 }, "armR": { "x": 31, "y": 32 },
     "crotch": { "x": 50, "y": 52 },
-    "footL": { "x": 45, "y": 96 }, "footR": { "x": 55, "y": 96 }
+    "footL": { "x": 45, "y": 95 }, "footR": { "x": 55, "y": 95 }
   },
   "visible": { "head": true, "torso": true, "hips": true, "legs": true, "feet": true },
   "references": [],
@@ -210,6 +221,7 @@ function frameDigest(f, reason) {
     spansCm: spans,
     droppedRegions: [...(f.bad || [])],
     heightBad: !!f.heightBad,
+    floorInvented: !!f.floorInvented,
     landmarks: f.landmarks,
   };
 }
@@ -505,6 +517,14 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
           confidence: Number(parsed.confidence) || 0.5,
           aspect,
         };
+        // A frame that says the legs are not in shot cannot honestly show the
+        // feet either. Believe the flag and drop the floor landmarks: an
+        // invented floor point would both fake a height and bend the scale.
+        if (frame.visible.legs === false || frame.visible.feet === false) {
+          for (const k of ['footL', 'footR', 'crotch']) delete frame.landmarks[k];
+          frame.floorInvented = true;
+        }
+
         frame.scale = frameScale(frame);
 
         // A frame whose landmarks are not a human shape is thrown away whole.
