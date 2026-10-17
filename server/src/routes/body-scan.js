@@ -558,7 +558,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
 
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
-    const details = { diagnostics: { rejected, unreadable, failures } };
+    const details = { diagnostics: { model: config.cloudflare.visionModel, rejected, unreadable, failures } };
     if (failures.length === files.length) {
       throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`, details);
     }
@@ -569,7 +569,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   }
 
   /** Everything the model reported, for a refusal we have to justify. */
-  const diagnostics = { frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
+  const diagnostics = { model: config.cloudflare.visionModel, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
 
   // 2. Scale. Without an anchor there are no centimetres, so say so rather than
   //    inventing numbers.
