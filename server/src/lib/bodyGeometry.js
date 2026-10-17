@@ -425,9 +425,13 @@ export function measureRegion(key, frames, opts = {}) {
   const w = robustMean(widths);
   if (!w) return null;
 
+  // The prior depth is a last resort for when no side-on frame could read it.
+  // A caller may override it per region: a man's ribcage and a woman's bust are
+  // not the same cross-section, and one ratio cannot describe both.
+  const prior = opts.depthRatio ?? DEPTH_RATIO[spec.ratio];
   const d = spec.girth ? robustMean(depths) : null;
-  const depthCm = d ? d.value : (spec.girth ? w.value * DEPTH_RATIO[spec.ratio] : null);
-  const depthSource = spec.girth ? (d ? `side view x${d.n}` : `${DEPTH_RATIO[spec.ratio]}x width`) : null;
+  const depthCm = d ? d.value : (spec.girth ? w.value * prior : null);
+  const depthSource = spec.girth ? (d ? `side view x${d.n}` : `${prior}x width, modelled`) : null;
 
   const girthCm = spec.girth ? ellipsePerimeter(w.value / 2, depthCm / 2) : null;
   const valueCm = spec.girth ? girthCm : w.value;

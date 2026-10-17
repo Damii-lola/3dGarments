@@ -32,15 +32,41 @@ import {
  * item to frames that show a particular side — the same line read across the
  * back is a different tailor's number from the one read across the front.
  */
+/**
+ * The prior front-to-back depth, as a fraction of the front width, used only
+ * when no side-on frame could read the depth of that region.
+ *
+ * A man's chest and a woman's bust are NOT the same cross-section, and giving
+ * them one number is what sized a large-busted woman two sizes too small: a
+ * ribcage sits about three-quarters as deep as it is wide, but a bust projects
+ * forward, so the tape has to travel a good deal further around it.
+ *
+ * 0.72 is checked against a tape measure — a 48" chest read 48.4".
+ * 0.85 is the population figure that puts a given bust WIDTH at the girth a
+ * tape finds around it (a 40" bust is about 35 cm wide and 29 cm deep).
+ */
+const MALE_BUST_DEPTH_RATIO = 0.72;
+const FEMALE_BUST_DEPTH_RATIO = 0.85;
+
+/**
+ * The depth prior to use for a region, given the group. Exported so the size
+ * verdict — which is computed from the same chest/bust span, outside this file —
+ * cannot end up using the other group's cross-section.
+ */
+export function depthRatioFor(regionKey, gender) {
+  if (regionKey !== 'chest') return undefined;
+  return gender === 'female' ? FEMALE_BUST_DEPTH_RATIO : MALE_BUST_DEPTH_RATIO;
+}
+
 const SPAN_SETS = [
   ['head', 'head', null],
   ['neck', 'neck', null],
   ['shoulder', 'shoulder', null],
   ['shoulderBack', 'shoulder', ['back']],
   ['upperChest', 'upperChest', null],
-  ['bust', 'chest', null],
-  ['bustFront', 'chest', ['front']],
-  ['bustBack', 'chest', ['back']],
+  ['bust', 'chest', null, true],
+  ['bustFront', 'chest', ['front'], true],
+  ['bustBack', 'chest', ['back'], true],
   ['underbust', 'underbust', null],
   ['waist', 'waist', null],
   ['lowWaist', 'lowWaist', null],
@@ -299,8 +325,12 @@ export function buildCatalogue({ frames, gender, clothing = {} }) {
   const group = gender === 'female' ? 'female' : 'male';
 
   const spans = {};
-  for (const [key, region, views] of SPAN_SETS) {
-    spans[key] = measureRegion(region, frames, views ? { views } : {});
+  for (const [key, region, views, bustDepth] of SPAN_SETS) {
+    const opts = {};
+    if (views) opts.views = views;
+    // The bust depth prior follows the group: a bust projects, a ribcage does not.
+    if (bustDepth) opts.depthRatio = depthRatioFor('chest', group);
+    spans[key] = measureRegion(region, frames, opts);
   }
   const verticals = {};
   for (const [key, spec] of Object.entries(VERTICALS)) verticals[key] = measureVertical(frames, spec);

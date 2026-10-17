@@ -72,7 +72,7 @@ import {
   sawRegion,
   spanX,
 } from '../lib/bodyGeometry.js';
-import { buildCatalogue } from '../lib/catalogue.js';
+import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -716,7 +716,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   const rejectedEverywhere = [];
   const droppedByCheck = new Set();
   for (const key of Object.keys(REGIONS)) {
-    const r = measureRegion(key, frames);
+    const r = measureRegion(key, frames, { depthRatio: depthRatioFor(key, gender.guess) });
     if (!r) {
       dropped.push(key);
       // Distinguish "never seen" from "seen but not humanly possible".
@@ -881,6 +881,12 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     const d = adjusted.chest - CHARTS[sizeBasis][size.sizeKey][key];
     if (d > 1.5) notes.push(`Size ${size.sizeKey} chest/bust may be snug.`);
     else if (d < -2) notes.push(`Size ${size.sizeKey} chest may be loose.`);
+    // The size is picked off one girth. If that girth's front-to-back depth had
+    // to be modelled rather than seen from the side, the size can honestly sit a
+    // size either way — and saying so is better than sounding certain.
+    if (measured.chest && !measured.chest.depthMeasured) {
+      notes.push(`Size ${size.sizeKey} is read from your front width alone — no side-on frame gave a clean body depth — so it could sit one size either way.`);
+    }
   } else {
     notes.push('No size was given: a size needs a straight-on front view with your arms clear of your sides.');
   }

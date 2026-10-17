@@ -281,8 +281,22 @@ check('the height is refused, not faked', skirt.visible.feet, false);
 check('no foot landmarks', skirt.landmarks.footL === undefined, true);
 check('the torso is still measured', Boolean(skirt.landmarks.armpitL), true);
 
-console.log('\n— the named lines a tailor\'s sheet asks for —');
-// The same body with everything the catalogue can read: ears for the head's
+console.log('\n— arms lying on the chest, clear lower down —');
+// The failure a real clip found: the arm rests against the ribs at chest height
+// and leaves the body only near the waist. The chest search used to begin at that
+// first clear row, so a waist-width row was reported under the name "chest" — a
+// wrong number that looked like a right one, which then set the size two sizes
+// too small. The chest band is the chest's own now: no clear row in it, no chest.
+const ribs = body({ armsClear: true });
+fill(ribs, 85, 150, 40, 140);
+const ribbed = run(ribs);
+check('no chest is claimed from a waist-height row', ribbed.landmarks.armpitL === undefined, true);
+check('the arms-not-clear caveat is raised', ribbed.notes.some((n) => /arms were close/.test(n)), true);
+check('a clear row lower down is still a waist', Boolean(ribbed.landmarks.waistL), true);
+check('and it is not passed off as the chest', ribbed.landmarks.armpitL === undefined && ribbed.landmarks.waistL !== undefined, true);
+check('no upper chest either, since the arms never clear that high', ribbed.landmarks.upperChestL === undefined, true);
+
+console.log('\n— the named lines a tailor\'s sheet asks for —');// The same body with everything the catalogue can read: ears for the head's
 // breadth, wrists, and the arm carried down past the hip so the wrist row is on
 // the arm and not on the torso.
 function limbBody() {

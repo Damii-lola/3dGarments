@@ -322,9 +322,13 @@ checkTrue('and the ankle tape is not read off the trouser leg', item(trousered, 
 checkTrue('jeans bottom still waits for jeans to be seen', item(trousered, 'jeansBottom') === null, 'omitted');
 
 const women = buildCatalogue({ frames: [ready(catalogFrame())], gender: 'female' });
-checkTrue('bust is the full bust line', near(item(women, 'bust')?.in, 39, 43), `bust ${item(women, 'bust')?.in} in`);
+checkTrue('bust is the full bust line', near(item(women, 'bust')?.in, 42, 45), `bust ${item(women, 'bust')?.in} in`);
+checkTrue('the same silhouette tapes bigger as a bust than as a ribcage', item(women, 'bust')?.in > item(men, 'chest')?.in, `bust ${item(women, 'bust')?.in} vs chest ${item(men, 'chest')?.in} in`);
+checkTrue('and the woman\'s number says the depth was modelled', /modelled/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
+checkTrue('a man\'s chest stays on the ribcage ratio', /0\.72x width/.test(item(men, 'chest')?.how || ''), item(men, 'chest')?.how);
+checkTrue('a woman\'s bust projects, so its prior is the larger one', /0\.85x width/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
 checkTrue('a woman\'s chest is the upper chest, above the bust', item(women, 'chest')?.in < item(women, 'bust')?.in, `chest ${item(women, 'chest')?.in} vs bust ${item(women, 'bust')?.in} in`);
-checkTrue('dart is what the bust takes in over the underbust', near(item(women, 'dart')?.in, 1, 5), `dart ${item(women, 'dart')?.in} in`);
+checkTrue('dart is what the bust takes in over the underbust', near(item(women, 'dart')?.in, 1, 7.5), `dart ${item(women, 'dart')?.in} in`);
 checkTrue('top arm, wrist and the leg tapes are all there', ['topArm', 'wrist', 'ankle', 'highAnkle'].every((k) => item(women, k)), ['topArm', 'wrist', 'ankle', 'highAnkle'].map((k) => item(women, k)?.in).join(', '));
 checkTrue('no men\'s categories on a women\'s sheet', !item(women, 'xShoulder') && !item(women, 'xBack') && !item(women, 'crotchLength') && !item(women, 'totalHeight'), 'clean');
 

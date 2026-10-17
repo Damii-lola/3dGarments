@@ -343,33 +343,42 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   let waistRow = -1;
   let hipRow = -1;
   if (usable.length >= 4) {
-    const first = usable[0];
+    const drop = Math.max(1, hipRowLM - shoulderRow);
     if (sideOn) {
       // Seen from the side the deepest point of the upper body is the deltoid,
       // so "widest row" would hand back shoulder depth as if it were chest depth.
       // The chest is read at the nipple line instead: a fixed way down from the
       // shoulder to the hip, which is where a tape goes too.
-      chestRow = Math.round(shoulderRow + (hipRowLM - shoulderRow) * 0.18);
+      chestRow = Math.round(shoulderRow + drop * 0.18);
     } else {
-      const chestTo = Math.min(hipRowLM, Math.round(first + (hipRowLM - first) * 0.45));
+      // The chest is a ROW ON THE CHEST, and the arms have to be clear there. This
+      // search used to begin at the first row where they were clear, which for
+      // arms held against the body is a row down near the waist — and a waist
+      // reported under the name "chest" is worse than a blank: it is a wrong
+      // number that looks like a right one. So the band is the chest's own, from
+      // just under the shoulder line to four tenths of the way to the hip.
+      const chestFrom = shoulderRow + 3;
+      const chestTo = Math.round(shoulderRow + drop * 0.42);
       let best = -1;
       for (const y of usable) {
+        if (y < chestFrom) continue;
         if (y > chestTo) break;
         const v = smoothedAt.get(y) ?? 0;
         if (v > best) { best = v; chestRow = y; }
       }
-      // A chest that only gets wider as far down as the search allows means the
-      // real widest point is hidden behind an arm, so it is not a chest measure.
-      // (The row cannot sit on the shoulder line either: nothing is measured that
-      // close to it, so such a row would be silently discarded later.) No note is
-      // raised here — the server words the gap from which regions came out blank,
-      // and a note from one frame could otherwise contradict a chest read from
-      // another.
-      if (chestRow >= chestTo - 2 || chestRow <= shoulderRow + 2) chestRow = -1;
+      // A chest still widening at the bottom of its own band has its real widest
+      // point below the band — behind an arm — so it is not a chest read at all.
+      if (best < 0 || chestRow >= chestTo - 2) chestRow = -1;
     }
+    // The waist is the narrowest row of the waist's own band: below the chest and
+    // above the hips, which is where a natural waist falls. Searching the whole
+    // torso lets a chest line or the crotch win the "narrowest" title.
+    const waistFrom = Math.max(shoulderRow + Math.round(drop * 0.45), chestRow + 3);
+    const waistTo = Math.round(shoulderRow + drop * 0.8);
     let least = Infinity;
     for (const y of usable) {
-      if (y <= Math.max(chestRow, first) + 2) continue;
+      if (y < waistFrom) continue;
+      if (y > waistTo) break;
       const v = smoothedAt.get(y) ?? 0;
       if (v > 0 && v < least) { least = v; waistRow = y; }
     }
@@ -386,18 +395,21 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     unmeasured.push('torso');
   }
   // The armpit is where the arms first clear the torso. If that happens far down
-  // the torso, the arms were lying against the chest and the widths below are
-  // read lower than they should be — say so rather than hide it.
+  // the torso the arms were lying against the chest, and the chest band has no
+  // clear row at all — so the chest is left out rather than read off the waist.
   const firstClear = sideOn ? -1 : (usable.length >= 4 ? usable[0] : -1);
   const torsoPx = Math.max(1, hipRowLM - shoulderRow);
   const armpitOffset = firstClear > 0 ? (firstClear - shoulderRow) / torsoPx : 0;
   if (firstClear > 0 && armpitOffset > 0.38) {
-    notes.push('In some frames your arms were close to your sides, so those readings came from lower down the torso — hold your arms a little clear for the truest numbers.');
+    notes.push('Your arms were close to your sides in some frames, so the tape could not pass around your chest there — hold them a little clear for the truest numbers.');
   }
 
   // ---- further named lines on the torso ----
-  // Armscye line: where the arms first clear the body, which is the armpit.
-  const upperChestRow = firstClear > 0 ? firstClear : -1;
+  // Armscye line: the first row the arms clear WITHIN the chest's own band. A
+  // clear row further down is not an armscye — it is the arms only leaving the
+  // body at the waist, and calling it the armpit line would name a waist row
+  // after the armpit.
+  const upperChestRow = firstClear > 0 && (firstClear - shoulderRow) / torsoPx <= 0.42 ? firstClear : -1;
   // Underbust: a fixed third of the way down from the bust line to the waist,
   // which is where a tape goes. Positional, so it means the same line in every
   // frame rather than wherever a row happens to be narrowest.
