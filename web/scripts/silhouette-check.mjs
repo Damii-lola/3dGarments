@@ -118,6 +118,14 @@ function sideBody() {
 
 const run = (mask, world) => measureSilhouette({ mask, maskW: W, maskH: H, lm: joints(), world, imgW: W, imgH: H });
 
+/**
+ * World landmarks consistent with a 0.522 cm pixel — the scale the synthetic
+ * head implies (45 px of head for 23.5 cm). metricScale turns these back into the
+ * same cm/px, which is what the pose-scale cross-check needs to corroborate a
+ * face-measured head.
+ */
+const agreeWorld = (lm) => lm.map((p) => ({ x: p.x * W * 0.00522, y: p.y * H * 0.00522, z: 0 }));
+
 const span = (r, a, b) => Math.abs(r.landmarks[a].x - r.landmarks[b].x);
 const yOf = (r, k) => r.landmarks[k].y;
 
@@ -172,6 +180,23 @@ if (!side) {
   check('no arms-not-clear caveat side-on', side.notes.some((n) => /arms were close/.test(n)), false);
 }
 
+console.log('\n— one arm clear, the other against the ribs —');
+// The same body, with the right arm pressed back on: a gap on the left only.
+// That is the common frame of a real turn, and the left edge alone is enough.
+const oneSideMask = body({ armsClear: true });
+fill(oneSideMask, 85, 170, 100, 146);
+const oneSide = run(oneSideMask);
+if (!oneSide) {
+  console.log('  FAIL returned null');
+  failures.push('null-one-side');
+} else {
+  check('the clear side is still measured', Boolean(oneSide.landmarks.armpitL && oneSide.landmarks.armpitR), true);
+  check('torso not reported unmeasurable', oneSide.unmeasured.includes('torso'), false);
+  check('one-sided rows were recognised', (oneSide.debug.verdicts['one-side'] || 0) > 0, true);
+  check('mirrored row matches the two-gap answer', span(oneSide, 'armpitL', 'armpitR'), span(clear, 'armpitL', 'armpitR'), 0.6);
+  check('waist still narrower than chest', span(oneSide, 'waistL', 'waistR') < span(oneSide, 'armpitL', 'armpitR'), true);
+}
+
 console.log('\n— feet out of shot —');
 const cropped = blank();
 {
@@ -188,6 +213,73 @@ if (!cut) {
   check('no foot landmarks', cut.landmarks.footL === undefined, true);
   check('head still measured', Boolean(cut.landmarks.headTop && cut.landmarks.neckL), true);
 }
+
+console.log('\n— the silhouette stops above the ankles (a skirt hem, a knee crop) —');
+// The frame still contains the ankle joints, so nothing runs off the edge; the
+// mask simply never reaches them. The height chain used to run down to them
+// anyway, once for a confident ankle and once for a half-believed one.
+const hemMask = blank();
+{
+  const src = body({ armsClear: true });
+  hemMask.set(src.subarray(0, Math.round(H * 0.70) * W));
+}
+const hem = run(hemMask);
+if (!hem) {
+  console.log('  FAIL returned null');
+  failures.push('null-hem');
+} else {
+  check('feet not claimed visible off the silhouette', hem.visible.feet, false);
+  check('no foot landmarks placed off the body', hem.landmarks.footL === undefined, true);
+  check('head and torso still measured', Boolean(hem.landmarks.headTop && hem.landmarks.armpitL), true);
+}
+// The real clip's case: the pose put the ankles in mid-air with a visibility
+// just over the "visible" threshold, which the old visibility guard let through.
+const halfJoints = joints();
+halfJoints[27] = { ...halfJoints[27], visibility: 0.45 };
+halfJoints[28] = { ...halfJoints[28], visibility: 0.45 };
+const hemLow = measureSilhouette({ mask: hemMask, maskW: W, maskH: H, lm: halfJoints, imgW: W, imgH: H });
+check('a half-seen ankle below the silhouette is refused', hemLow.visible.feet, false);
+check('and no height can be built from it', hemLow.landmarks.footL === undefined, true);
+
+console.log('\n— a head of hair above the skull —');
+// The same body under hair that reaches 17 px above the skull. The mask's
+// crown-to-neck reading is then far too long (which is what shrank one real
+// clip's scale by 16% and reported a grown adult at 137 cm). The pose's face
+// still reports the drawn head: eyes at row 47 (the head's midpoint), mouth at
+// 62, so 3 x (62 - 47) = 45 px, exactly the head's drawn length.
+function hairyBody() {
+  const m = body({ armsClear: true });
+  fill(m, 8, 24, 86, 114);
+  return m;
+}
+const hairyLM = joints();
+hairyLM[2] = { x: 0.5, y: 47 / H, visibility: 1 };  // left eye
+hairyLM[5] = { x: 0.5, y: 47 / H, visibility: 1 };  // right eye
+hairyLM[9] = { x: 0.5, y: 62 / H, visibility: 1 };  // mouth
+hairyLM[10] = { x: 0.5, y: 62 / H, visibility: 1 };
+const hair = measureSilhouette({ mask: hairyBody(), maskW: W, maskH: H, lm: hairyLM, world: agreeWorld(hairyLM), imgW: W, imgH: H });
+check('head read from the face, not the hair', hair.debug.headPx.from, 'face');
+check('head length is the drawn head (45 px of 200)', hair.debug.headHeightPx, 45, 2);
+check('the crown is the skull, not the top of the hair', yOf(hair, 'headTop'), 6.3, 0.6);
+check('the hair-based reading would have been longer', hair.debug.headPx.mask > hair.debug.headHeightPx + 4, true);
+
+console.log('\n— ankles dreamt up at the hem of a long skirt —');
+// The pose places the ankles right at the hem, so nothing looks "cut off" against
+// the silhouette and the joints are fully confident. Only the head-to-chain
+// proportion gives it away: 5.7 heads is not a standing adult.
+const hemLM = joints();
+hemLM[2] = { x: 0.5, y: 47 / H, visibility: 1 };
+hemLM[5] = { x: 0.5, y: 47 / H, visibility: 1 };
+hemLM[9] = { x: 0.5, y: 62 / H, visibility: 1 };
+hemLM[10] = { x: 0.5, y: 62 / H, visibility: 1 };
+hemLM[27] = { x: 0.42, y: 280 / H, visibility: 1 };
+hemLM[28] = { x: 0.58, y: 280 / H, visibility: 1 };
+const skirtBody = blank();
+skirtBody.set(hairyBody().subarray(0, 281 * W));
+const skirt = measureSilhouette({ mask: skirtBody, maskW: W, maskH: H, lm: hemLM, world: agreeWorld(hemLM), imgW: W, imgH: H });
+check('the height is refused, not faked', skirt.visible.feet, false);
+check('no foot landmarks', skirt.landmarks.footL === undefined, true);
+check('the torso is still measured', Boolean(skirt.landmarks.armpitL), true);
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) {

@@ -31,6 +31,18 @@ export const MASK_ON = 0.5;
  * about 0.88 of crown-to-neck. View-independent, unlike an ear-to-ear width.
  */
 export const HEAD_NECK_RATIO = 0.88;
+/**
+ * Adult head length, crown to chin. The number that turns a head measured in
+ * pixels into centimetres, so it sets the scale for the whole body.
+ */
+export const HEAD_LENGTH_CM = 23.5;
+/**
+ * Head length as a multiple of the eye-to-mouth distance, from adult face
+ * proportions: the eye line is the head's midpoint and the mouth line sits a
+ * third of the way from the eyes to the chin, so eye-to-mouth is a third of the
+ * head. Read off the pose's own face, which knows nothing of hair.
+ */
+export const FACE_HEAD_FACTOR = 3;
 /** How far an arm's joint line must clear the torso before its row counts. */
 const ARM_MARGIN_FRAC = 0.015;
 
@@ -129,13 +141,16 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
 
   const headCut = topRow <= 1;
   // Feet are "out of shot" when the silhouette runs into the bottom edge — or,
-  // more subtly, when the pose is sure where the ankles are and the silhouette
-  // stops well above them. That second case is a body cropped by the frame, and
-  // claiming a foot there would invent both a foot and a height.
+  // more subtly, when the silhouette stops well above the ankle joints. That
+  // second case is a body cropped by the frame (or by a skirt hem), and claiming
+  // a foot there would invent both a foot and a height. The geometry is evidence
+  // on its own: a hallucinated ankle sits off the body **and** carries a low
+  // visibility score, so waiting for that score to be high before believing the
+  // geometry is exactly backwards — a 0.4-0.5 ankle sailed through and reported
+  // a 137 cm adult.
   const ankleRow = Math.round((lm[27].y + lm[28].y) / 2 * maskH);
-  const ankleTrusted = Math.min(vis(27), vis(28)) > 0.5;
   const feetCut = botRow >= maskH - 2
-    || (ankleTrusted && ankleRow > 0 && botRow < ankleRow - maskH * 0.03);
+    || (ankleRow > 0 && botRow < ankleRow - maskH * 0.03);
 
   // ---- joint rows/columns, straight from the pose ----
   const shoulderRow = row((lm[11].y + lm[12].y) / 2);
@@ -147,7 +162,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   /**
    * Which way the person is facing, from the shoulder line in 3D. Needed before
    * the widths are read, because a side-on frame is measured differently: see
-   * rowVerdict().
+   * rowSpan().
    */
   let view = 'front';
   if (world && world[11] && world[12]) {
@@ -202,29 +217,67 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     }
     return out;
   };
-  /** Why a row did or did not count, so a refusal can be diagnosed later. */
-  const rowVerdict = (y, torso, runs) => {
-    if (!torso || torso.w < 3) return 'no-torso';
+  /** A gap narrower than this is mask noise, not an arm held clear. */
+  const gapMinPx = Math.max(2, Math.round(maskW * 0.012));
+
+  const poseScale = metricScale({ lm, world, imgW, imgH });
+
+  /**
+   * The torso's two edges on this row, and why we believe them.
+   *
+   * The ideal row is "arm | torso | arm": silhouette either side of the torso
+   * run, which pins both edges. That is rare. What a real turn mostly gives is a
+   * gap on ONE side and none on the other, because one arm swings clear while
+   * the other lies against the ribs — and demanding both throws away nearly
+   * every frame of nearly every real clip.
+   *
+   * One clear side still pins that edge. The body is symmetric about the
+   * shoulder-line centre, so the blocked edge is mirrored across it. That is a
+   * measurement of one half plus the body's own symmetry — not a guess at where
+   * an arm ends, which no silhouette can tell you.
+   */
+  const rowSpan = (y, torso, runs) => {
+    if (!torso || torso.w < 3) return { verdict: 'no-torso' };
     // Side-on, the arm hangs across the torso and the two are one blob in the
     // picture. The horizontal span of that blob IS the body's depth, so asking
     // for a gap here would throw away the only frames that can measure depth.
     // The server range-checks the depth before it is believed.
-    if (sideOn) return 'side';
-    // There must be silhouette on BOTH sides of the torso run. Without this, a
-    // pair of arms lying flat against the body is one blob and every joint line
-    // "clears" a torso run that actually contains the arms.
-    const left = runs.some((r) => r.x1 < torso.x0 - 1);
-    const right = runs.some((r) => r.x0 > torso.x1 + 1);
-    if (!left || !right) return 'no-gap';
-    const lines = armLineAt(y);
-    if (lines.length < 2) return 'no-line';
-    return lines.every((x) => x < torso.x0 - margin || x > torso.x1 + margin) ? 'ok' : 'arm-over-torso';
+    if (sideOn) return { verdict: 'side', x0: torso.x0, x1: torso.x1 };
+
+    const lines = armLineAt(y).filter((x) => Number.isFinite(x));
+    if (!lines.length) return { verdict: 'no-line' };
+    const leftRuns = runs.filter((r) => r.x1 < torso.x0 - 1);
+    const rightRuns = runs.filter((r) => r.x0 > torso.x1 + 1);
+    const leftGap = leftRuns.length ? torso.x0 - Math.max(...leftRuns.map((r) => r.x1)) : 0;
+    const rightGap = rightRuns.length ? Math.min(...rightRuns.map((r) => r.x0)) - torso.x1 : 0;
+    const gapLeft = leftGap >= gapMinPx;
+    const gapRight = rightGap >= gapMinPx;
+    const lineLeft = lines.some((x) => x < torso.x0 - margin);
+    const lineRight = lines.some((x) => x > torso.x1 + margin);
+    const linesAllOutside = lines.every((x) => x < torso.x0 - margin || x > torso.x1 + margin);
+
+    // Both edges pinned by a real gap and an arm line that agrees with it.
+    if (gapLeft && gapRight && linesAllOutside && lineLeft && lineRight) {
+      return { verdict: 'ok', x0: torso.x0, x1: torso.x1 };
+    }
+    // One clear side: mirror it. `centre` is the shoulder-line midpoint, taken
+    // from the joints rather than the mask, so a stray blob cannot move it.
+    if (gapLeft && lineLeft && !gapRight) {
+      const half = Math.max(2, centre - torso.x0);
+      return { verdict: 'one-side', x0: centre - half, x1: centre + half };
+    }
+    if (gapRight && lineRight && !gapLeft) {
+      const half = Math.max(2, torso.x1 - centre);
+      return { verdict: 'one-side', x0: centre - half, x1: centre + half };
+    }
+    return { verdict: 'no-gap' };
   };
 
   // ---- torso widths ----
   const usable = [];
   const widthSeries = [];
   const verdicts = {};
+  const spanAt = new Map();
   for (let y = shoulderRow + 1; y <= hipRowLM; y += 1) {
     const runs = rowRuns(mask, maskW, maskH, y);
     const torso = runAt(runs, centre);
@@ -232,10 +285,15 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     // missing, not zero-width. Recording it as zero would make the crotch line
     // win "narrowest torso" and hand back a waist at the hips.
     if (!torso) continue;
-    widthSeries.push({ y, w: torso.w });
-    const verdict = rowVerdict(y, torso, runs);
-    verdicts[verdict] = (verdicts[verdict] || 0) + 1;
-    if (verdict === 'ok' || verdict === 'side') usable.push(y);
+    const v = rowSpan(y, torso, runs);
+    verdicts[v.verdict] = (verdicts[v.verdict] || 0) + 1;
+    const hasSpan = Number.isFinite(v.x0) && Number.isFinite(v.x1);
+    if (hasSpan) spanAt.set(y, { x0: v.x0, x1: v.x1 });
+    // Rows we do not trust still go into the series at their raw width, so the
+    // smoothed profile stays continuous for the searches below; they are just
+    // not candidates to be measured from.
+    widthSeries.push({ y, w: hasSpan ? v.x1 - v.x0 : torso.w });
+    if (hasSpan) usable.push(y);
   }
   const smoothed = smooth(widthSeries.map((s) => s.w));
   const smoothedAt = new Map(widthSeries.map((s, i) => [s.y, smoothed[i]]));
@@ -276,7 +334,10 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     }
     const hipTo = crotchRow > 0 ? crotchRow : Math.min(botRow, hipRowLM + Math.round(maskH * 0.05));
     let widest = -1;
-    for (let y = waistRow + 2; y <= hipTo; y += 1) {
+    // Only rows whose edges are actually known: a hip read off a run that still
+    // has an arm in it is the person plus an arm.
+    for (const y of usable) {
+      if (y < waistRow + 2 || y > hipTo) continue;
       const v = smoothedAt.get(y) ?? 0;
       if (v > widest) { widest = v; hipRow = y; }
     }
@@ -315,13 +376,53 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     if (!armRun) unmeasured.push('arm');
   }
 
-  // ---- head: crown from the mask, chin from the crown-to-neck ratio ----
-  const headHeightPx = neckRow > 0 ? (neckRow - topRow) * HEAD_NECK_RATIO : 0;
-  const chinRow = headHeightPx > 4 ? Math.round(topRow + headHeightPx) : -1;
+  // ---- head: the skull, not the hair ----
+  // The silhouette's top row is the top of the HAIR. Since hair only ever adds
+  // length above the skull, a crown-to-neck reading taken from the mask can only
+  // come out too long — and because the head sets the scale, that shrinks every
+  // other measurement. On one real clip the mask's head was 16% longer than the
+  // true one and reported a grown adult as 137 cm tall.
+  //
+  // The pose's face gives a hair-free head length, so where it is available and
+  // sane it wins; the hair-free reading is the smaller one by construction.
+  const eyeRow = ((lm[2].y + lm[5].y) / 2) * maskH;
+  const mouthRow = ((lm[9].y + lm[10].y) / 2) * maskH;
+  const faceVis = Math.min(vis(2), vis(5), vis(9), vis(10));
+  const maskHeadPx = neckRow > 0 ? (neckRow - topRow) * HEAD_NECK_RATIO : 0;
+  const faceHeadPx = faceVis > 0.5 ? (mouthRow - eyeRow) * FACE_HEAD_FACTOR : 0;
+  // A tilted head foreshortens eye-to-mouth, so a face reading far shorter than
+  // the mask's is the tilting, not the hair: fall back rather than inflate. And a
+  // face only a handful of pixels across cannot be measured at all.
+  //
+  // Finally the reading must survive an independent witness. The pose model's
+  // own world-landmark scale is too soft to SET centimetres (it regresses toward
+  // an average body — see metricScale) but it is a second opinion, and it is
+  // measured from joints rather than from hair: when it agrees with the face, the
+  // hair really is hair. When it does not, the frame is dropped back to the mask,
+  // which is what the clips with short hair and no headwear already needed.
+  const faceCmPerPx = faceHeadPx > 4 ? HEAD_LENGTH_CM / faceHeadPx : 0;
+  const poseAgrees = poseScale && faceCmPerPx > 0
+    && Math.abs(Math.log(faceCmPerPx / poseScale.cmPerPx)) < Math.log(1.15);
+  const useFace = faceHeadPx > 4 && maskHeadPx > 4
+    && (mouthRow - eyeRow) >= 12 && poseAgrees
+    && faceHeadPx >= maskHeadPx * 0.6 && faceHeadPx <= maskHeadPx;
+  const headHeightPx = useFace ? faceHeadPx : maskHeadPx;
+  // With the face, the skull's top is half a head above the eye line; without it,
+  // the mask's top row is the best available stand-in.
+  const headTopRow = useFace
+    ? Math.max(0, Math.round(eyeRow - headHeightPx / 2))
+    : topRow;
+  const chinRow = headHeightPx > 4 ? Math.round(headTopRow + headHeightPx) : -1;
+  // With a face-measured head the crown-to-foot run becomes scale-free evidence:
+  // an adult stands 7.1-7.9 heads tall, so a run of 5.8 heads is a body cut off
+  // at the knees — a long skirt, a table — however plausible the ankle joints
+  // look, because the pose will happily place ankles at the hem.
+  const chainHeads = headHeightPx > 4 ? (botRow - headTopRow) / headHeightPx : 0;
+  const bodyCropped = useFace && chainHeads > 0 && chainHeads < 6.6;
 
   // ---- landmarks, in the 0-100 scale the measurement engine reads ----
   const P = (xCol, yRow) => ({ x: r1((xCol / maskW) * 100), y: r1((yRow / maskH) * 100) });
-  const landmarks = { headTop: P(centre, topRow) };
+  const landmarks = { headTop: P(centre, headTopRow) };
   if (chinRow > 0) landmarks.chin = P(centre, chinRow);
   if (shoulderRun) {
     landmarks.shoulderL = P(shoulderRun.x0, shoulderRow);
@@ -332,20 +433,22 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     if (r) { landmarks.neckL = P(r.x0, neckRow); landmarks.neckR = P(r.x1, neckRow); }
   }
   for (const [name, y, key] of [['chest', chestRow, 'armpit'], ['waist', waistRow, 'waist'], ['hips', hipRow, 'hip']]) {
-    const r = y > 0 ? torsoAt(y) : null;
-    if (!r) continue;
+    // The edges the row was actually measured from — which for a one-sided row
+    // are mirrored across the body's centre line, not the mask run's edges.
+    const edge = y > 0 ? spanAt.get(y) : null;
+    if (!edge) continue;
     // A row pressed against the bottom of the frame is the frame's edge, not the
     // body's; and a "hip" with no leg split and no legs below it is a guess.
     if (!(y > shoulderRow + 2) || y > botRow - Math.round(maskH * 0.04)) continue;
     if (key === 'hip' && crotchRow <= 0 && botRow - y < maskH * 0.25) continue;
-    landmarks[`${key}L`] = P(r.x0, y);
-    landmarks[`${key}R`] = P(r.x1, y);
+    landmarks[`${key}L`] = P(edge.x0, y);
+    landmarks[`${key}R`] = P(edge.x1, y);
   }
   if (armRun) { landmarks.armL = P(armRun.x0, armRow); landmarks.armR = P(armRun.x1, armRow); }
 
   const legsVisible = !feetCut || (vis(25) > 0.5 && vis(27) > 0.5);
   if (crotchRow > 0) landmarks.crotch = P(centre, crotchRow);
-  if (!feetCut && vis(27) > 0.4 && vis(28) > 0.4) {
+  if (!feetCut && !bodyCropped && vis(27) > 0.4 && vis(28) > 0.4) {
     const runs = rowRuns(mask, maskW, maskH, botRow - 1);
     if (runs.length >= 2) {
       landmarks.footL = P((runs[0].x0 + runs[0].x1) / 2, botRow);
@@ -359,11 +462,12 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   // ---- which way the person is facing (detected near the top, before widths) ----
 
   const visible = {
-    head: !headCut && chinRow > 0,
+    // A cropped crown is still a usable head when the face gave the length.
+    head: chinRow > 0 && (!headCut || useFace),
     torso: shoulderRow > 0 && (shoulderRun?.w ?? 0) > 4,
     hips: hipRow > 0 && crotchRow > 0,
     legs: crotchRow > 0 && legsVisible && vis(25) > 0.4,
-    feet: !feetCut && Math.min(vis(27), vis(28)) > 0.4,
+    feet: !feetCut && !bodyCropped && Math.min(vis(27), vis(28)) > 0.4,
   };
   // Height is decided by the server from the landmarks it receives; if the feet
   // are missing it says so itself, so no note is written here.
@@ -371,7 +475,11 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   const keyVis = [11, 12, 13, 14, 23, 24, 25, 26, 27, 28].map(vis);
   const confidence = clamp01(keyVis.reduce((s, x) => s + x, 0) / keyVis.length);
 
-  const poseScale = metricScale({ lm, world, imgW, imgH });
+  /** The width actually measured at a row: the mirrored span where one applied. */
+  const measuredWidth = (y) => {
+    const e = spanAt.get(y);
+    return e ? e.x1 - e.x0 : (y > 0 ? widthAt(y) : null);
+  };
 
   return {
     landmarks,
@@ -389,13 +497,20 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
       widths: {
         shoulder: shoulderRun?.w ?? null,
         neck: neckRow > 0 ? widthAt(neckRow) : null,
-        chest: chestRow > 0 ? widthAt(chestRow) : null,
-        waist: waistRow > 0 ? widthAt(waistRow) : null,
-        hips: hipRow > 0 ? widthAt(hipRow) : null,
+        // The span actually measured — mirrored, where a one-sided row applied.
+        chest: chestRow > 0 ? measuredWidth(chestRow) : null,
+        waist: waistRow > 0 ? measuredWidth(waistRow) : null,
+        hips: hipRow > 0 ? measuredWidth(hipRow) : null,
         arm: armRun ? armRun.w : null,
       },
       headHeightPx,
-      headCmPerWidth: headHeightPx > 0 ? (23.5 / headHeightPx) * maskW : null,
+      headPx: {
+        from: useFace ? 'face' : 'mask',
+        mask: maskHeadPx ? r1(maskHeadPx) : null,
+        face: faceHeadPx ? r1(faceHeadPx) : null,
+        topRow: headTopRow,
+      },
+      headCmPerWidth: headHeightPx > 0 ? (HEAD_LENGTH_CM / headHeightPx) * maskW : null,
       poseCmPerWidth: poseScale ? poseScale.cmPerPx * imgW : null,
       poseSpread: poseScale ? poseScale.spread : null,
       mask: [maskW, maskH],
