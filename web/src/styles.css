@@ -357,124 +357,203 @@ body {
   text-align: left;
 }
 
-.size-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.125rem;
-  padding: 1.375rem 1.25rem 1.25rem;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: radial-gradient(120% 130% at 50% 0%, rgba(255, 91, 58, 0.16), rgba(255, 255, 255, 0.03));
-}
-.size-hero-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--muted);
-}
-.size-hero-value {
-  font-size: clamp(3rem, 16vw, 4.2rem);
-  font-weight: 800;
-  line-height: 1.1;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.size-hero-sub { font-size: 0.85rem; color: var(--muted); }
-
-.facts {
-  list-style: none;
+/* ---------- results: the numbers, grouped so they can be found ---------- */
+.result-head { display: flex; flex-direction: column; gap: 0.3rem; }
+.result-kicker {
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-2);
 }
+.result-title {
+  margin: 0;
+  font-size: clamp(1.5rem, 5.5vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+.result-lead { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+
+/* Two facts, as chips: a pill row reads as a badge, not as a form. */
+.facts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
 .fact {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 0.625rem;
-  border-bottom: 1px solid var(--line);
-}
-.fact:last-child { border-bottom: 0; padding-bottom: 0; }
-.fact-label {
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.3rem 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
   font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  padding-top: 0.125rem;
 }
-.fact-value { font-weight: 600; text-align: right; }
+.fact-label { color: var(--faint); }
+.fact-value { font-weight: 600; }
 
-.measures { display: flex; flex-direction: column; gap: 0.75rem; }
-.measures-title {
+.measure-groups { display: flex; flex-direction: column; gap: 0.7rem; }
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 0.85rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012));
+}
+/* The heading is two rows by design: the title with its count on the right, and
+   the plain-language note underneath. Laid out as flex, the note got squeezed
+   into one word per line at phone width; as a grid it always falls to its own
+   row instead of shrinking. */
+.group-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  row-gap: 0.1rem;
+}
+.group-title {
+  grid-column: 1;
   margin: 0;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* A gradient tick: the one decorative mark on the page, so the eye can find the
+   start of each group while scrolling past fourteen numbers. */
+.group-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.28rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+}
+.group-note { grid-column: 1 / -1; font-size: 0.74rem; color: var(--faint); }
+.group-count {
+  grid-column: 2;
+  justify-self: end;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
-  font-weight: 600;
 }
 .measure-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(6.25rem, 1fr));
   gap: 0.5rem;
 }
+/* A card you can hold. The press feedback IS the affordance — a number that
+   reacts under your finger says "there is more here" without a label saying so,
+   and every one of these has something worth saying about it. */
 .measure {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.75rem 0.75rem 0.625rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
+  gap: 0.2rem;
+  padding: 0.7rem 0.7rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 0.12s ease, border-color 0.16s ease, background 0.16s ease;
+  animation: card-in 0.34s ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 24ms);
 }
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(0.45rem); }
+  to { opacity: 1; transform: none; }
+}
+.measure:hover {
+  border-color: var(--line-2);
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+.measure:active {
+  transform: translateY(0) scale(0.985);
+  background: rgba(255, 255, 255, 0.11);
+}
+.measure:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .measure-label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
   line-height: 1.3;
 }
+.measure-line { display: flex; align-items: baseline; gap: 0.22rem; }
 .measure-value {
-  font-size: 1.25rem;
+  font-size: 1.42rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
-.measures-note { margin: 0; font-size: 0.82rem; color: var(--faint); line-height: 1.5; }
+.measure-unit { font-size: 0.76rem; font-weight: 600; color: var(--accent-2); }
+.measure-cm { font-size: 0.7rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 
-/* ---------- the working behind each number ---------- */
-.math {
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.02);
-  padding: 0.5rem 0.75rem;
-}
-.math summary {
-  cursor: pointer;
-  font-size: 0.82rem;
-  color: var(--muted);
-  list-style: none;
-}
-.math summary::-webkit-details-marker { display: none; }
-.math summary::before { content: '+ '; color: var(--faint); }
-.math[open] summary::before { content: '− '; }
-.math-list {
-  list-style: none;
-  margin: 0.6rem 0 0.15rem;
-  padding: 0;
+/* ---------- the box a held card opens ---------- */
+/* A message box, not a tooltip: on a phone a tooltip lands under your thumb. */
+.tip {
+  position: fixed;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(30rem, calc(100% - 2rem));
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.4rem;
+  padding: 0.95rem 1.05rem 0.85rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(30, 33, 42, 0.98), rgba(21, 23, 30, 0.98));
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.62);
+  animation: tip-in 0.18s ease-out;
 }
-.math-item {
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--faint);
+@keyframes tip-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(0.6rem); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.tip-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent-2);
+}
+.tip-value {
+  margin: 0;
+  font-size: clamp(1.15rem, 4.5vw, 1.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
+.tip-what { margin: 0; font-size: 0.87rem; line-height: 1.5; }
+.tip-where { margin: 0; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+.tip-close {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
 
+@media (prefers-reduced-motion: reduce) {
+  .measure, .tip { animation: none; }
+  .measure { transition: none; }
+}
+
+/* ---------- the working behind each number ---------- */
 /* ---------- what the app saw (the frames behind the numbers) ---------- */
 .seen {
   width: 100%;

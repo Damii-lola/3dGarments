@@ -120,17 +120,15 @@ function readClothing() {
 }
 
 const analysis = document.getElementById('analysis');
-const sizeValue = document.getElementById('size-value');
-const sizeSub = document.getElementById('size-sub');
 const factsEl = document.getElementById('facts');
-const measuresTitle = document.getElementById('measures-title');
-const measureGrid = document.getElementById('measure-grid');
-const measuresNote = document.getElementById('measures-note');
-const mathEl = document.getElementById('math');
-const mathList = document.getElementById('math-list');
-const tapeEl = document.getElementById('tape');
-const tapeList = document.getElementById('tape-list');
+const measuresLead = document.getElementById('measures-lead');
+const measureGroups = document.getElementById('measure-groups');
 const notesEl = document.getElementById('analysis-notes');
+const tipEl = document.getElementById('tip');
+const tipTitle = document.getElementById('tip-title');
+const tipValue = document.getElementById('tip-value');
+const tipWhat = document.getElementById('tip-what');
+const tipWhere = document.getElementById('tip-where');
 const retakeBtn = document.getElementById('retake-btn');
 const startOverBtn = document.getElementById('start-over-btn');
 
@@ -218,8 +216,6 @@ function el(tag, className, text) {
   return node;
 }
 
-const fmtIn = (v) => (v == null ? '—' : `${v}"`);
-
 /** Analyze is only live once the group has been picked and nothing is running. */
 function updateAnalyzeEnabled() {
   analyzeBtn.disabled = analyzing || chosenGender === 'unsure';
@@ -247,6 +243,8 @@ function show(step) {
   openCamera.hidden = step !== 'camera';
   trimStep.hidden = step !== 'trim';
   analysis.hidden = step !== 'result';
+  // The box floats over everything, so it must not survive leaving the results.
+  if (step !== 'result') hideTip();
 }
 
 function releaseMedia() {
@@ -400,152 +398,221 @@ function renderFacts(data) {
     const genderConf = g.confidence ? ` (${Math.round(g.confidence * 100)}% sure)` : '';
     factsEl.append(fact('Detected', genderText + genderConf));
   }
-
-  const c = data.clothing || {};
-  if (c.items?.length || c.density || c.fit) {
-    const parts = [];
-    if (c.items?.length) parts.push(c.items.join(', '));
-    if (c.density) parts.push(`${c.density} density`);
-    if (c.fit) parts.push(`${c.fit} fit`);
-    factsEl.append(fact('Clothing', parts.join(' · ')));
-  }
   if (data.proportions?.build) factsEl.append(fact('Build', data.proportions.build));
-
-  const removed = data.adjusted?.bodyWidthRemovedIn;
-  if (removed) factsEl.append(fact('Clothing width removed', `${fmtIn(removed)} around the body`));
-
-  const views = (data.views || []).filter(Boolean);
-  if (views.length) factsEl.append(fact('Views read', [...new Set(views)].join(', ')));
 }
 
 /**
- * Where the tape actually goes, in the words you would use standing in front of
- * a mirror with a tape in your hand.
+ * What each number is, and where the tape goes for it, in words a child could
+ * follow. No "girth", no "depth ratio", no "as modelled" — the app already did
+ * that thinking; this is the part the person in front of the mirror needs.
  *
- * The app reads a row of pixels; a tape measure reads a line somebody chose, and
- * two people measuring "the waist" can easily be three inches apart — and it is
- * not obvious at all where the hip line is. Printing where each line sits turns
- * a number you cannot check into one you can, and it is how you find out whether
- * the 32.2" you took was your waist or your seat.
+ * It matters because a tape measure reads a line somebody chose and this app
+ * reads a row of pixels: "the waist" and "the hips" are different lines about
+ * eight inches apart, and nobody can find them by guessing. It is how a self
+ * taken 32.2" turns out to have been the waist and not the seat.
  */
-const TAPE_LINES = {
-  head: 'around the widest part of your head, level with the tops of your ears',
-  neck: 'around the base of your neck, one finger of slack under the tape',
-  chest: 'around the fullest part of your chest, level, just under the armpits',
-  bust: 'around the fullest part of your bust, level, just under the armpits',
-  waist: 'around the narrowest part of your torso — level with your navel, where you crease when you bend sideways',
-  lowWaist: 'about 2" below the waist line, where a low-rise waistband sits',
-  hips: 'around the fullest part of your seat, about 8" below the waist line',
-  shoulder: 'straight across your back, bony shoulder point to bony shoulder point',
-  xShoulder: 'straight across your front at chest level, shoulder point to shoulder point',
-  xFront: 'straight across your front at chest level, shoulder point to shoulder point',
-  xBack: 'straight across your back at chest level, shoulder point to shoulder point',
-  backWidth: 'straight across your back at armpit level',
-  topArm: 'around the fullest part of your upper arm, arm hanging relaxed',
-  elbow: 'around your elbow, arm straight',
-  wrist: 'around your wrist bone, just past the little bump',
-  knee: 'around your knee, leg straight and relaxed',
-  calf: 'around the fullest part of your calf',
-  highAnkle: 'around your leg just above the ankle bone',
-  ankle: 'around your ankle bone, over the bump',
-  sleeveLength: 'from the bony point of your shoulder, over a slightly bent elbow, to the wrist bone',
-  sleeveJersey: 'from the bone at the base of your neck, over your shoulder, down to the wrist bone',
-  napeToWaist: 'from the bump at the base of your neck, down your back, to the waist line',
-  shoulderToWaist: 'from the shoulder line down your front to the waist line',
-  armholeDepth: 'from the shoulder line straight down to the armpit line',
-  waistToKnee: 'from the waist line straight down to the middle of the knee',
-  waistToHip: 'from the waist line down to the fullest part of your seat',
-  waistToFloor: 'from the waist line straight down to the floor',
-  bodyRise: 'sitting on a flat chair: from the waist line down to the seat',
-  upperbodyHeight: 'from the crown of your head down to the waist line',
-  lowerbodyHeight: 'from the waist line down to the floor',
-  totalHeight: 'standing straight against a wall, heels together, no shoes',
+const ABOUT = {
+  head: { what: 'How big around your head is. Hat size.', where: 'Wrap the tape around the biggest part of your head, above your ears.' },
+  neck: { what: 'How big around your neck is. Shirt collar size.', where: 'Around the bottom of your neck, one finger loose under the tape.' },
+  chest: { what: 'How big around your chest is. The main number for a top.', where: 'Wrap it around the biggest part of your chest, level, just under your armpits.' },
+  bust: { what: 'How big around your bust is. The main number for a top.', where: 'Wrap it around the biggest part of your bust, level, just under your armpits.' },
+  waist: { what: 'How big around your middle is. The main number for trousers.', where: 'Around your middle at your tummy button — where a belt goes. Bend sideways and the crease is your waist.' },
+  lowWaist: { what: 'Around your middle, a bit lower down.', where: 'About two fingers below your belt line, where a low-rise waistband sits.' },
+  hips: { what: 'How big around your bottom is.', where: 'Around the biggest part of your bottom, about a hand below your belt line. Not the same line as your waist.' },
+  shoulder: { what: 'How wide your shoulders are.', where: 'Straight across your back, from one shoulder corner to the other.' },
+  xShoulder: { what: 'How wide your shoulders are across the front.', where: 'Straight across the front, shoulder corner to shoulder corner.' },
+  xFront: { what: 'How wide your chest is across the front.', where: 'Straight across the front, shoulder corner to shoulder corner, at chest level.' },
+  xBack: { what: 'How wide your back is across.', where: 'Straight across your back, shoulder corner to shoulder corner, at chest level.' },
+  backWidth: { what: 'How wide your back is.', where: 'Straight across your back, level with your armpits.' },
+  topArm: { what: 'How big around your upper arm is.', where: 'Around the fattest part of your top arm, arm hanging loose.' },
+  elbow: { what: 'How big around your elbow is.', where: 'Around your elbow with your arm straight.' },
+  wrist: { what: 'How big around your wrist is.', where: 'Around your wrist bone, past the little bump.' },
+  knee: { what: 'How big around your knee is.', where: 'Around your knee, leg straight and relaxed.' },
+  calf: { what: 'How big around your calf is.', where: 'Around the fattest part of your calf.' },
+  highAnkle: { what: 'How big around your leg is above the ankle.', where: 'Around your leg just above the ankle bone.' },
+  ankle: { what: 'How big around your ankle is.', where: 'Around your ankle bone, over the bump.' },
+  sleeveLength: { what: 'How long your arm is.', where: 'From your shoulder corner, over a slightly bent elbow, down to your wrist bone.' },
+  sleeveJersey: { what: 'How long a sleeve is, measured from your neck.', where: 'From the bone at the bottom of your neck, over your shoulder, down to your wrist bone.' },
+  napeToWaist: { what: 'How long your back is.', where: 'From the bump at the bottom of your neck, down your back, to your belt line.' },
+  shoulderToWaist: { what: 'How long your front is.', where: 'From your shoulder line, down the front, to your belt line.' },
+  armholeDepth: { what: 'How deep the armhole needs to be.', where: 'From your shoulder line straight down to your armpit.' },
+  waistToKnee: { what: 'How long your thigh is.', where: 'From your belt line straight down to the middle of your knee.' },
+  waistToHip: { what: 'How far your bottom hangs below your belt.', where: 'From your belt line down to the biggest part of your bottom.' },
+  waistToFloor: { what: 'How long your legs are from your belt down.', where: 'From your belt line straight down to the floor.' },
+  bodyRise: { what: 'How much room you need when you sit down.', where: 'Sit on a flat chair, then measure from your belt line down to the chair.' },
+  upperbodyHeight: { what: 'How long your top half is.', where: 'From the top of your head down to your belt line.' },
+  lowerbodyHeight: { what: 'How long your bottom half is.', where: 'From your belt line down to the floor.' },
+  totalHeight: { what: 'How tall you are.', where: 'Stand against a wall, no shoes, heels together.' },
+  cuffShirts: { what: 'How big around a shirt cuff should be.', where: 'Your wrist, plus a little room so your hand slides through.' },
+  cuffTwoPiece: { what: 'How big around a two-piece sleeve cuff should be.', where: 'Your wrist, plus the usual inch of room.' },
+  trouserBottom: { what: 'How wide the bottom of a trouser leg is.', where: 'Across the bottom of one trouser leg, laid flat.' },
+  jeansBottom: { what: 'How wide the bottom of a jean leg is.', where: 'Across the bottom of one jean leg, laid flat.' },
+  crotchLength: { what: 'How long your trousers are at the crotch.', where: 'Sitting down: from your belt line at the front, under you, to your belt line at the back.' },
+  dart: { what: 'How much the front needs shaping.', where: 'The difference between your chest and your waist.' },
 };
 
 /**
- * The catalogue: every category this clip actually showed, in the group the
- * user picked. The list IS the answer, so a category the video never contained
- * is not listed at all — no blank rows, no "not measured" placeholders.
+ * Show the box for one card. A message box pinned to the bottom of the screen
+ * rather than a tooltip, because a tooltip on a phone lands under your thumb.
  */
-function renderMeasures(data) {
-  measureGrid.replaceChildren();
-  tapeList.replaceChildren();
-  const items = data.catalogue?.items || [];
-  const group = data.catalogue?.group;
-  measuresTitle.textContent = group === 'female' ? "What we measured (women's sheet)"
-    : group === 'male' ? "What we measured (men's sheet)"
-      : 'What we measured';
+function showTip(item) {
+  const info = ABOUT[item.key] || {};
+  tipTitle.textContent = item.label;
+  tipValue.textContent = `${item.in} in · ${item.cm} cm`;
+  tipWhat.textContent = info.what || 'A measurement read from your video.';
+  tipWhere.textContent = info.where || '';
+  tipWhere.hidden = !info.where;
+  tipEl.hidden = false;
+}
 
-  for (const item of items) {
-    const cell = el('div', 'measure');
-    cell.append(el('span', 'measure-label', item.label), el('span', 'measure-value', `${item.in}"`));
-    measureGrid.append(cell);
-  }
-
-  // Only the lines this clip actually produced, in the same order, so the two
-  // lists can be read side by side against a tape.
-  for (const item of items) {
-    const where = TAPE_LINES[item.key];
-    if (!where) continue;
-    tapeList.append(el('li', 'math-item', `${item.label} (${item.in}") — ${where}`));
-  }
-  tapeEl.hidden = !tapeList.children.length;
-
-  if (!items.length) {
-    measuresNote.textContent = 'Nothing in this clip could be measured.';
-    return;
-  }
-  const removed = data.adjusted?.bodyWidthRemovedIn;
-  measuresNote.textContent = removed
-    ? `Read off your video over your clothes, then widened down by ${removed}" for the body underneath. Categories your clip did not show are not listed.`
-    : 'Each number was read off the landmarks in your video, over your clothes. Categories your clip did not show are simply not listed.';
+function hideTip() {
+  tipEl.hidden = true;
 }
 
 /**
- * The working: every girth is the width the front-facing frames gave and the
- * depth the side-on frames gave, turned into a tape reading by the factor
- * ANSUR II measured for that part of the body. Showing it is the whole point —
- * these are calculations, not guesses.
+ * Give a card its long press: hold with a mouse, or touch and hold on a phone.
+ * Also Enter or Space when it is focused, so it works without a pointer.
  */
-function renderMath(data) {
-  mathList.replaceChildren();
-  const g = data.geometry || {};
-  const rows = [];
-
-  // One line per measured category, straight from the engine's own working.
-  for (const item of data.catalogue?.items || []) rows.push(`${item.label}: ${item.how}`);
-
-  const h = g.height;
-  if (h) {
-    rows.push(`Height: ${h.in}" head-to-floor${h.headUnits ? ` (${h.headUnits} head-lengths)` : ''}, from ${h.views} full-body frame${h.views === 1 ? '' : 's'}`);
-  }
-
-  if (g.scale) {
-    const anchors = (g.scale.anchors || []).join(', ');
-    rows.push(`Scale: ${g.scale.cmPerImageWidth} cm per image width${anchors ? ` — anchored on ${anchors}` : ''}`);
-  }
-  if (g.scale?.headUnitsCorrection && Math.abs(g.scale.headUnitsCorrection - 1) > 0.02) {
-    rows.push(`Head-length correction: ×${g.scale.headUnitsCorrection} (adult proportions are 7.1–7.9 heads tall)`);
-  }
-
-  for (const row of rows) mathList.append(el('li', 'math-item', row));
-  mathEl.hidden = rows.length === 0;
+function wireCard(cell, item) {
+  let timer = null;
+  const open = () => { timer = null; showTip(item); };
+  cell.addEventListener('pointerdown', (e) => {
+    if (Number.isFinite(e.button) && e.button > 0) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(open, 320);
+  });
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) cell.addEventListener(ev, cancel);
+  // A long press on a phone otherwise selects the text or opens the copy menu.
+  cell.addEventListener('contextmenu', (e) => e.preventDefault());
+  cell.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTip(item); }
+  });
 }
+
+// Tapping or clicking anywhere else closes the box. The press that OPENS it
+// happens before the box exists, so this cannot swallow the opening press.
+document.addEventListener('pointerdown', (e) => {
+  if (tipEl.hidden || tipEl.contains(e.target)) return;
+  hideTip();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideTip();
+});
+
+/**
+ * The order the numbers are shown in, and why: three questions a person
+ * actually asks — how big around am I, how wide am I, how long am I. A flat
+ * grid of fourteen equal cards answers none of them until you read all of it.
+ */
+const GROUPS = [
+  {
+    title: 'Around your body',
+    note: 'the tape goes all the way round',
+    keys: ['head', 'neck', 'bust', 'chest', 'waist', 'lowWaist', 'hips', 'topArm', 'elbow', 'wrist', 'knee', 'calf', 'highAnkle', 'ankle'],
+  },
+  {
+    title: 'Across your body',
+    note: 'shoulder to shoulder',
+    keys: ['shoulder', 'xShoulder', 'xFront', 'xBack', 'backWidth'],
+  },
+  {
+    title: 'How long things are',
+    note: 'shoulder to wrist, waist to floor',
+    keys: ['sleeveLength', 'sleeveJersey', 'napeToWaist', 'shoulderToWaist', 'armholeDepth', 'waistToKnee', 'waistToHip', 'waistToFloor', 'bodyRise', 'upperbodyHeight', 'lowerbodyHeight', 'totalHeight'],
+  },
+  {
+    title: 'Cuffs and trouser bottoms',
+    note: 'the numbers a pattern asks for',
+    keys: ['cuffShirts', 'cuffTwoPiece', 'trouserBottom', 'jeansBottom', 'crotchLength', 'dart'],
+  },
+];
+
+/**
+ * The catalogue: every category this clip actually showed, in the group the
+ * user picked, laid out in the order someone would measure themselves. The list
+ * IS the answer, so a category the video never contained is not listed at all —
+ * no blank rows, no "not measured" placeholders.
+ */
+function renderMeasures(data) {
+  measureGroups.replaceChildren();
+  const items = data.catalogue?.items || [];
+
+  if (!items.length) {
+    measuresLead.textContent = 'Nothing in this clip could be measured.';
+    return;
+  }
+  measuresLead.textContent = `Hold any number to see what it is. ${items.length} of them came off your clip.`;
+
+  // Only the groups this clip actually filled, in the order above, with
+  // anything unrecognised kept rather than dropped.
+  const buckets = [...GROUPS, { title: 'Also measured', note: '', keys: [] }]
+    .map((g) => ({ ...g, items: [] }));
+  for (const item of items) {
+    const bucket = buckets.find((b) => b.keys.includes(item.key)) || buckets[buckets.length - 1];
+    bucket.items.push(item);
+  }
+
+  let i = 0;
+  for (const bucket of buckets) {
+    if (!bucket.items.length) continue;
+
+    const section = el('section', 'group');
+    const head = el('div', 'group-head');
+    // Title, count, then note: the count shares the title's row and the note
+    // falls to its own — as flex the note got squeezed to one word per line.
+    head.append(el('h2', 'group-title', bucket.title));
+    head.append(el('span', 'group-count', `${bucket.items.length}`));
+    if (bucket.note) head.append(el('span', 'group-note', bucket.note));
+    section.append(head);
+
+    const grid = el('div', 'measure-grid');
+    for (const item of bucket.items) {
+      const cell = el('div', 'measure');
+      cell.tabIndex = 0;
+      cell.style.setProperty('--i', String(i));
+      i += 1;
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('aria-label', `${item.label}, ${item.in} inches. Hold for what this is.`);
+      const line = el('span', 'measure-line');
+      line.append(el('span', 'measure-value', String(item.in)), el('span', 'measure-unit', 'in'));
+      cell.append(
+        el('span', 'measure-label', item.label),
+        line,
+        el('span', 'measure-cm', `${item.cm} cm`),
+      );
+      wireCard(cell, item);
+      grid.append(cell);
+    }
+    section.append(grid);
+    measureGroups.append(section);
+  }
+}
+
+/**
+ * The catalogue is the whole answer, so the running commentary the engine also
+ * produces is not shown: it is written for whoever reads the API, not for the
+ * person looking at their own waistline.
+ */
+const HIDDEN_NOTES = [
+  /^read against the /i,
+  /^clothing\b/i,
+  /subtracted from the body estimate/i,
+  /^depth came from/i,
+  /measurement sheet/i,
+];
 
 function renderNotes(data) {
   notesEl.replaceChildren();
-  for (const note of data.notes || []) notesEl.append(el('li', 'note', note));
+  for (const note of data.notes || []) {
+    if (HIDDEN_NOTES.some((re) => re.test(note))) continue;
+    notesEl.append(el('li', 'note', note));
+  }
 }
 
 function renderAnalysis(data) {
-  sizeValue.textContent = data.size || '—';
-  const basis = data.sizeBasis === 'female' ? "women's" : data.sizeBasis === 'male' ? "men's" : '';
-  const rec = data.reconciled ? 'cross-checked' : '';
-  sizeSub.textContent = [basis ? `${basis} sizing` : '', rec].filter(Boolean).join(' · ');
-
   renderFacts(data);
   renderMeasures(data);
-  renderMath(data);
   renderNotes(data);
   renderSeen(lastSeen, { note: lastSeenNote, open: lastSeenOpen });
   show('result');
@@ -742,9 +809,7 @@ if (new URLSearchParams(location.search).has('demo')) {
       height: { in: 71.1, headUnits: 7.5, views: 4, spread: 0.4 },
     },
     notes: [
-      'Read against the men\'s measurement sheet, as you chose.',
-      'Clothing (t-shirt, jeans) · light density · regular fit — about 0.3 in of width subtracted from the body estimate.',
-      'Depth came from the side-on frames, so the girths are measured rather than modelled.',
+      'Your feet were not in shot, so nothing that needs the floor could be read. Keep your whole body in frame.',
     ],
     views: ['front', 'three-quarter', 'side', 'back', 'side', 'front'],
   });

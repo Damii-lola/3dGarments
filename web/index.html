@@ -158,34 +158,21 @@
         </div>
       </section>
 
-      <!-- Step 3: results -->
+      <!-- Step 3: results. The numbers ARE the answer, grouped so a person can
+           find their own waistline in three seconds: everything that goes
+           around the body, everything that goes across it, and everything that
+           is a length. Every value carries its unit, and holding any card says
+           what the number is and where the tape goes for it. -->
       <section class="analysis" id="analysis" hidden>
-        <div class="size-hero">
-          <span class="size-hero-label">Your estimated size</span>
-          <span class="size-hero-value" id="size-value">&mdash;</span>
-          <span class="size-hero-sub" id="size-sub"></span>
-        </div>
+        <header class="result-head">
+          <p class="result-kicker">Your measurements</p>
+          <h1 class="result-title" id="result-title">Read from your video</h1>
+          <p class="result-lead" id="measures-lead">Hold any number to see what it is.</p>
+        </header>
 
         <ul class="facts" id="facts"></ul>
 
-        <div class="measures">
-          <h2 class="measures-title" id="measures-title">What we measured</h2>
-          <div class="measure-grid" id="measure-grid"></div>
-          <p class="measures-note" id="measures-note"></p>
-
-          <!-- A tape measure reads a line someone chose; the app reads a row of
-               pixels. Printing where each line sits is how a user finds out that
-               their "32.2 inch waist" was the waist and not the seat. -->
-          <details class="math" id="tape">
-            <summary>Where to put the tape, so you can check these yourself</summary>
-            <ul class="math-list tape-list" id="tape-list"></ul>
-          </details>
-
-          <details class="math" id="math">
-            <summary>How these were worked out</summary>
-            <ul class="math-list" id="math-list"></ul>
-          </details>
-        </div>
+        <div class="measure-groups" id="measure-groups"></div>
 
         <ul class="notes" id="analysis-notes"></ul>
 
@@ -194,6 +181,28 @@
           <button class="btn-ghost" id="start-over-btn" type="button">Start over</button>
         </div>
       </section>
+
+      <!-- What a held card says: what it is in plain words, where the tape goes
+           for it, and the number in both units. A message box rather than a
+           tooltip, because a tooltip on a phone lands under your thumb. -->
+      <div class="tip" id="tip" role="dialog" aria-live="polite" hidden>
+        <p class="tip-title" id="tip-title"></p>
+        <p class="tip-value" id="tip-value"></p>
+        <p class="tip-what" id="tip-what"></p>
+        <p class="tip-where" id="tip-where"></p>
+        <p class="tip-close">Tap anywhere to close</p>
+      </div>
+
+      <!-- What a held card says: what it is in plain words, where the tape goes
+           for it, and the number in both units. A message box rather than a
+           tooltip, because a tooltip on a phone lands under your thumb. -->
+      <div class="tip" id="tip" role="dialog" aria-live="polite" hidden>
+        <p class="tip-title" id="tip-title"></p>
+        <p class="tip-value" id="tip-value"></p>
+        <p class="tip-what" id="tip-what"></p>
+        <p class="tip-where" id="tip-where"></p>
+        <p class="tip-close">Tap anywhere to close</p>
+      </div>
 
       <!-- What the app actually saw: the frames, the mask, and the rows the
            widths were read at. A refusal is nearly always something visible in
