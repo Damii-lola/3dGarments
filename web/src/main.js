@@ -2,16 +2,22 @@
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
    2. Trim the clip's LENGTH to the part where you turn around.
-   3. The server reads body LANDMARKS out of the frames (nothing but positions,
-      no sizes), then computes every measurement itself: width from the
-      front-facing frames, depth from the side-on ones, and a girth from the
-      ellipse those two describe. It only reports what was visible — a blank
-      beats a guess. The arithmetic is shown under "How these were worked out".
+   3. Measure ON THE DEVICE: a pose model finds the joints and the person's own
+      silhouette gives every width, so nothing is recalled from an average body
+      and nothing is uploaded until it is a handful of numbers. The server does
+      all the arithmetic and only reports what was visible — a blank beats a
+      guess. The arithmetic is shown under "How these were worked out".
+      Browsers that cannot run the pose model fall back to sending JPEG frames
+      for the server's vision model (?llm=1 forces that path).
    ========================================================= */
 
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
-import { analyzeBody } from './body-scan/analyze.js';
+import { analyzeBody, analyzeGeometry } from './body-scan/analyze.js';
+import { analyzePose } from './body-scan/pose.js';
 import { createTrimmer } from './body-scan/trim.js';
+
+/** ?llm=1 — skip the on-device measurement and use the vision model instead. */
+const forceLlm = new URLSearchParams(location.search).get('llm') === '1';
 
 /**
  * ?debug=1 — prints what the device is actually reporting. Handy when a layout
@@ -309,23 +315,54 @@ async function runAnalysis() {
     const { from, to } = trimmer.getSpan();
     log('analyze start', { bytes: recordedBlob.size, type: recordedBlob.type, from, to });
 
-    // 1. Frames. If decoding fails, fall back to a single poster frame.
-    setStatus('Grabbing key frames from your clip…');
-    let frames;
-    try {
-      frames = await extractFrames(recordedBlob, { count: 6, from, to });
-    } catch (e) {
-      log('frame extraction failed — falling back to a single frame:', e.message);
-      const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });
-      frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
+    // 1. Measure ON THE DEVICE first. The pose model finds the joints and the
+    //    person's own silhouette gives every width, so nothing is recalled from
+    //    an average body and nothing is uploaded until it is a few numbers.
+    //    Anything that fails here falls through to the vision path below.
+    let data = null;
+    if (!forceLlm) {
+      try {
+        const measured = await analyzePose(recordedBlob, {
+          count: 6,
+          from,
+          to,
+          maxWidth: 720,
+          onProgress: (msg) => setStatus(msg),
+        });
+        log('on-device measurement', measured);
+        if (measured.frames.length) {
+          setStatus(`Sending ${measured.frames.length} measurements…`);
+          data = await analyzeGeometry(measured, {
+            onTick: (s) => setStatus(`Working out your measurements… ${s}s`),
+          });
+        } else {
+          log('on-device measurement found no usable frame — falling back to the vision model');
+        }
+      } catch (e) {
+        log('on-device measurement failed — falling back to the vision model:', e.message);
+      }
     }
-    log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
 
-    // 2. Ask the server. The tick keeps the status moving so it never looks frozen.
-    setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
-    const data = await analyzeBody(frames, {
-      onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`),
-    });
+    // 2. Fallback: JPEG frames for the vision model. Also the only path when the
+    //    browser cannot run the pose model at all.
+    if (!data) {
+      setStatus('Grabbing key frames from your clip…');
+      let frames;
+      try {
+        frames = await extractFrames(recordedBlob, { count: 6, from, to });
+      } catch (e) {
+        log('frame extraction failed — falling back to a single frame:', e.message);
+        const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });
+        frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
+      }
+      log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
+
+      // The tick keeps the status moving so it never looks frozen.
+      setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
+      data = await analyzeBody(frames, {
+        onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`),
+      });
+    }
 
     log('analysis result', data);
     renderAnalysis(data);

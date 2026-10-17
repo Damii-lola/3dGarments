@@ -470,7 +470,93 @@ function bestSize(sex, girth) {
 
 /* ---------------- route ---------------- */
 
+/**
+ * Frames measured ON THE DEVICE and sent as numbers: pose joints plus the
+ * silhouette widths the browser read off the segmentation mask. There is no
+ * picture and no model call here — the server only does arithmetic and the same
+ * sanity checks it applies to model-supplied landmarks.
+ */
+function geometryFrames(body) {
+  if (!body || body.source !== 'pose' || !Array.isArray(body.frames)) return null;
+  const frames = body.frames.filter((f) => f && f.landmarks && typeof f.landmarks === 'object').slice(0, 8);
+  if (!frames.length) return null;
+  return {
+    frames,
+    aspect: body.aspect,
+    model: typeof body.model === 'string' ? body.model.slice(0, 80) : 'on-device pose',
+  };
+}
+
+/** Turn the browser's per-frame numbers into the frame objects the engine reads. */
+function addGeometryFrames(geo, aspect, frames, rejected) {
+  geo.frames.forEach((raw, i) => {
+    const frame = {
+      file: `pose-${i + 1}`,
+      view: normView(raw.view),
+      gender: normGender(raw.gender),
+      genderConfidence: 0,
+      build: null,
+      landmarks: normalizeLandmarks(raw.landmarks),
+      visible: raw.visible && typeof raw.visible === 'object' ? raw.visible : {},
+      references: [],
+      clothing: {},
+      // Sharpness and lighting are not measured on the device. Hold them neutral
+      // so they neither help nor hurt one frame against another.
+      camera: { sharpness: 0.75, lighting: 0.75 },
+      confidence: clamp(Number(raw.confidence) || 0.6, [0.05, 1]),
+      aspect,
+      // Regions the device could see but not measure (arms merged with the
+      // torso). Carried through so the notes can explain a blank honestly.
+      unmeasured: Array.isArray(raw.unmeasured) ? raw.unmeasured.slice(0, 4) : [],
+    };
+    // An unseen floor is an invented one, exactly as for the vision path.
+    if (frame.visible.legs === false || frame.visible.feet === false) {
+      for (const k of ['footL', 'footR', 'crotch']) delete frame.landmarks[k];
+      frame.floorInvented = true;
+    }
+    frame.scale = frameScale(frame);
+    const check = checkFrame(frame);
+    if (check.fatal) {
+      rejected.push(frameDigest(frame, check.notes.join(', ') || 'implausible landmarks'));
+      log(`  frame ${i + 1}/${geo.frames.length} REJECTED - ${check.notes.join(', ')}`);
+      return;
+    }
+    frame.bad = check.bad;
+    frame.heightBad = check.heightBad;
+    frames.push(frame);
+    const scale = frame.scale ? `${round2(frame.scale.cmPerWidth)} cm/width (reliability ${round2(frame.scale.reliability)})` : 'NONE';
+    log(`  frame ${i + 1}/${geo.frames.length} ok - view=${frame.view} landmarks=${Object.keys(frame.landmarks).length} scale=${scale}${check.bad.size ? ` dropped-regions=${[...check.bad].join(',')}` : ''}`);
+  });
+}
+
 bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
+  const startedAt = Date.now();
+  const geo = geometryFrames(req.body);
+  const frames = [];
+  const failures = [];
+  const rejected = [];
+  const unreadable = [];
+
+  // Frames arrive one of two ways: measured on the device, or as JPEGs for the
+  // vision model. Both end in the same deterministic measurement engine.
+  if (geo) {
+    const aspect = clamp(Number(geo.aspect) || 0.75, [0.3, 3]);
+    log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}`);
+    addGeometryFrames(geo, aspect, frames, rejected);
+    return finishScan(res, {
+      frames,
+      rejected,
+      unreadable,
+      failures,
+      aspect,
+      attempted: geo.frames.length,
+      totalBytes: 0,
+      sourceModel: `on-device pose (${geo.model})`,
+      poseNotes: [...new Set(geo.frames.flatMap((f) => (Array.isArray(f.notes) ? f.notes : [])))],
+      startedAt,
+    });
+  }
+
   if (!config.cloudflare.accountId || !config.cloudflare.apiToken) {
     throw new HttpError(503, 'Body scan is not configured (set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)');
   }
@@ -478,7 +564,6 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const files = req.files;
   if (!files || files.length === 0) throw new HttpError(400, 'Upload at least one frame');
 
-  const startedAt = Date.now();
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
 
   // The frame's true aspect ratio decides how a vertical normed distance (y is
@@ -490,14 +575,6 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     : clamp(Number(req.body?.aspect) || 0.75, [0.3, 3]);
 
   log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
-
-  // 1. Analyse every frame IN PARALLEL — each vision call takes ~30-50s, so a
-  //    sequential loop would blow the client's timeout. Skip failures rather
-  //    than aborting the whole request.
-  const frames = [];
-  const failures = [];
-  const rejected = [];
-  const unreadable = [];
 
   await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
@@ -556,10 +633,30 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
 
   log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${rejected.length} rejected as implausible, ${failures.length} failed)`);
 
+  return finishScan(res, {
+    frames,
+    rejected,
+    unreadable,
+    failures,
+    aspect,
+    attempted: files.length,
+    totalBytes,
+    sourceModel: config.cloudflare.visionModel,
+    poseNotes: [],
+    startedAt,
+  });
+}));
+
+/**
+ * Everything both entry points share: refuse frames that cannot be a body, agree
+ * on one scale across the turn, measure each region from landmark geometry, and
+ * pick a size. Nothing here knows or cares which path produced the frames.
+ */
+function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
-    const details = { diagnostics: { model: config.cloudflare.visionModel, rejected, unreadable, failures } };
-    if (failures.length === files.length) {
+    const details = { diagnostics: { model: sourceModel, rejected, unreadable, failures } };
+    if (failures.length === attempted) {
       throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`, details);
     }
     if (rejected.length) {
@@ -568,8 +665,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     throw new HttpError(422, 'Could not find a person to measure. Make sure the person fills the frame and the lighting is decent.', details);
   }
 
-  /** Everything the model reported, for a refusal we have to justify. */
-  const diagnostics = { model: config.cloudflare.visionModel, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
+  /** Everything each frame reported, for a refusal we have to justify. */
+  const diagnostics = { model: sourceModel, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
 
   // 2. Scale. Without an anchor there are no centimetres, so say so rather than
   //    inventing numbers.
@@ -710,6 +807,20 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   // 9. Notes — including exactly which gaps we refused to fill.
   const notes = [];
   const label = (k) => REGIONS[k]?.label || k;
+  // Caveats the on-device measurement raised itself (arms not clear, feet out of
+  // shot). They come first because they explain everything below them.
+  for (const n of poseNotes) notes.push(n);
+  // A blank the device caused itself (arms merged with the torso in every usable
+  // frame) needs its own explanation: the generic "not visible" note would be a
+  // lie, and a silent gap reads as a bug. Only said when the blank survived every
+  // frame, so it can never contradict a number we did report.
+  const poseGaps = new Set(frames.flatMap((f) => (Array.isArray(f.unmeasured) ? f.unmeasured : [])));
+  if (poseGaps.has('torso') && !measured.chest && !measured.waist && !measured.hips) {
+    notes.push('Arms were not clear of your sides in any frame, so chest, waist and hips were left blank rather than measured around an arm.');
+  }
+  if (poseGaps.has('arm') && !measured.arm) {
+    notes.push('Your upper arm was not held clear of your body in any frame, so arm width was left out.');
+  }
   const visibleRegions = GIRTH_REGIONS.filter((k) => measured[k]);
   if (visibleRegions.length) {
     notes.push(`Measured from what is visible in the clip: ${visibleRegions.map((k) => label(k).toLowerCase()).join(', ')}${heightIn != null ? ' and full height' : ''}.`);
@@ -734,7 +845,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   if (clampedRegions.length) {
     notes.push(`The ${clampedRegions.map((k) => label(k).toLowerCase()).join(' and ')} reading was outside the plausible range and has been clamped — treat ${clampedRegions.length > 1 ? 'them' : 'it'} as the least reliable number here.`);
   }
-  if (heightIn == null && measured.chest) {
+  if (heightIn == null && (measured.chest || measured.waist || measured.hips)) {
     notes.push('Height was not measured — your feet were not in frame. Film the full body to get it.');
   }
   if (headUnitsCorrection && Math.abs(headUnitsCorrection - 1) > 0.02) {
@@ -802,7 +913,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
 
   result.debug = {
     elapsedMs: Date.now() - startedAt,
-    framesReceived: files.length,
+    framesReceived: attempted,
     framesUsed: frames.length,
     framesRejected: rejected.length,
     totalBytes,
@@ -818,4 +929,4 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   log(`  methods=${JSON.stringify(methods)}`);
 
   res.json(result);
-}));
+}

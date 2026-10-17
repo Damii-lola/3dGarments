@@ -20,7 +20,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...args) => console.log('[3dg:framed]', ...args);
 
 /** Some browsers report duration = Infinity until the file is seeked. */
-async function resolveDuration(video) {
+export async function resolveDuration(video) {
   if (Number.isFinite(video.duration) && video.duration > 0) return video.duration;
   return new Promise((resolve) => {
     let settled = false;
@@ -57,7 +57,7 @@ function waitForMetadata(video) {
   });
 }
 
-function seek(video, time) {
+export function seek(video, time) {
   return new Promise((resolve) => {
     let done = false;
     const finish = () => {
@@ -120,7 +120,7 @@ function drawGrid(ctx, w, h) {
 }
 
 /** Opens the video off-screen, runs `run(video)`, and always cleans up. */
-async function withVideo(file, run) {
+export async function withVideo(file, run) {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.preload = 'auto';
