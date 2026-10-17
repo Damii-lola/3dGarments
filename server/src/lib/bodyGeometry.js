@@ -48,6 +48,37 @@ export const DEPTH_RATIO = {
 };
 
 /**
+ * The depth/width ratio a torso part is entitled to, per group — because a
+ * man's hip and a woman's hip are not the same cross-section.
+ *
+ * Fit through the origin (depth = ratio x width, least squares) on ANSUR II's
+ * paired caliper measurements, so it is the survey's own relationship rather
+ * than one number borrowed across groups. It caught a real bias: this file used
+ * to put a man's hip ratio (0.71) on a woman's hips, and women are measurably
+ * wider than deep there — 0.658. Every female hip tape read 2.2% long.
+ *
+ * `DEPTH_RATIO` above stays the fallback for parts ANSUR did not take as a
+ * pair (head, neck, underbust, lower waist, every limb).
+ */
+export const DEPTH_RATIO_BY_GENDER = {
+  chest: { male: 0.876801, female: 0.918847, unsure: 0.889270 },
+  waist: { male: 0.729938, female: 0.711381, unsure: 0.724533 },
+  lowWaist: { male: 0.729938, female: 0.711381, unsure: 0.724533 },
+  hips: { male: 0.711748, female: 0.658316, unsure: 0.693702 },
+  // The deltoid line is far wider than the torso is deep (bideltoid against the
+  // chest depth in the survey), and that ratio is what a turned shoulder span
+  // has to be undone with.
+  shoulder: { male: 0.497800, female: 0.550100, unsure: 0.514000 },
+};
+
+/** The prior depth as a fraction of the front width, for one part and group. */
+export function depthRatio(ratioKey, gender) {
+  const row = DEPTH_RATIO_BY_GENDER[ratioKey];
+  if (row) return row[gender] ?? row.unsure;
+  return DEPTH_RATIO[ratioKey];
+}
+
+/**
  * Every region a landmark pair can span. Each is measured the same way — the
  * horizontal separation of the pair, in the frame's own scale — and only the
  * pair's meaning differs. `girth: true` means the pair describes a closed
@@ -56,7 +87,7 @@ export const DEPTH_RATIO = {
 export const REGIONS = {
   head: { left: 'headL', right: 'headR', label: 'Head', girth: true, ratio: 'head' },
   neck: { left: 'neckL', right: 'neckR', label: 'Neck', girth: true, ratio: 'neck' },
-  shoulder: { left: 'shoulderL', right: 'shoulderR', label: 'Shoulder', girth: false },
+  shoulder: { left: 'shoulderL', right: 'shoulderR', label: 'Shoulder', girth: false, ratio: 'shoulder' },
   upperChest: { left: 'upperChestL', right: 'upperChestR', label: 'Chest', girth: true, ratio: 'upperChest' },
   chest: { left: 'armpitL', right: 'armpitR', label: 'Chest / bust', girth: true, ratio: 'chest' },
   underbust: { left: 'underbustL', right: 'underbustR', label: 'Underbust', girth: true, ratio: 'underbust' },
@@ -71,8 +102,9 @@ export const REGIONS = {
   highAnkle: { left: 'highAnkleL', right: 'highAnkleR', label: 'High ankle', girth: true, ratio: 'ankle' },
   ankle: { left: 'ankleL', right: 'ankleR', label: 'Ankle', girth: true, ratio: 'ankle' },
   // The garment across the leg at the ankle: a flat width, not a girth, and only
-  // a real reading when it is wider than a bare ankle could be.
-  hem: { left: 'ankleL', right: 'ankleR', label: 'Leg opening', girth: false },
+  // a real reading when it is wider than a bare ankle could be. A trouser leg is
+  // a tube, so its silhouette width barely changes with the turn.
+  hem: { left: 'ankleL', right: 'ankleR', label: 'Leg opening', girth: false, ratio: 'ankle' },
 };
 /** The girths a size cannot be worked out without. */
 export const GIRTH_REGIONS = ['chest', 'waist', 'hips'];
@@ -136,7 +168,9 @@ export const TORSO_SPAN_LIMIT = {
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 export const round1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
 export const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+export const round3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
 export const toIn = (cm) => cm / CM_PER_IN;
+export const degToRad = (d) => (d * Math.PI) / 180;
 
 /**
  * Perimeter of an ellipse with semi-axes a and b, in the same unit.
@@ -173,9 +207,12 @@ export const GIRTH_SHAPE = {
 };
 
 /**
- * How much longer a tape is than the ellipse for one cross-section. A head, a
- * neck and every limb have no survey pair to fit, and the one limb with both
- * measurements says a round one is right, so they keep the ellipse.
+ * How much longer a tape is than the ellipse for one cross-section. This is now
+ * the FALLBACK: the torso parts ANSUR measured as a pair (chest, waist hips) are
+ * read by TAPE_MODEL below. What is left here are the parts the survey has no
+ * paired width and depth for — the upper chest, the underbust, the lower waist —
+ * plus the neck and every limb, where a round cross-section is the survey's own
+ * answer (the one limb it measured both ways, the ankle, tapes as pi x width).
  */
 export function shapeFactor(ratioKey, gender) {
   const row = GIRTH_SHAPE[ratioKey];
@@ -183,8 +220,67 @@ export function shapeFactor(ratioKey, gender) {
   return row[gender] ?? row.unsure;
 }
 
+/**
+ * A tape round a torso, straight from the survey: fitted on ANSUR II's own paired
+ * caliper widths, depths and tapes for 4,082 men and 1,986 women, as
+ *
+ *     tape = A x (width + depth) + B x |width - depth|
+ *
+ * That is a real regression rather than a shape guessed by eye, and it keeps the
+ * two things the bare ellipse could not: a tape is not an ellipse (A is close to
+ * pi/2 for a round part and pulls up for a flattened box), and cornering adds
+ * length to a flattened box but not to a round one (the |width - depth| term,
+ * which is B = 0 for a round part and large for a chest).
+ *
+ * Checked against every subject, not just the means: on the chest it reproduces
+ * the tape to 1.83% mean absolute error (p90 3.77%, 96.8% within 5%) where the
+ * fixed ellipse factor gave 2.03% / 4.18% / 94.8%, and it lands on the survey's
+ * published means to under 0.1%. Depth priors are fitted the same way.
+ */
+export const TAPE_MODEL = {
+  chest: {
+    male: { a: 1.982661, b: -0.501387 },
+    female: { a: 1.855392, b: -0.479857 },
+    unsure: { a: 1.922900, b: -0.150748 },
+  },
+  waist: {
+    male: { a: 1.660296, b: 0.042024 },
+    female: { a: 1.633487, b: 0.261393 },
+    unsure: { a: 1.649506, b: 0.128006 },
+  },
+  hips: {
+    male: { a: 1.657876, b: 0.385165 },
+    female: { a: 1.653656, b: 0.417851 },
+    unsure: { a: 1.654630, b: 0.407715 },
+  },
+};
+
+/**
+ * The head has no paired depth in ANSUR — only a breadth and a tape — so it gets
+ * the survey's one-parameter breadth-to-tape relationship instead of a modelled
+ * depth: tape = 3.719 x breadth for a man, 3.795 for a woman. It beats the old
+ * modelled depth (2.42% vs 2.56% mean absolute error) and removes its bias.
+ */
+export const HEAD_TAPE_MODEL = { male: 3.719000, female: 3.794872, unsure: 3.742402 };
+
+/** Which arithmetic a part's tape uses, so the working can be worded honestly. */
+export function tapeShape(ratioKey) {
+  if (ratioKey === 'head') return 'head';
+  return TAPE_MODEL[ratioKey] ? 'fitted' : 'ellipse';
+}
+
 /** The tape circumference that a width and a depth describe, ANSUR II's way. */
 export function tapeGirth(widthCm, depthCm, ratioKey, gender) {
+  if (!(widthCm > 0)) return null;
+  if (ratioKey === 'head') {
+    const A = HEAD_TAPE_MODEL[gender] ?? HEAD_TAPE_MODEL.unsure;
+    return A * widthCm;
+  }
+  const model = TAPE_MODEL[ratioKey];
+  if (model && Number.isFinite(depthCm)) {
+    const m = model[gender] ?? model.unsure;
+    return m.a * (widthCm + depthCm) + m.b * Math.abs(widthCm - depthCm);
+  }
   const e = ellipsePerimeter(widthCm / 2, depthCm / 2);
   if (e == null) return null;
   return e * shapeFactor(ratioKey, gender);
@@ -196,6 +292,34 @@ export function normView(v) {
   if (s.includes('side') || s.includes('profile')) return 'side';
   if (s.includes('back') || s.includes('rear')) return 'back';
   return 'front';
+}
+
+/**
+ * How far the body is turned away from the camera, in degrees: 0 is square on to
+ * the lens, 90 is a full profile. The device measures it from the shoulder line
+ * in three dimensions; a frame that does not carry it falls back to its view
+ * name, and anything outside 0-90 is clamped.
+ *
+ * This is what stops a three-quarter frame being read as a width. Turned 45
+ * degrees, a cross-section projects to sqrt(w^2 cos^2 + d^2 sin^2) — neither the
+ * width nor the depth but a blend of the two, up to a quarter wider than the
+ * body. Reading that blend as "width" is what inflated a chest.
+ */
+export function frameTurn(frame) {
+  const t = Number(frame?.turn);
+  if (Number.isFinite(t)) return clamp(t, [0, 90]);
+  switch (frame?.view) {
+    case 'side': return 90;
+    case 'three-quarter': return 45;
+    default: return 0;
+  }
+}
+
+/** The width a turned frame's span implies, given the depth/width ratio. */
+export function unproject(spanCm, turnDeg, ratio) {
+  const t = degToRad(turnDeg);
+  const f = Math.hypot(Math.cos(t), (ratio || 0.8) * Math.sin(t));
+  return f > 0.05 ? spanCm / f : spanCm / 0.05;
 }
 
 export function normGender(g) {
@@ -384,17 +508,23 @@ export function checkFrame(frame) {
     notes.push(`${name} above ${prevName}`);
   }
 
+  const turn = frameTurn(frame);
   for (const key of Object.keys(REGIONS)) {
     const spec = REGIONS[key];
-    // A breadth-only region read from a side-on frame is the body's DEPTH, and
-    // there is no depth range to judge it against — so it is not a bad reading,
-    // it is simply not a reading. Skipping it here keeps it out of the note that
+    // A breadth-only region read from a profile is the body's DEPTH, and there
+    // is no depth range to judge it against — so it is not a bad reading, it is
+    // simply not a reading. Skipping it here keeps it out of the note that
     // explains discarded spans.
-    if (!spec.girth && frame.view === 'side') continue;
+    if (!spec.girth && turn >= 70) continue;
     const span = spanX(frame, spec.left, spec.right);
     if (span == null || span <= 0 || !frame.scale) continue;
     const cm = span * frame.scale.cmPerWidth;
-    const [lo, hi] = SPAN_RANGES_CM[key][frame.view === 'side' ? 'depth' : 'width'];
+    // Turned, the span is a blend of the width and the depth, so it has to be
+    // judged against both bands at once.
+    const range = SPAN_RANGES_CM[key];
+    const [lo, hi] = turn <= 20 ? range.width
+      : turn >= 70 ? range.depth
+        : [Math.min(range.width[0], range.depth[0]), Math.max(range.width[1], range.depth[1])];
     if (cm < lo || cm > hi) {
       bad.add(key);
       notes.push(`${key} spans ${Math.round(cm)} cm`);
@@ -402,18 +532,20 @@ export function checkFrame(frame) {
   }
 
   // The same failure, caught relationally: a torso row wider than this fraction
-  // of the shoulder span is the arms, not the torso. Scale-free (both spans are
-  // read in the same frame), so it holds however far away the camera was.
-  if (frame.view !== 'side' && frame.scale) {
-    const shoulder = spanX(frame, REGIONS.shoulder.left, REGIONS.shoulder.right);
-    const shoulderCm = shoulder == null ? 0 : shoulder * frame.scale.cmPerWidth;
+  // of the shoulder span is the arms, not the torso. Both spans are undone with
+  // this frame's own turn, so it holds at three-quarter too, and at square-on it
+  // is exactly the span comparison it always was.
+  if (turn <= 70 && frame.scale) {
+    const shoulderSpan = spanX(frame, REGIONS.shoulder.left, REGIONS.shoulder.right);
+    const shoulderCm = shoulderSpan == null ? 0
+      : unproject(shoulderSpan * frame.scale.cmPerWidth, turn, depthRatio('shoulder', frame.gender));
     if (shoulderCm > 0) {
       const limits = TORSO_SPAN_LIMIT[frame.gender === 'male' ? 'male' : 'female'];
       for (const [key, frac] of Object.entries(limits)) {
         const spec = REGIONS[key];
         const span = spanX(frame, spec.left, spec.right);
         if (span == null || span <= 0) continue;
-        const cm = span * frame.scale.cmPerWidth;
+        const cm = unproject(span * frame.scale.cmPerWidth, turn, depthRatio(key, frame.gender));
         if (cm > shoulderCm * frac) {
           bad.add(key);
           notes.push(`${key} spans ${Math.round(cm)} cm of a ${Math.round(shoulderCm)} cm shoulder — that is the arms`);
@@ -488,9 +620,23 @@ export function sawRegion(frames, key) {
 }
 
 /**
- * Measure one region across every frame: width from front/back frames, depth
- * from side frames, then a girth from the ellipse they describe. Returns null
- * when the landmark pair was never visible.
+ * Measure one region across every frame.
+ *
+ * Every frame shows a projection of the same cross-section, and how much of the
+ * WIDTH and how much of the DEPTH it shows depends on how far the body was turned
+ * in that frame: square on it is the width, in profile it is the depth, and at
+ * three-quarter it is sqrt(w^2 cos^2 + d^2 sin^2) — a blend that reads up to a
+ * quarter wider than the body if it is taken for a width. So each frame's span is
+ * UNPROJECTED back to a width using that frame's own turn angle, and the frames
+ * turned far enough to show depth give the depth. Two or three passes, because
+ * the unprojection needs the depth/width ratio and the ratio needs the widths.
+ *
+ * The pay-off is a clip with no clean profile: three-quarter frames used to be
+ * averaged in as widths (inflating the chest) and gave no depth at all; now they
+ * are undone instead, and they carry the depth themselves.
+ *
+ * When nothing was turned far enough to show depth, the survey's own ratio for
+ * that part and group stands in, and the reading says so.
  *
  * `opts.views` restricts which frames count — "across the back" and "from the
  * front" are the same line seen twice, and a tailor asking for X-Back wants the
@@ -499,44 +645,68 @@ export function sawRegion(frames, key) {
 export function measureRegion(key, frames, opts = {}) {
   const spec = REGIONS[key];
   const views = opts.views || null;
-  const widths = [];
-  const depths = [];
+  const gender = opts.gender ?? frames.find((f) => f.gender)?.gender ?? 'unsure';
+  const prior = opts.depthRatio ?? depthRatio(spec.ratio, gender) ?? 0.8;
+
+  const samples = [];
   const viewsUsed = new Set();
   let skipped = 0;
-
   for (const f of frames) {
     if (!f.scale) continue;
     if (views && !views.includes(f.view)) continue;
     if (f.bad?.has(key)) { skipped += 1; continue; } // failed the sanity check
     const span = spanX(f, spec.left, spec.right);
     if (span == null || span < 0.005) continue; // landmark pair never placed
-    const cm = span * f.scale.cmPerWidth;
-    const weight = frameQuality(f) * (VIEW_WEIGHT[f.view] ?? 0.6);
-    if (f.view === 'side') {
-      depths.push({ value: cm, weight });
-      viewsUsed.add('side');
-    } else {
-      widths.push({ value: cm, weight });
-      viewsUsed.add(f.view);
-    }
+    samples.push({
+      cm: span * f.scale.cmPerWidth,
+      turn: frameTurn(f),
+      weight: frameQuality(f) * (VIEW_WEIGHT[f.view] ?? 0.6),
+    });
+    viewsUsed.add(f.view);
+  }
+  if (!samples.length) return null;
+
+  // How much depth a frame can show depends on how far it was turned, and a
+  // shallow turn is badly conditioned: an error in the span arrives in the depth
+  // divided by sin(turn), so a frame turned 25 degrees can invent a neck deeper
+  // than it is wide. 20 degrees is the floor, and sin^4 of the turn is the
+  // weight — a real profile carries the depth, a three-quarter frame helps.
+  const depthSamples = samples
+    .map((s) => ({ ...s, sin: Math.sin(degToRad(s.turn)) }))
+    .filter((s) => s.sin >= 0.34);
+  const band = SPAN_RANGES_CM[key] || null;
+
+  let k = prior;
+  let w = null;
+  let d = null;
+  for (let pass = 0; pass < 3; pass += 1) {
+    w = robustMean(samples.map((s) => ({ value: unproject(s.cm, s.turn, k), weight: s.weight })));
+    if (!w) return null;
+    d = robustMean(depthSamples
+      .map((s) => {
+        const flat = s.cm * s.cm - (w.value * Math.cos(degToRad(s.turn))) ** 2;
+        if (!(flat > 0)) return null;
+        const value = Math.sqrt(flat) / s.sin;
+        // A depth outside the band a human body lives in is not a reading.
+        if (band && (value < band.depth[0] || value > band.depth[1])) return null;
+        return { value, weight: s.weight * s.sin ** 4 };
+      })
+      .filter(Boolean));
+    if (!d || !(d.value > 0)) { d = null; break; }
+    k = d.value / w.value;
   }
 
-  const w = robustMean(widths);
-  if (!w) return null;
+  // A head is taped from its breadth by the survey's own one-parameter model, so
+  // no depth goes into it; say that rather than imply one did.
+  const headOnly = tapeShape(spec.ratio) === 'head';
+  const depthCm = headOnly ? null : (spec.girth ? (d ? d.value : w.value * prior) : null);
+  const depthSource = headOnly
+    ? 'breadth only, the survey\'s head tape'
+    : spec.girth
+      ? (d ? `side view x${d.n}` : `${round3(prior)}x width, modelled`)
+      : null;
 
-  // The prior depth is a last resort for when no side-on frame could read it.
-  // A caller may override it per region: a man's ribcage and a woman's bust are
-  // not the same cross-section, and one ratio cannot describe both.
-  const prior = opts.depthRatio ?? DEPTH_RATIO[spec.ratio];
-  const d = spec.girth ? robustMean(depths) : null;
-  const depthCm = d ? d.value : (spec.girth ? w.value * prior : null);
-  const depthSource = spec.girth ? (d ? `side view x${d.n}` : `${prior}x width, modelled`) : null;
-
-  // Straight-line widths turned into a tape reading the way ANSUR II's own
-  // measurements say they turn: a torso is a flattened box, not an ellipse.
-  const gender = opts.gender ?? frames.find((f) => f.gender)?.gender ?? 'unsure';
-  const girthCm = spec.girth ? tapeGirth(w.value, depthCm, spec.ratio, gender) : null;
-  const valueCm = spec.girth ? girthCm : w.value;
+  const valueCm = spec.girth ? tapeGirth(w.value, depthCm, spec.ratio, gender) : w.value;
   if (!Number.isFinite(valueCm)) return null;
 
   const agreement = 1 - Math.min(1, w.spread / Math.max(2, w.value * 0.15));

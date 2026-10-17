@@ -21,6 +21,7 @@
 import {
   CM_PER_IN,
   REGIONS,
+  depthRatio,
   measurePath,
   measureRegion,
   measureVertical,
@@ -34,27 +35,16 @@ import {
  */
 /**
  * The prior front-to-back depth, as a fraction of the front width, used only
- * when no side-on frame could read the depth of that region.
+ * when no frame was turned far enough to read the depth of that part.
  *
  * A man's chest and a woman's bust are NOT the same cross-section, and giving
- * them one number is what sized a large-busted woman two sizes too small: a
- * ribcage sits about seven-eighths as deep as it is wide, but a bust projects
- * forward, so the tape has to travel a good deal further around it.
- *
- * Both are the median depth/width of that part in ANSUR II (4,082 men, 1,986
- * women), not fitted to any one clip.
- */
-const MALE_BUST_DEPTH_RATIO = 0.877;
-const FEMALE_BUST_DEPTH_RATIO = 0.916;
-
-/**
- * The depth prior to use for a region, given the group. Exported so the size
- * verdict — which is computed from the same chest/bust span, outside this file —
- * cannot end up using the other group's cross-section.
+ * them one number is what sized a large-busted woman two sizes too small. Both
+ * now come from the survey itself — a least-squares fit of depth on width across
+ * ANSUR II's paired caliper measurements — as does every other torso part.
  */
 export function depthRatioFor(regionKey, gender) {
   if (regionKey !== 'chest') return undefined;
-  return gender === 'female' ? FEMALE_BUST_DEPTH_RATIO : MALE_BUST_DEPTH_RATIO;
+  return depthRatio('chest', gender);
 }
 
 const SPAN_SETS = [
@@ -291,7 +281,11 @@ function howFor(spec, ev, value) {
   if (spec.kind === 'girth') {
     const s = ev.spans[spec.span];
     if (!s) return null;
-    return `${round1(s.widthIn)}" across x ${round1(s.depthIn)}" deep (${s.depthSource}) -> a tape of ${round1(value)}" around it${s.widthViews ? `, from ${s.widthViews} frame${s.widthViews === 1 ? '' : 's'}` : ''}${spec.note ? ` — ${spec.note}` : ''}`;
+    // A head is taped from its breadth alone, so there is no depth to quote.
+    const from = s.depthIn == null
+      ? `${round1(s.widthIn)}" across (${s.depthSource})`
+      : `${round1(s.widthIn)}" across x ${round1(s.depthIn)}" deep (${s.depthSource})`;
+    return `${from} -> a tape of ${round1(value)}" around it${s.widthViews ? `, from ${s.widthViews} frame${s.widthViews === 1 ? '' : 's'}` : ''}${spec.note ? ` — ${spec.note}` : ''}`;
   }
   if (spec.kind === 'width') {
     const s = ev.spans[spec.span];

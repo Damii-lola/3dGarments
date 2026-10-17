@@ -10,12 +10,14 @@
 import {
   DEPTH_RATIO,
   checkFrame,
+  depthRatio,
   ellipsePerimeter,
   frameScale,
   measureHeight,
   measureRegion,
   normalizeLandmarks,
   tapeGirth,
+  tapeShape,
   toIn,
 } from '../src/lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../src/lib/catalogue.js';
@@ -251,6 +253,70 @@ checkTrue('girth still plausible', chestF.valueIn > 36 && chestF.valueIn < 46, `
 checkTrue('modelled girth is a little larger than measured depth gives', chestF.valueIn > measureRegion('chest', both).valueIn, `${chestF.valueIn.toFixed(2)} vs ${measureRegion('chest', both).valueIn.toFixed(2)} in`);
 checkTrue('confidence drops without a side view', chestF.confidence < measureRegion('chest', both).confidence, `${chestF.confidence} vs ${measureRegion('chest', both).confidence}`);
 
+console.log('\n== the tape and the priors are the survey\'s own fits ==');
+checkTrue('every torso part is taped by the survey fit, not a guessed shape',
+  ['chest', 'waist', 'hips'].every((k) => tapeShape(k) === 'fitted') && tapeShape('neck') === 'ellipse',
+  ['chest', 'waist', 'hips', 'neck', 'head'].map((k) => `${k}:${tapeShape(k)}`).join('  '));
+checkTrue('a woman is wider than deep at the hip, a man less so — and the priors say so',
+  depthRatio('hips', 'female') < depthRatio('hips', 'male') - 0.03,
+  `female ${depthRatio('hips', 'female')} vs male ${depthRatio('hips', 'male')}`);
+checkTrue('a head is taped from its breadth alone, the survey\'s own head model',
+  Math.abs(tapeGirth(15.43, null, 'head', 'male') - 3.719 * 15.43) < 0.01,
+  `${toIn(tapeGirth(15.43, null, 'head', 'male')).toFixed(2)} in from 15.43 cm across`);
+check('a turned frame is judged against both bands, not just the width one', (() => {
+  const f = frontFrame({ view: 'three-quarter', turn: 45 });
+  const P = (cm) => cm / 185.53;
+  const y = f.landmarks.armpitL.y;
+  f.landmarks.armpitL = { x: 0.5 - P(22) / 2, y };
+  f.landmarks.armpitR = { x: 0.5 + P(22) / 2, y };
+  return checkFrame({ ...f, scale: frameScale(f) }).bad.has('chest') ? 0 : 1;
+})(), 1, 0);
+
+console.log('\n== a turned frame is undone, not read as a width ==');
+// The same chest (28 cm across, 24.55 cm deep) seen turned 45 degrees projects to
+// sqrt(w^2 cos^2 + d^2 sin^2) = 26.33 cm — narrower than the body, and not a
+// width at all. Reading that as the width is what a three-quarter frame used to
+// do. Undoing the turn by the frame's own angle gives the body back, and the
+// turned frame even carries the depth itself, so no profile frame is needed.
+const beside = (() => {
+  const f = frontFrame({ view: 'three-quarter', turn: 45 });
+  const P = (cm) => cm / 185.53;
+  const y = f.landmarks.armpitL.y;
+  f.landmarks.armpitL = { x: 0.5 - P(26.33) / 2, y };
+  f.landmarks.armpitR = { x: 0.5 + P(26.33) / 2, y };
+  return f;
+})();
+const turned = measureRegion('chest', [scaled(beside)]);
+checkTrue('a turned chest span is undone back to the body width',
+  Math.abs(turned.widthIn - 28 / IN_CM) < 0.15,
+  `${turned.widthIn.toFixed(2)}" across (square on: ${(28 / IN_CM).toFixed(2)}")`);
+checkTrue('and it is wider than the raw span, which is not the width',
+  turned.widthIn > 26.33 / IN_CM + 0.3, `raw span ${(26.33 / IN_CM).toFixed(2)}" -> ${turned.widthIn.toFixed(2)}"`);
+checkTrue('the turned frame carries the depth itself, so no profile is needed',
+  turned.depthMeasured === true, `${turned.depthIn.toFixed(1)}" deep, ${turned.depthSource}`);
+checkTrue('so a 45-degree chest reads the same tape as a square-on one',
+  Math.abs(turned.valueIn - chestF.valueIn) < 0.35,
+  `${turned.valueIn.toFixed(2)} vs ${chestF.valueIn.toFixed(2)} in`);
+
+console.log('\n== a shallow turn cannot invent a depth ==');
+// A frame turned only 25 degrees is badly conditioned: 1/sin(25) magnifies a
+// span error by 2.4x, so a corrupted neck span would report a neck deeper than a
+// human neck can be. It is refused, the width goes on the survey's ratio, and
+// the reading says the depth was modelled rather than measured.
+const shallow = (() => {
+  const f = frontFrame({ view: 'three-quarter', turn: 25 });
+  const P = (cm) => cm / 185.53;
+  const y = f.landmarks.neckL.y;
+  f.landmarks.neckL = { x: 0.5 - P(15) / 2, y };
+  f.landmarks.neckR = { x: 0.5 + P(15) / 2, y };
+  return f;
+})();
+const shallowNeck = measureRegion('neck', [scaled(frontFrame()), scaled(shallow)]);
+checkTrue('a depth outside the human band is refused, not reported',
+  shallowNeck.depthMeasured === false, `${shallowNeck.depthIn}" deep, ${shallowNeck.depthSource}`);
+checkTrue('and the reading still tapes a plausible neck',
+  shallowNeck.valueIn > 11 && shallowNeck.valueIn < 20, `neck ${shallowNeck.valueIn.toFixed(1)} in`);
+
 console.log('\n== arms read as part of the torso: the survey says no ==');
 // The failure that matters most. With the arms against the ribcage the mask is
 // one run from hand to hand, so a "chest" 45 cm wide sails past an absolute
@@ -387,7 +453,7 @@ checkTrue('each sex is taped on its own survey line, and both land plausible',
   `bust ${item(women, 'bust')?.in} vs chest ${item(men, 'chest')?.in} in`);
 checkTrue('and the woman\'s number says the depth was modelled', /modelled/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
 checkTrue('a man\'s chest stays on the ribcage ratio', /0\.877x width/.test(item(men, 'chest')?.how || ''), item(men, 'chest')?.how);
-checkTrue('a woman\'s bust projects, so its prior is the larger one', /0\.916x width/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
+checkTrue('a woman\'s bust projects, so its prior is the larger one', /0\.919x width/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
 checkTrue('a woman\'s chest is the upper chest, above the bust', item(women, 'chest')?.in < item(women, 'bust')?.in, `chest ${item(women, 'chest')?.in} vs bust ${item(women, 'bust')?.in} in`);
 checkTrue('dart is what the bust takes in over the underbust', near(item(women, 'dart')?.in, 1, 7.5), `dart ${item(women, 'dart')?.in} in`);
 checkTrue('top arm, wrist and the leg tapes are all there', ['topArm', 'wrist', 'ankle', 'highAnkle'].every((k) => item(women, k)), ['topArm', 'wrist', 'ankle', 'highAnkle'].map((k) => item(women, k)?.in).join(', '));

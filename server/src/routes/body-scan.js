@@ -60,6 +60,7 @@ import {
   checkFrame,
   frameQuality,
   frameScale,
+  frameTurn,
   meanY,
   measureHeight,
   measureRegion,
@@ -211,6 +212,7 @@ function frameDigest(f, reason) {
     file: f.file,
     ...(reason ? { reason } : {}),
     view: f.view,
+    turn: round1(frameTurn(f)),
     gender: f.gender,
     confidence: f.confidence,
     visible: f.visible,
@@ -513,6 +515,11 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender) {
       camera: { sharpness: 0.75, lighting: 0.75 },
       confidence: clamp(Number(raw.confidence) || 0.6, [0.05, 1]),
       aspect,
+      // How far the body was turned in this frame, in degrees. It decides how
+      // much of the span is width and how much is depth: 0 is square on, 90 a
+      // profile. Without it a three-quarter frame's span would be read as a
+      // width, which reads up to a quarter too wide.
+      turn: Number.isFinite(Number(raw.turn)) ? clamp(Number(raw.turn), [0, 90]) : undefined,
       // Regions the device could see but not measure (arms merged with the
       // torso). Carried through so the notes can explain a blank honestly.
       unmeasured: Array.isArray(raw.unmeasured) ? raw.unmeasured.slice(0, 4) : [],
@@ -747,8 +754,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       widthViews: r.widthViews,
       depthViews: r.depthViews,
       formula: r.girth
-        ? 'ellipse perimeter of half-width x half-depth, times the tape factor ANSUR II measured for that part'
-        : 'horizontal separation of the shoulder landmarks',
+        ? "ANSUR II's own fitted tape on the width and depth, after undoing this frame's turn"
+        : "the shoulder span, undone by this frame's turn",
       confidence: r.confidence,
       clamped: r.clamped,
     };

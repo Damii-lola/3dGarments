@@ -182,10 +182,14 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
    * rowSpan().
    */
   let view = 'front';
+  // How far the body is turned from square-on, in degrees. Sent up with the
+  // landmarks: the server has to un-project a turned frame's span before it can
+  // call it a width, or a three-quarter frame reads a quarter too wide.
+  let turn = 0;
   if (world && world[11] && world[12]) {
     const dx = Math.abs(world[12].x - world[11].x);
     const dz = Math.abs(world[12].z - world[11].z);
-    const turn = (Math.atan2(dz, Math.max(dx, 1e-6)) * 180) / Math.PI;
+    turn = (Math.atan2(dz, Math.max(dx, 1e-6)) * 180) / Math.PI;
     view = turn > 65 ? 'side' : turn > 25 ? 'three-quarter' : 'front';
     if (view === 'front' && Math.max(vis(0), vis(7), vis(8)) < 0.3) view = 'back';
   }
@@ -656,6 +660,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     landmarks,
     visible,
     view,
+    turn: r1(turn),
     gender,
     confidence,
     notes,
@@ -664,6 +669,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
       topRow, botRow, neckRow, chinRow, shoulderRow, elbowRow, armRow, hipRowLM, crotchRow,
       usableRows: usable.length,
       verdicts,
+      turn: r1(turn),
       rows: { chestRow, waistRow, hipRow, upperChestRow, underbustRow, lowWaistRow, kneeRow },
       widths: {
         shoulder: shoulderRun?.w ?? null,

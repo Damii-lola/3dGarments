@@ -85,6 +85,9 @@ export function analyzeGeometry(measured, opts = {}) {
       landmarks: f.landmarks,
       visible: f.visible,
       view: f.view,
+      // The turn angle, so the server can undo a three-quarter frame's
+      // projection instead of reading it as a width.
+      turn: f.turn,
       gender: f.gender,
       confidence: f.confidence,
       notes: f.notes,
