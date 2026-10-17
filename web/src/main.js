@@ -49,8 +49,11 @@ if (new URLSearchParams(location.search).has('debug')) showDeviceReadout();
 
 const intro = document.getElementById('intro');
 const privacy = document.getElementById('privacy');
-const openCamera = document.querySelector('.open-camera');
-const input = document.getElementById('video-input');
+const captureEl = document.getElementById('capture');
+const captureChoice = document.getElementById('capture-choice');
+const openCamera = document.getElementById('open-camera');
+/** Record in the phone's camera app, or upload one already on the device. */
+const inputs = [document.getElementById('video-record'), document.getElementById('video-upload')];
 const trimStep = document.getElementById('trim');
 const trimVideo = document.getElementById('trim-video');
 const trimStart = document.getElementById('trim-start');
@@ -248,20 +251,39 @@ function show(step) {
   // The promise belongs to the landing step only; the results carry their own
   // one-line copy of it. Leaving this visible would say it twice in a row.
   privacy.hidden = step !== 'camera';
-  openCamera.hidden = step !== 'camera';
+  captureEl.hidden = step !== 'camera';
+  if (step !== 'camera') setChoice(false);
   trimStep.hidden = step !== 'trim';
   analysis.hidden = step !== 'result';
   // The box floats over everything, so it must not survive leaving the results.
   if (step !== 'result') hideTip();
   // A step arrives instead of appearing. The results animate their own contents
   // as a longer cascade, so only the other steps get the container move.
-  const entering = step === 'trim' ? trimStep : step === 'camera' ? openCamera : null;
+  const entering = step === 'trim' ? trimStep : step === 'camera' ? captureEl : null;
   if (entering && MOTION_OK) {
     entering.classList.remove('step-in');
     // Read a layout property so the browser sees the class actually go away;
     // without this the re-add is a no-op and nothing animates the second time.
     void entering.offsetWidth;
     entering.classList.add('step-in');
+  }
+}
+
+/**
+ * Open or close the two ways in: record in the phone's own camera app, or upload
+ * a video already on the device. Closed on every step but the landing, and
+ * closed again by a press anywhere else, so it can never be left hanging open.
+ */
+function setChoice(open) {
+  const isOpen = !!open;
+  if (isOpen === !captureChoice.hidden) return;
+  captureChoice.hidden = !isOpen;
+  openCamera.setAttribute('aria-expanded', String(isOpen));
+  openCamera.classList.toggle('open', isOpen);
+  if (isOpen && MOTION_OK) {
+    captureChoice.classList.remove('choice-in');
+    void captureChoice.offsetWidth;
+    captureChoice.classList.add('choice-in');
   }
 }
 
@@ -355,7 +377,7 @@ function resetAll() {
   releaseSeen();
   lastSeen = [];
   recordedBlob = null;
-  input.value = '';
+  for (const el of inputs) el.value = '';
   trimmer.load(0);
   calibrator.clear();
   setBusy(false);
@@ -438,9 +460,6 @@ const ABOUT = {
   lowWaist: { what: 'Around your middle, a bit lower down.', where: 'About two fingers below your belt line, where a low-rise waistband sits.' },
   hips: { what: 'How big around your bottom is.', where: 'Around the biggest part of your bottom, about a hand below your belt line. Not the same line as your waist.' },
   shoulder: { what: 'How wide your shoulders are.', where: 'Straight across your back, from one shoulder corner to the other.' },
-  xShoulder: { what: 'How wide your shoulders are across the front.', where: 'Straight across the front, shoulder corner to shoulder corner.' },
-  xFront: { what: 'How wide your chest is across the front.', where: 'Straight across the front, shoulder corner to shoulder corner, at chest level.' },
-  xBack: { what: 'How wide your back is across.', where: 'Straight across your back, shoulder corner to shoulder corner, at chest level.' },
   backWidth: { what: 'How wide your back is.', where: 'Straight across your back, level with your armpits.' },
   topArm: { what: 'How big around your upper arm is.', where: 'Around the fattest part of your top arm, arm hanging loose.' },
   elbow: { what: 'How big around your elbow is.', where: 'Around your elbow with your arm straight.' },
@@ -450,7 +469,6 @@ const ABOUT = {
   highAnkle: { what: 'How big around your leg is above the ankle.', where: 'Around your leg just above the ankle bone.' },
   ankle: { what: 'How big around your ankle is.', where: 'Around your ankle bone, over the bump.' },
   sleeveLength: { what: 'How long your arm is.', where: 'From your shoulder corner, over a slightly bent elbow, down to your wrist bone.' },
-  sleeveJersey: { what: 'How long a sleeve is, measured from your neck.', where: 'From the bone at the bottom of your neck, over your shoulder, down to your wrist bone.' },
   napeToWaist: { what: 'How long your back is.', where: 'From the bump at the bottom of your neck, down your back, to your belt line.' },
   shoulderToWaist: { what: 'How long your front is.', where: 'From your shoulder line, down the front, to your belt line.' },
   armholeDepth: { what: 'How deep the armhole needs to be.', where: 'From your shoulder line straight down to your armpit.' },
@@ -460,11 +478,8 @@ const ABOUT = {
   bodyRise: { what: 'How much room you need when you sit down.', where: 'Sit on a flat chair, then measure from your belt line down to the chair.' },
   upperbodyHeight: { what: 'How long your top half is.', where: 'From the top of your head down to your belt line.' },
   lowerbodyHeight: { what: 'How long your bottom half is.', where: 'From your belt line down to the floor.' },
-  totalHeight: { what: 'How tall you are.', where: 'Stand against a wall, no shoes, heels together.' },
   cuffShirts: { what: 'How big around a shirt cuff should be.', where: 'Your wrist, plus a little room so your hand slides through.' },
-  cuffTwoPiece: { what: 'How big around a two-piece sleeve cuff should be.', where: 'Your wrist, plus the usual inch of room.' },
   trouserBottom: { what: 'How wide the bottom of a trouser leg is.', where: 'Across the bottom of one trouser leg, laid flat.' },
-  jeansBottom: { what: 'How wide the bottom of a jean leg is.', where: 'Across the bottom of one jean leg, laid flat.' },
   crotchLength: { what: 'How long your trousers are at the crotch.', where: 'Sitting down: from your belt line at the front, under you, to your belt line at the back.' },
   dart: { what: 'How much the front needs shaping.', where: 'The difference between your chest and your waist.' },
 };
@@ -549,38 +564,42 @@ function wireCard(cell, item) {
 // Tapping or clicking anywhere else closes the box. The press that OPENS it
 // happens before the box exists, so this cannot swallow the opening press.
 document.addEventListener('pointerdown', (e) => {
+  if (!captureChoice.hidden && !captureEl.contains(e.target)) setChoice(false);
   if (tipEl.hidden || tipEl.contains(e.target)) return;
   hideTip();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideTip();
+  if (e.key !== 'Escape') return;
+  hideTip();
+  setChoice(false);
 });
 
 /**
  * The order the numbers are shown in, and why: three questions a person
- * actually asks — how big around am I, how wide am I, how long am I. A flat
- * grid of fourteen equal cards answers none of them until you read all of it.
+ * actually asks — how big around am I, how long am I, what does a pattern need.
+ * A flat grid of fourteen equal cards answers none of them until you read all of
+ * it.
+ *
+ * Round and across are one group on purpose: "how wide am I" is not a separate
+ * question from "how big around am I", it is the same one answered from the
+ * front instead of from the side, and splitting them made people read two
+ * headings to find one body.
  */
 const GROUPS = [
   {
     title: 'Around your body',
-    note: 'the tape goes all the way round',
-    keys: ['head', 'neck', 'bust', 'chest', 'waist', 'lowWaist', 'hips', 'topArm', 'elbow', 'wrist', 'knee', 'calf', 'highAnkle', 'ankle'],
-  },
-  {
-    title: 'Across your body',
-    note: 'shoulder to shoulder',
-    keys: ['shoulder', 'xShoulder', 'xFront', 'xBack', 'backWidth'],
+    note: 'around you, and straight across you',
+    keys: ['head', 'neck', 'bust', 'chest', 'waist', 'lowWaist', 'hips', 'topArm', 'elbow', 'wrist', 'knee', 'calf', 'highAnkle', 'ankle', 'shoulder', 'backWidth'],
   },
   {
     title: 'How long things are',
     note: 'shoulder to wrist, waist to floor',
-    keys: ['sleeveLength', 'sleeveJersey', 'napeToWaist', 'shoulderToWaist', 'armholeDepth', 'waistToKnee', 'waistToHip', 'waistToFloor', 'bodyRise', 'upperbodyHeight', 'lowerbodyHeight', 'totalHeight'],
+    keys: ['sleeveLength', 'napeToWaist', 'shoulderToWaist', 'armholeDepth', 'waistToKnee', 'waistToHip', 'waistToFloor', 'bodyRise', 'upperbodyHeight', 'lowerbodyHeight'],
   },
   {
     title: 'Cuffs and trouser bottoms',
     note: 'the numbers a pattern asks for',
-    keys: ['cuffShirts', 'cuffTwoPiece', 'trouserBottom', 'jeansBottom', 'crotchLength', 'dart'],
+    keys: ['cuffShirts', 'trouserBottom', 'crotchLength', 'dart'],
   },
 ];
 
@@ -690,6 +709,15 @@ const HIDDEN_NOTES = [
   /subtracted from the body estimate/i,
   /^depth came from/i,
   /measurement sheet/i,
+  // Capture coaching, all of it. The clip is already recorded by the time this
+  // list is on screen, so a note that can only be acted on by filming yourself
+  // again is not information — it is the app telling somebody off for a take
+  // they cannot change. Anything it could not measure is simply absent from the
+  // list above, which already says the same thing without the instruction.
+  /in shot|in frame/i,
+  /clear of your sides|clear of your body/i,
+  /film from further back|slower turn|next time/i,
+  /straight-on front view/i,
 ];
 
 function renderNotes(data) {
@@ -832,19 +860,22 @@ async function runAnalysis() {
 }
 
 /* ---------- wiring ---------- */
-input.addEventListener('change', () => {
-  const file = input.files && input.files[0];
-  if (!file) {
-    setStatus('No video recorded.', 'error');
-    return;
-  }
-  if (!file.type.startsWith('video/')) {
-    setStatus('That file is not a video.', 'error');
-    input.value = '';
-    return;
-  }
-  handleRecording(file);
-});
+for (const el of inputs) {
+  el.addEventListener('change', () => {
+    const file = el.files && el.files[0];
+    // Dismissing the picker is not an error: nothing was chosen, so nothing is
+    // said about it.
+    if (!file) return;
+    if (!file.type.startsWith('video/')) {
+      setStatus('That file is not a video.', 'error');
+      el.value = '';
+      return;
+    }
+    handleRecording(file);
+  });
+}
+
+openCamera.addEventListener('click', () => setChoice(captureChoice.hidden));
 
 analyzeBtn.addEventListener('click', runAnalysis);
 for (const btn of whoButtons) {
@@ -853,14 +884,6 @@ for (const btn of whoButtons) {
 startOverTrim.addEventListener('click', resetAll);
 retakeBtn.addEventListener('click', resetAll);
 startOverBtn.addEventListener('click', resetAll);
-
-// The icon has role="button": let Enter / Space open the camera too.
-openCamera.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    input.click();
-  }
-});
 
 window.addEventListener('pagehide', releaseMedia);
 
@@ -888,14 +911,13 @@ if (new URLSearchParams(location.search).has('demo')) {
         { key: 'waist', label: 'Waist', in: 29.1, cm: 74.0, how: '10.2" across x 7.3" deep (side view x2) -> a tape of 29.1" around it' },
         { key: 'hips', label: 'Hip/Seat', in: 35.3, cm: 89.7, how: '12.0" across x 8.5" deep (side view x2) -> a tape of 35.3" around it' },
         { key: 'shoulder', label: 'Shoulder', in: 18.3, cm: 46.5, how: '18.3" across the shoulders, from 3 frames' },
-        { key: 'xBack', label: 'X-Back', in: 18.0, cm: 45.7, how: '18.0" across your back at armpit level, read from the frames showing your back, from 2 frames' },
+        { key: 'backWidth', label: 'Back Width', in: 18.0, cm: 45.7, how: '18.0" across your back at armpit level, from 2 frames' },
         { key: 'napeToWaist', label: 'Nape to waist', in: 17.4, cm: 44.2, how: '17.4" from the nape of your neck to your waist line, from 4 frames' },
         { key: 'sleeveLength', label: 'Sleeve Length', in: 24.1, cm: 61.2, how: '24.1" from the shoulder point, through the elbow, to the wrist bone, from 3 frames' },
         { key: 'waistToKnee', label: 'Waist to Knee', in: 22.4, cm: 56.9, how: '22.4" from your waist line to your knee, from 4 frames' },
         { key: 'waistToFloor', label: 'Waist to Floor', in: 41.4, cm: 105.2, how: '41.4" from your waist line to the floor, from 4 frames' },
         { key: 'calf', label: 'Calf', in: 15.3, cm: 38.9, how: '5.0" across x 4.8" deep (0.95x width, modelled) -> a tape of 15.3" around it' },
         { key: 'ankle', label: 'Ankle', in: 9.1, cm: 23.2, how: '3.0" across x 2.9" deep (0.95x width, modelled) -> a tape of 9.1" around it' },
-        { key: 'totalHeight', label: 'Total Height', in: 71.1, cm: 180.6, how: '71.1" from the crown of your head to the floor, from 4 frames' },
       ],
     },
     geometry: {
@@ -909,5 +931,4 @@ if (new URLSearchParams(location.search).has('demo')) {
     ],
     views: ['front', 'three-quarter', 'side', 'back', 'side', 'front'],
   });
-  setStatus('Sample result — nothing was recorded.', 'ok');
 }

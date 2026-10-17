@@ -51,11 +51,8 @@ const SPAN_SETS = [
   ['head', 'head', null],
   ['neck', 'neck', null],
   ['shoulder', 'shoulder', null],
-  ['shoulderBack', 'shoulder', ['back']],
   ['upperChest', 'upperChest', null],
   ['bust', 'chest', null, true],
-  ['bustFront', 'chest', ['front'], true],
-  ['bustBack', 'chest', ['back'], true],
   ['underbust', 'underbust', null],
   ['waist', 'waist', null],
   ['lowWaist', 'lowWaist', null],
@@ -84,7 +81,6 @@ const VERTICALS = {
   waistToFloor: { from: 'waist', to: 'foot', range: [28, 50] },
   bodyRise: { from: 'waist', to: 'crotch', range: [7, 17] },
   crownToWaist: { from: 'headTop', to: 'waist', range: [17, 33] },
-  crownToFloor: { from: 'headTop', to: 'foot', range: [54, 86] },
 };
 
 /**
@@ -94,7 +90,6 @@ const VERTICALS = {
  */
 const PATHS = {
   shoulderToWrist: { points: ['shoulderJ', 'elbowJ', 'wristJ'], range: [16, 33] },
-  napeToWrist: { points: ['nape', 'shoulderJ', 'wristJ'], range: [18, 37] },
 };
 
 /** How a row is named when it is described back to the user. */
@@ -120,27 +115,6 @@ const MEN = [
   { key: 'lowWaist', label: 'Lower Waist', kind: 'girth', span: 'lowWaist' },
   { key: 'hips', label: 'Hip/Seat', kind: 'girth', span: 'hips' },
   { key: 'shoulder', label: 'Shoulder', kind: 'width', span: 'shoulder' },
-  {
-    key: 'xShoulder',
-    label: 'X-Shoulder',
-    kind: 'width',
-    span: 'shoulderBack',
-    note: 'across the shoulders, read from the frames showing your back',
-  },
-  {
-    key: 'xBack',
-    label: 'X-Back',
-    kind: 'width',
-    span: 'bustBack',
-    note: 'across your back at armpit level, read from the frames showing your back',
-  },
-  {
-    key: 'xFront',
-    label: 'X-Front',
-    kind: 'width',
-    span: 'bustFront',
-    note: 'across your front at chest level, read from the frames facing the camera',
-  },
   { key: 'napeToWaist', label: 'Nape to waist', kind: 'vertical', vertical: 'napeToWaist' },
   { key: 'armholeDepth', label: 'Armscye depth', kind: 'vertical', vertical: 'armholeDepth' },
   { key: 'sleeveLength', label: 'Sleeve Length', kind: 'path', path: 'shoulderToWrist' },
@@ -156,15 +130,11 @@ const MEN = [
   { key: 'knee', label: 'Knee', kind: 'girth', span: 'knee' },
   { key: 'calf', label: 'Calf', kind: 'girth', span: 'calf' },
   { key: 'highAnkle', label: 'High Ankle', kind: 'girth', span: 'highAnkle' },
-  { key: 'sleeveJersey', label: 'Sleeve Length (Jersey)', kind: 'path', path: 'napeToWrist' },
   { key: 'cuffShirts', label: 'Cuff Size Shirts', kind: 'derived', derive: 'cuffShirts' },
-  { key: 'cuffTwoPiece', label: 'Cuff Size Two Piece Sleeve', kind: 'derived', derive: 'cuffTwoPiece' },
   { key: 'trouserBottom', label: 'Trouser Bottom Width', kind: 'derived', derive: 'trouserBottom' },
-  { key: 'jeansBottom', label: 'Jeans Bottom Width', kind: 'derived', derive: 'jeansBottom' },
   { key: 'ankle', label: 'Ankle', kind: 'girth', span: 'ankle' },
   { key: 'upperbodyHeight', label: 'Upperbody Height', kind: 'vertical', vertical: 'crownToWaist' },
   { key: 'lowerbodyHeight', label: 'Lowerbody Height', kind: 'vertical', vertical: 'waistToFloor' },
-  { key: 'totalHeight', label: 'Total Height', kind: 'vertical', vertical: 'crownToFloor' },
 ];
 
 const WOMEN = [
@@ -194,11 +164,8 @@ const WOMEN = [
   { key: 'waistToFloor', label: 'Waist to Floor', kind: 'vertical', vertical: 'waistToFloor' },
   { key: 'bodyRise', label: 'Body Rise', kind: 'vertical', vertical: 'bodyRise' },
   { key: 'sleeveLength', label: 'Sleeve Length', kind: 'path', path: 'shoulderToWrist' },
-  { key: 'sleeveJersey', label: 'Sleeve Length (Jersey)', kind: 'path', path: 'napeToWrist' },
   { key: 'cuffShirts', label: 'Cuff Size Shirts', kind: 'derived', derive: 'cuffShirts' },
-  { key: 'cuffTwoPiece', label: 'Cuff Size Two Piece Sleeve', kind: 'derived', derive: 'cuffTwoPiece' },
   { key: 'trouserBottom', label: 'Trouser Bottom Width', kind: 'derived', derive: 'trouserBottom' },
-  { key: 'jeansBottom', label: 'Jeans Bottom Width', kind: 'derived', derive: 'jeansBottom' },
 ];
 
 export const CATALOGUE = { male: MEN, female: WOMEN };
@@ -233,11 +200,6 @@ const DERIVED = {
     if (wrist == null) return null;
     return { in: halfUp(wrist + 0.75), how: `${round1(wrist)}" wrist plus ease to clear the hand, rounded up to the half inch` };
   },
-  cuffTwoPiece: (ev) => {
-    const wrist = ev.spans.wrist?.valueIn;
-    if (wrist == null) return null;
-    return { in: wrist + 1, how: `${round1(wrist)}" wrist plus 1" of ease, the usual allowance for a two-piece sleeve` };
-  },
   /**
    * The trouser-leg opening. Only called that when there is fabric at the ankle:
    * a bare ankle is about 6.5 cm across, a trouser hem is 9 cm and up. A skirt
@@ -253,12 +215,6 @@ const DERIVED = {
       in: leg / CM_PER_IN,
       how: `${round1(leg / CM_PER_IN)}" across the leg opening at the ankle${garment ? ` (${garment})` : ' — the fabric at your ankle'}`,
     };
-  },
-  jeansBottom: (ev) => {
-    const leg = ev.legOpeningCm;
-    const garment = String(ev.clothing.lower || '');
-    if (leg == null || !/jean|denim/i.test(garment)) return null;
-    return { cm: leg, in: leg / CM_PER_IN, how: `${round1(leg / CM_PER_IN)}" across the leg opening of your jeans` };
   },
   /**
    * The tape path around the seat: down the front from the waist to the crotch,
@@ -302,7 +258,7 @@ function howFor(spec, ev, value) {
   if (spec.kind === 'path') {
     const v = ev.paths[spec.path];
     if (!v) return null;
-    const line = spec.path === 'napeToWrist' ? 'the nape, over the shoulder and along the arm to the wrist bone' : 'the shoulder point, through the elbow, to the wrist bone';
+    const line = 'the shoulder point, through the elbow, to the wrist bone';
     return `${round1(value)}" from ${line}, from ${v.n} frame${v.n === 1 ? '' : 's'}`;
   }
   return null;

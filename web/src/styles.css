@@ -1,13 +1,12 @@
 /* =========================================================
    3dGarments — Find your size
-   Tapping the camera icon hands off to the phone's native
+   Tapping the camera circle hands off to the phone's native
    camera app to record a 360° video.
    Sizes are in rem so the whole UI scales from one root value
-   (bumped to 135% on phones).
+   (bumped to 189% on phones).
    ========================================================= */
 
 :root {
-  --bg: #0d0e12;
   --panel: #15171e;
   --text: #eef0f4;
   --muted: #8b90a0;
@@ -30,7 +29,7 @@
 
 /* Step switching uses the `hidden` attribute, so it has to win. Without this,
    the display rules below (`.trim { display: flex }`, `.open-camera {
-   display: grid }`, ...) override the browser's built-in [hidden] rule and
+   display: flex }`, ...) override the browser's built-in [hidden] rule and
    every step renders at once. */
 [hidden] { display: none !important; }
 
@@ -38,7 +37,28 @@ html, body { margin: 0; }
 
 body {
   min-height: 100dvh;
-  background: var(--bg);
+  /* Not one flat colour. A page this sparse looks like a blank screen without
+     something behind it, so: a slow vertical gradient with a field of stars.
+     Two tile sizes, because a single tile repeats visibly and a visible grid is
+     worse than no stars at all. */
+  background-color: #090a0e;
+  background-image:
+    radial-gradient(1.5px 1.5px at 26px 34px, rgba(255, 255, 255, 0.82), transparent),
+    radial-gradient(1.3px 1.3px at 132px 88px, rgba(255, 255, 255, 0.58), transparent),
+    radial-gradient(1.1px 1.1px at 70px 162px, rgba(255, 246, 240, 0.48), transparent),
+    radial-gradient(1.4px 1.4px at 188px 128px, rgba(255, 214, 190, 0.52), transparent),
+    radial-gradient(1.2px 1.2px at 158px 26px, rgba(212, 226, 255, 0.5), transparent),
+    radial-gradient(1.1px 1.1px at 44px 106px, rgba(255, 255, 255, 0.38), transparent),
+    radial-gradient(1.3px 1.3px at 396px 268px, rgba(255, 255, 255, 0.46), transparent),
+    radial-gradient(1.2px 1.2px at 244px 412px, rgba(219, 231, 255, 0.44), transparent),
+    radial-gradient(1.4px 1.4px at 88px 352px, rgba(255, 220, 200, 0.42), transparent),
+    linear-gradient(178deg, #14171f 0%, #0d1017 34%, #090a0e 100%);
+  background-size:
+    300px 300px, 300px 300px, 300px 300px, 300px 300px, 300px 300px, 300px 300px,
+    520px 520px, 520px 520px, 520px 520px,
+    100% 100%;
+  background-repeat: repeat, repeat, repeat, repeat, repeat, repeat,
+    repeat, repeat, repeat, no-repeat;
   color: var(--text);
   font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -48,6 +68,29 @@ body {
   padding: max(1.875rem, env(safe-area-inset-top)) 1.25rem 10vh;
   padding-bottom: calc(10vh + env(safe-area-inset-bottom));
 }
+
+/* A second, sparser field pinned to the screen instead of the page: the stars
+   that scroll sit behind these, so the sky has a little depth, and the pinned
+   ones only ever change brightness. Nothing slides around under the text. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1.6px 1.6px at 62px 84px, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1.3px 1.3px at 288px 176px, rgba(255, 255, 255, 0.68), transparent),
+    radial-gradient(1.2px 1.2px at 158px 302px, rgba(255, 226, 206, 0.6), transparent),
+    radial-gradient(1.4px 1.4px at 366px 46px, rgba(206, 222, 255, 0.56), transparent);
+  background-size: 460px 460px, 460px 460px, 460px 460px, 460px 460px;
+  animation: twinkle 11s var(--ease-soft) infinite alternate;
+}
+@keyframes twinkle {
+  from { opacity: 0.3; }
+  to { opacity: 1; }
+}
+
 
 .visually-hidden {
   position: absolute;
@@ -136,32 +179,87 @@ body {
 }
 .privacy-pill .privacy-lock { width: 0.95rem; height: 0.95rem; margin-top: 0; }
 
-/* ---------- open camera (icon only) ---------- */
+/* ---------- open camera ----------
+   A bare icon on a dark page reads as decoration, so it keeps a label under it
+   and lights up under the pointer. No ring, no box: the icon is the button, and
+   the words under it are part of the same target. */
+.capture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+}
 .open-camera {
-  display: grid;
-  place-items: center;
-  width: 6.5rem;
-  height: 6.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
   border: 0;
-  border-radius: 50%;
+  padding: 0.25rem 0.75rem;
+  border-radius: 1.1rem;
   background: transparent;
   color: var(--accent);
+  font: inherit;
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.15s ease, color 0.15s ease, background 0.15s ease;
+  transition: color 0.18s ease, background 0.18s ease;
 }
-.open-camera:hover {
-  background: rgba(255, 91, 58, 0.10);
-  color: var(--accent-2);
-}
-.open-camera:active { transform: scale(0.94); }
+.open-camera:hover { color: var(--accent-2); background: rgba(255, 91, 58, 0.07); }
 .open-camera:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .cam-icon {
   width: 4.25rem; height: 4.25rem;
   fill: none; stroke: currentColor;
   stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform 0.2s var(--ease);
 }
+.open-camera:hover .cam-icon { transform: scale(1.06); }
+.open-camera:active .cam-icon { transform: scale(0.94); }
+.cam-cta {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  transition: color 0.18s ease;
+}
+.open-camera:hover .cam-cta { color: var(--accent); }
+
+/* ---------- record or upload ----------
+   Two ways in, revealed by the icon. Both are labels over a real file input,
+   so the phone hands off to its own camera app with no scripting at all. */
+.capture-choice {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.choice-in { animation: rise 0.35s var(--ease) both; }
+.capture-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--line-2);
+  border-radius: 0.85rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.18s var(--ease), border-color 0.18s ease, background 0.18s ease;
+}
+.capture-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(255, 91, 58, 0.14), rgba(255, 91, 58, 0.05));
+}
+.capture-btn:active { transform: translateY(0) scale(0.98); }
+.capture-icon { width: 1.15rem; height: 1.15rem; color: var(--accent-2); flex: 0 0 auto; }
 
 /* ---------- trim step ---------- */
 .trim {
@@ -433,31 +531,16 @@ body {
 .analysis.results-in .result-kicker { animation: rise 0.6s var(--ease) both; }
 .analysis.results-in .result-title { animation: rise 0.7s var(--ease) 0.06s both; }
 .analysis.results-in .result-lead { animation: rise 0.6s var(--ease) 0.13s both; }
-.analysis.results-in .facts { animation: rise 0.6s var(--ease) 0.2s both; }
-.analysis.results-in .privacy-pill { animation: rise 0.6s var(--ease) 0.26s both; }
+.analysis.results-in .estimate { animation: rise 0.6s var(--ease) 0.19s both; }
+.analysis.results-in .facts { animation: rise 0.6s var(--ease) 0.25s both; }
+.analysis.results-in .privacy-pill { animation: rise 0.6s var(--ease) 0.31s both; }
 
 .result-head {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
 }
-/* A soft accent bloom behind the heading — the one thing on this page that is
-   neither a number nor a label, and it does the work a heading colour would. */
-.result-head::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: -55%;
-  width: 55%;
-  height: 210%;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 91, 58, 0.22), transparent);
-  filter: blur(10px);
-  pointer-events: none;
-}
 .result-kicker {
-  position: relative;
   margin: 0;
   font-size: 0.7rem;
   font-weight: 700;
@@ -466,7 +549,6 @@ body {
   color: var(--accent-2);
 }
 .result-title {
-  position: relative;
   margin: 0;
   font-size: clamp(1.6rem, 6vw, 2.05rem);
   font-weight: 800;
@@ -484,10 +566,32 @@ body {
     color: transparent;
   }
 }
-.result-lead { position: relative; margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.55; }
+.result-lead { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.55; }
 
-/* Two facts, as chips: a pill row reads as a badge, not as a form. */
-.facts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+/* The one thing that must be read before any number is trusted: a video is not
+   a tape measure. Worded as a statement about the method, not as a warning
+   label, and given an accent edge so it is not mistaken for a footnote. */
+.estimate {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid var(--accent);
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.estimate b { color: var(--text); font-weight: 600; }
+.estimate-mark { flex: 0 0 auto; font-size: 1rem; font-weight: 700; color: var(--accent-2); }
+
+/* Two facts, as chips: a pill row reads as a badge, not as a form. The row is
+   centred as a row — the chips themselves sit in the middle of the column, not
+   just the words inside them. */
+.facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
 .fact {
   display: flex;
   align-items: baseline;
@@ -739,9 +843,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .measure, .group, .tip, .tip-scrim, .step-in, .fact,
+  body::before,
   .analysis.results-in .result-kicker,
   .analysis.results-in .result-title,
   .analysis.results-in .result-lead,
+  .analysis.results-in .estimate,
   .analysis.results-in .privacy-pill,
   .analysis.results-in .facts { animation: none; }
   .measure, .fact { transition: none; }
@@ -869,8 +975,13 @@ body {
   .privacy-lock { width: 1.05rem; height: 1.05rem; }
   .privacy-line { font-size: 0.8rem; }
   .privacy-sub { font-size: 0.64rem; line-height: 1.5; }
-  .open-camera { width: 4.25rem; height: 4.25rem; }
+  .capture { gap: 0.7rem; }
+  .open-camera { gap: 0.45rem; padding: 0.2rem 0.5rem; }
   .cam-icon { width: 2.9rem; height: 2.9rem; }
+  .cam-cta { font-size: 0.62rem; }
+  .capture-btn { gap: 0.4rem; padding: 0.5rem 0.7rem; font-size: 0.68rem; }
+  .capture-icon { width: 0.95rem; height: 0.95rem; }
+  .estimate { font-size: 0.6rem; }
   .trim-row { grid-template-columns: 2.6rem 1fr 2.6rem; }
   .measure-grid { grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); }
   /* The box is a message, not a page. At 189% its own type has to come back
@@ -893,7 +1004,6 @@ body {
 
 @media (max-width: 380px) {
   body { padding-top: 1.375rem; }
-  .open-camera { width: 5.75rem; height: 5.75rem; }
-  .cam-icon { width: 3.75rem; height: 3.75rem; }
+  .cam-icon { width: 3rem; height: 3rem; }
   .measure-grid { grid-template-columns: repeat(2, 1fr); }
 }

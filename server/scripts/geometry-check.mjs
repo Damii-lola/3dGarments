@@ -418,21 +418,23 @@ checkTrue('head, neck, waist, lower waist and hips all come out', ['head', 'neck
 checkTrue('nape to waist is a real length', near(item(men, 'napeToWaist')?.in, 15, 19), `nape->waist ${item(men, 'napeToWaist')?.in} in`);
 checkTrue('armscye depth is the shoulder-to-armpit drop', near(item(men, 'armholeDepth')?.in, 5, 8), `armscye ${item(men, 'armholeDepth')?.in} in`);
 checkTrue('sleeve length runs shoulder -> elbow -> wrist', near(item(men, 'sleeveLength')?.in, 21, 26), `sleeve ${item(men, 'sleeveLength')?.in} in`);
-checkTrue('the jersey sleeve starts at the nape, so it is longer', item(men, 'sleeveJersey')?.in > item(men, 'sleeveLength')?.in, `${item(men, 'sleeveJersey')?.in} vs ${item(men, 'sleeveLength')?.in} in`);
+// The sheet asks each question once. A row that only restated another row — a
+// jersey sleeve beside the sleeve, X-Back beside Back Width, Total Height beside
+// the two body heights — was taken off both sheets.
+const DUPLICATE_ROWS = ['sleeveJersey', 'cuffTwoPiece', 'jeansBottom', 'xShoulder', 'xBack', 'xFront', 'totalHeight'];
+checkTrue('a row that only repeated another row is not in the sheet', DUPLICATE_ROWS.every((k) => item(men, k) === null), DUPLICATE_ROWS.filter((k) => item(men, k)).join(', ') || 'all absent');
+checkTrue('and the rows they repeated are still there', ['sleeveLength', 'cuffShirts', 'backWidth'].every((k) => item(men, k)), 'kept');
 checkTrue('waist to knee, hip and floor are all measured', [item(men, 'waistToKnee'), item(men, 'waistToHip'), item(men, 'waistToFloor')].every((i) => near(i?.in, 3, 50)), `waist->knee ${item(men, 'waistToKnee')?.in}, ->hip ${item(men, 'waistToHip')?.in}, ->floor ${item(men, 'waistToFloor')?.in} in`);
 checkTrue('body rise is the waist-to-crotch drop', near(item(men, 'bodyRise')?.in, 8, 11), `rise ${item(men, 'bodyRise')?.in} in`);
 checkTrue('crotch length is the rise twice over, plus the seat depth', item(men, 'crotchLength')?.in > 25, `crotch ${item(men, 'crotchLength')?.in} in`);
-checkTrue('total height comes out as the body was drawn', near(item(men, 'totalHeight')?.in, 68, 71), `height ${item(men, 'totalHeight')?.in} in`);
+checkTrue('height is the two body heights, not a separate total', near(item(men, 'upperbodyHeight')?.in, 17, 33) && item(men, 'totalHeight') === null, `upper ${item(men, 'upperbodyHeight')?.in} in`);
 checkTrue('knee, calf, high ankle and ankle are measured', ['knee', 'calf', 'highAnkle', 'ankle'].every((k) => item(men, k)), ['knee', 'calf', 'highAnkle', 'ankle'].map((k) => item(men, k)?.in).join(', '));
 checkTrue('a cuff is quoted from the measured wrist', item(men, 'cuffShirts')?.in >= item(men, 'wrist')?.in, `wrist ${item(men, 'wrist')?.in} -> cuff ${item(men, 'cuffShirts')?.in} in`);
 
 console.log('\n== the catalogue: what the clip did NOT show is simply absent ==');
-checkTrue('X-Shoulder needs a frame showing the back', item(men, 'xShoulder') === null, 'omitted');
-checkTrue('X-Back needs a frame showing the back', item(men, 'xBack') === null, 'omitted');
-checkTrue('X-Front is read from the front frame', near(item(men, 'xFront')?.in, 10.5, 11.5), `x-front ${item(men, 'xFront')?.in} in`);
-checkTrue('Back Width is the same line, from any frame', item(men, 'backWidth') !== null, `back width ${item(men, 'backWidth')?.in} in`);
+checkTrue('the X rows are gone; Back Width is the same line from any frame', ['xShoulder', 'xBack', 'xFront'].every((k) => item(men, k) === null) && item(men, 'backWidth') !== null, `back width ${item(men, 'backWidth')?.in} in`);
 checkTrue('a bare ankle is not a trouser bottom', item(men, 'trouserBottom') === null, 'omitted');
-checkTrue('jeans bottom needs jeans to have been seen', item(men, 'jeansBottom') === null, 'omitted');
+checkTrue('one hem row, no second one for jeans', item(men, 'jeansBottom') === null, 'omitted');
 checkTrue('no women\'s categories on a men\'s sheet', !item(men, 'bust') && !item(men, 'dart') && !item(men, 'topArm'), 'clean');
 
 const trouser = ready(catalogFrame());
@@ -444,7 +446,7 @@ trouser.bad = trouserCheck.bad;
 const trousered = buildCatalogue({ frames: [trouser], gender: 'male' });
 checkTrue('fabric across the ankle becomes a trouser bottom width', near(item(trousered, 'trouserBottom')?.in, 6, 9), `trouser bottom ${item(trousered, 'trouserBottom')?.in} in`);
 checkTrue('and the ankle tape is not read off the trouser leg', item(trousered, 'ankle') === null, 'ankle omitted');
-checkTrue('jeans bottom still waits for jeans to be seen', item(trousered, 'jeansBottom') === null, 'omitted');
+checkTrue('and still only one hem row', item(trousered, 'jeansBottom') === null, 'omitted');
 
 const women = buildCatalogue({ frames: [ready(catalogFrame())], gender: 'female' });
 checkTrue('bust is the full bust line', near(item(women, 'bust')?.in, 37, 40.5), `bust ${item(women, 'bust')?.in} in`);
@@ -457,7 +459,7 @@ checkTrue('a woman\'s bust projects, so its prior is the larger one', /0\.919x w
 checkTrue('a woman\'s chest is the upper chest, above the bust', item(women, 'chest')?.in < item(women, 'bust')?.in, `chest ${item(women, 'chest')?.in} vs bust ${item(women, 'bust')?.in} in`);
 checkTrue('dart is what the bust takes in over the underbust', near(item(women, 'dart')?.in, 1, 7.5), `dart ${item(women, 'dart')?.in} in`);
 checkTrue('top arm, wrist and the leg tapes are all there', ['topArm', 'wrist', 'ankle', 'highAnkle'].every((k) => item(women, k)), ['topArm', 'wrist', 'ankle', 'highAnkle'].map((k) => item(women, k)?.in).join(', '));
-checkTrue('no men\'s categories on a women\'s sheet', !item(women, 'xShoulder') && !item(women, 'xBack') && !item(women, 'crotchLength') && !item(women, 'totalHeight'), 'clean');
+checkTrue('no men\'s categories on a women\'s sheet', !item(women, 'upperbodyHeight') && !item(women, 'lowerbodyHeight') && !item(women, 'crotchLength') && !item(women, 'totalHeight') && !item(women, 'sleeveJersey'), 'clean');
 
 console.log('\n== the catalogue: an upper-body clip measures the upper body ==');
 const upperOnly = ready(catalogFrame());
@@ -467,7 +469,7 @@ for (const k of ['hipL', 'hipR', 'lowWaistL', 'lowWaistR', 'kneeL', 'kneeR', 'kn
 upperOnly.visible = { head: true, torso: true, hips: false, legs: false, feet: false };
 const upper = buildCatalogue({ frames: [upperOnly], gender: 'male' });
 checkTrue('the upper-body categories are still read', item(upper, 'chest') !== null && item(upper, 'neck') !== null && item(upper, 'shoulder') !== null, `${upper.items.length} items`);
-checkTrue('and nothing below the waist is in the list', !item(upper, 'waistToFloor') && !item(upper, 'knee') && !item(upper, 'ankle') && !item(upper, 'totalHeight') && !item(upper, 'bodyRise'), 'omitted');
+checkTrue('and nothing below the waist is in the list', !item(upper, 'waistToFloor') && !item(upper, 'knee') && !item(upper, 'ankle') && !item(upper, 'lowerbodyHeight') && !item(upper, 'bodyRise'), 'omitted');
 checkTrue('every item that IS listed carries a number', upper.items.every((i) => Number.isFinite(i.in) && i.in > 0), 'all measured');
 checkTrue('each item can say how it was worked out', upper.items.every((i) => typeof i.how === 'string' && i.how.length > 8), upper.items[0]?.how);
 

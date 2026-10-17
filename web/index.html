@@ -23,8 +23,42 @@
         </p>
       </header>
 
-      <!-- Said before the camera opens, not in a policy nobody reads: this is
-           the moment the question is actually in someone's head. -->
+      <!-- One tap opens the two ways in. Both are labels over a real file
+           input, so the hand-off to the phone's own camera app needs no
+           scripting and no getUserMedia. -->
+      <div class="capture" id="capture">
+        <button class="open-camera" id="open-camera" type="button" aria-expanded="false" aria-controls="capture-choice">
+          <svg class="cam-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+            <circle cx="12" cy="12.2" r="3.6" />
+          </svg>
+          <span class="cam-cta">Click to Record</span>
+        </button>
+
+        <div class="capture-choice" id="capture-choice" hidden>
+          <label class="capture-btn" for="video-record">
+            <input id="video-record" class="visually-hidden" type="file" accept="video/*" capture="environment" />
+            <svg class="capture-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2.6" y="6.6" width="13" height="10.8" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.7" />
+              <path d="M16.4 11.4l4.6-2.7v6.6l-4.6-2.7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+            </svg>
+            <span class="capture-label">Record a video</span>
+          </label>
+          <label class="capture-btn" for="video-upload">
+            <input id="video-upload" class="visually-hidden" type="file" accept="video/*" />
+            <svg class="capture-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16.2V4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              <path d="M7.6 8.6L12 4.2l4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M4.6 14.6v3.4a1.8 1.8 0 0 0 1.8 1.8h11.2a1.8 1.8 0 0 0 1.8-1.8v-3.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            </svg>
+            <span class="capture-label">Upload a video</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Under the action, on the same screen: said here rather than in a
+           policy nobody reads, because this is the moment the question is
+           actually in someone's head. -->
       <div class="privacy" id="privacy">
         <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
@@ -39,21 +73,6 @@
           </p>
         </div>
       </div>
-
-      <!-- Icon only. Tapping it opens the phone's native camera app. -->
-      <label class="open-camera" for="video-input" aria-label="Open camera" role="button" tabindex="0">
-        <input
-          id="video-input"
-          class="visually-hidden"
-          type="file"
-          accept="video/*"
-          capture="environment"
-        />
-        <svg class="cam-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
-          <circle cx="12" cy="12.2" r="3.6" />
-        </svg>
-      </label>
 
       <!-- Step 2: trim the clip's LENGTH before analysing -->
       <section class="trim" id="trim" hidden>
@@ -176,15 +195,24 @@
 
       <!-- Step 3: results. The numbers ARE the answer, grouped so a person can
            find their own waistline in three seconds: everything that goes
-           around the body, everything that goes across it, and everything that
-           is a length. Every value carries its unit, and holding any card says
-           what the number is and where the tape goes for it. -->
+           around or across the body, then everything that is a length. Every
+           value carries its unit, holding any card says what the number is and
+           where the tape goes for it, and the estimate notice says plainly that
+           a video is not a tape measure. -->
       <section class="analysis" id="analysis" hidden>
         <header class="result-head">
           <p class="result-kicker">Your measurements</p>
           <h1 class="result-title" id="result-title">Read from your video</h1>
           <p class="result-lead" id="measures-lead">Hold any number to see what it is.</p>
         </header>
+
+        <p class="estimate">
+          <span class="estimate-mark" aria-hidden="true">&asymp;</span>
+          <span>
+            <b>Everything here is an estimate.</b> These numbers are read off a
+            video, not from a tape measure, so they may not be exactly right.
+          </span>
+        </p>
 
         <ul class="facts" id="facts"></ul>
 
