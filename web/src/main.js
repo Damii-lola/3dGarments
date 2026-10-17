@@ -48,6 +48,7 @@ function showDeviceReadout() {
 if (new URLSearchParams(location.search).has('debug')) showDeviceReadout();
 
 const intro = document.getElementById('intro');
+const privacy = document.getElementById('privacy');
 const openCamera = document.querySelector('.open-camera');
 const input = document.getElementById('video-input');
 const trimStep = document.getElementById('trim');
@@ -244,6 +245,9 @@ const MOTION_OK = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 function show(step) {
   intro.hidden = step !== 'camera';
+  // The promise belongs to the landing step only; the results carry their own
+  // one-line copy of it. Leaving this visible would say it twice in a row.
+  privacy.hidden = step !== 'camera';
   openCamera.hidden = step !== 'camera';
   trimStep.hidden = step !== 'trim';
   analysis.hidden = step !== 'result';

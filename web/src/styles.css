@@ -93,6 +93,49 @@ body {
   line-height: 1.55;
 }
 
+/* ---------- nothing is saved ----------
+   Said before the camera opens rather than buried in a policy: that is the
+   moment the question is actually in someone's head, and it is the reason the
+   video is measured on the device instead of uploaded. */
+.privacy {
+  display: flex;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(61, 220, 151, 0.26);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(61, 220, 151, 0.07), rgba(61, 220, 151, 0.025));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  text-align: left;
+}
+.privacy-lock {
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--good);
+  margin-top: 0.1rem;
+}
+.privacy-body { display: flex; flex-direction: column; gap: 0.3rem; }
+.privacy-line {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.privacy-sub { margin: 0; font-size: 0.82rem; line-height: 1.55; color: var(--muted); }
+
+/* The same promise on the results page, where the numbers are. */
+.privacy-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.privacy-pill .privacy-lock { width: 0.95rem; height: 0.95rem; margin-top: 0; }
+
 /* ---------- open camera (icon only) ---------- */
 .open-camera {
   display: grid;
@@ -391,6 +434,7 @@ body {
 .analysis.results-in .result-title { animation: rise 0.7s var(--ease) 0.06s both; }
 .analysis.results-in .result-lead { animation: rise 0.6s var(--ease) 0.13s both; }
 .analysis.results-in .facts { animation: rise 0.6s var(--ease) 0.2s both; }
+.analysis.results-in .privacy-pill { animation: rise 0.6s var(--ease) 0.26s both; }
 
 .result-head {
   position: relative;
@@ -698,6 +742,7 @@ body {
   .analysis.results-in .result-kicker,
   .analysis.results-in .result-title,
   .analysis.results-in .result-lead,
+  .analysis.results-in .privacy-pill,
   .analysis.results-in .facts { animation: none; }
   .measure, .fact { transition: none; }
   .measure:hover, .fact:hover { transform: none; }
@@ -813,6 +858,19 @@ body {
   /* As the text grows, trim the side margins so the video and result cards
      keep as much width as possible instead of being squeezed. */
   body { padding-left: 0.9rem; padding-right: 0.9rem; }
+  /* The landing has to keep its action on the first screen: at 189% the prose
+     steps back so the camera and the promise are both reachable without a
+     scroll, which at this scale they otherwise are not. */
+  .stage { gap: 0.75rem; }
+  .intro { gap: 0.5rem; }
+  .intro h1 { font-size: 1.35rem; }
+  .lead { font-size: 0.74rem; line-height: 1.5; }
+  .privacy { gap: 0.55rem; padding: 0.7rem 0.8rem; }
+  .privacy-lock { width: 1.05rem; height: 1.05rem; }
+  .privacy-line { font-size: 0.8rem; }
+  .privacy-sub { font-size: 0.64rem; line-height: 1.5; }
+  .open-camera { width: 4.25rem; height: 4.25rem; }
+  .cam-icon { width: 2.9rem; height: 2.9rem; }
   .trim-row { grid-template-columns: 2.6rem 1fr 2.6rem; }
   .measure-grid { grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); }
   /* The box is a message, not a page. At 189% its own type has to come back

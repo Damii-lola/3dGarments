@@ -17,12 +17,28 @@
       <header class="intro" id="intro">
         <h1>Find your size</h1>
         <p class="lead">
-          Record a 360&deg; video of yourself and we'll measure you from it.
-          Keep your whole body in frame and hold your arms a hand's width away
-          from your sides &mdash; that gap is what lets us tell your torso from
-          your arms. Then stand still and turn all the way around, max 30 seconds.
+          Record a 360&deg; video of yourself, turning slowly all the way around:
+          stand still, whole body in frame, arms a hand's width from your sides
+          &mdash; that gap is how we tell your arms from your torso. Max 30 seconds.
         </p>
       </header>
+
+      <!-- Said before the camera opens, not in a policy nobody reads: this is
+           the moment the question is actually in someone's head. -->
+      <div class="privacy" id="privacy">
+        <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+          <circle cx="12" cy="14.8" r="1.15" fill="currentColor" />
+        </svg>
+        <div class="privacy-body">
+          <p class="privacy-line">Nothing is saved.</p>
+          <p class="privacy-sub">
+            Your video never leaves your phone and is never uploaded. It is
+            measured there, then forgotten &mdash; close the page and it is gone.
+          </p>
+        </div>
+      </div>
 
       <!-- Icon only. Tapping it opens the phone's native camera app. -->
       <label class="open-camera" for="video-input" aria-label="Open camera" role="button" tabindex="0">
@@ -171,6 +187,14 @@
         </header>
 
         <ul class="facts" id="facts"></ul>
+
+        <p class="privacy-pill">
+          <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.9" />
+          </svg>
+          Nothing is saved &mdash; your video never leaves your phone.
+        </p>
 
         <div class="measure-groups" id="measure-groups"></div>
 
