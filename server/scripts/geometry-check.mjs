@@ -221,6 +221,12 @@ checkTrue('a limb is round, so its ellipse was already right',
 checkTrue('a bust is deeper than a ribcage for the same width',
   depthRatioFor('chest', 'female') > DEPTH_RATIO.chest,
   `${depthRatioFor('chest', 'female')} vs ${DEPTH_RATIO.chest}`);
+// The head's depth is always modelled, so the ratio has to be the survey's. It
+// reproduced its own head tapes at 1.36 (men) / 1.40 (women) of the breadth.
+check('a head is 1.38 as deep as it is wide', DEPTH_RATIO.head, 1.38, 0.001);
+checkTrue('and a mean male head then tapes where ANSUR taped it',
+  Math.abs(toIn(tapeGirth(15.43, 15.43 * DEPTH_RATIO.head, 'head', 'male')) - 57.44 / IN_CM) / (57.44 / IN_CM) < 0.03,
+  `${toIn(tapeGirth(15.43, 15.43 * DEPTH_RATIO.head, 'head', 'male')).toFixed(2)} in vs ANSUR's ${(57.44 / IN_CM).toFixed(2)}`);
 
 console.log('\n== front + side: the whole calculation ==');
 const front = scaled(frontFrame());

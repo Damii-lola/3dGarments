@@ -31,12 +31,17 @@ export const HEAD_UNIT_CORRECTION_LIMIT = 0.08;
  * female bust 0.92. The old numbers were guesses, and the chest guess (0.72)
  * was a fifth too shallow, which shortened the tape around every chest.
  *
+ * The head is not guessed either: ANSUR recorded a head breadth and a head tape
+ * on the same people, and the depth/width that reproduces the tape is 1.36 for
+ * a man and 1.40 for a woman — so 1.38, where this used to say 1.30, which read
+ * every head 2.5-4.4% small.
+ *
  * The limbs are the survey's other lesson: on the one limb ANSUR measured both
  * ways (the ankle, 7.5 cm across and 22.9 cm round), pi x width is the tape to
  * within 2.5%, so a limb is treated as round and the width carries it.
  */
 export const DEPTH_RATIO = {
-  head: 1.30, neck: 0.92, upperChest: 0.88, chest: 0.88, underbust: 0.80,
+  head: 1.38, neck: 0.92, upperChest: 0.88, chest: 0.88, underbust: 0.80,
   waist: 0.72, lowWaist: 0.72, hips: 0.71,
   arm: 0.95, elbow: 0.95, wrist: 0.88,
   knee: 0.95, calf: 0.95, ankle: 0.95,

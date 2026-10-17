@@ -579,7 +579,7 @@ if (new URLSearchParams(location.search).has('demo')) {
     catalogue: {
       group: 'male',
       items: [
-        { key: 'head', label: 'Head', in: 21.4, cm: 54.5, how: '5.9" across x 7.7" deep (1.3x width) -> a tape of 21.4" around it' },
+        { key: 'head', label: 'Head', in: 22.2, cm: 56.3, how: '5.9" across x 8.1" deep (1.38x width) -> a tape of 22.2" around it' },
         { key: 'neck', label: 'Neck Size', in: 14.1, cm: 35.8, how: '4.7" across x 4.3" deep (side view x2) -> a tape of 14.1" around it' },
         { key: 'chest', label: 'Chest', in: 40.2, cm: 102.1, how: '11.0" across x 9.7" deep (side view x2) -> a tape of 40.2" around it' },
         { key: 'waist', label: 'Waist', in: 29.1, cm: 74.0, how: '10.2" across x 7.3" deep (side view x2) -> a tape of 29.1" around it' },
