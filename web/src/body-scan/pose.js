@@ -12,6 +12,7 @@
  */
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { measureSilhouette } from './silhouette.js';
+import { drawMeasuredFrame } from './overlay.js';
 import { withVideo, resolveDuration, seek } from './frames.js';
 
 const TASKS_VERSION = '0.10.21';
@@ -24,6 +25,39 @@ const MODELS = [
 ];
 
 const log = (...args) => console.log('[3dg:pose]', ...args);
+
+/** How many frames are kept as pictures — each one costs a JPEG in the page. */
+const MAX_SKETCHES = 4;
+
+/** Why a frame gave no torso, in words. */
+const VERDICT_WORDS = {
+  ok: 'both arms were clear of the torso',
+  'one-side': 'one arm was clear, the other mirrored across the centre line',
+  side: 'seen side-on, so the span read is the body depth',
+  'no-gap': 'the arms were pressed against the torso — no gap on either side',
+  'no-line': 'no arm joint line reached this row',
+  'no-torso': 'no torso run in the mask',
+};
+
+/** The commonest verdict for a frame, in words — null when something worked. */
+function frameReason(measured) {
+  if (measured.debug.usableRows > 0) return null;
+  const ranked = Object.entries(measured.debug.verdicts || {}).sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return 'nothing usable in the silhouette';
+  return VERDICT_WORDS[ranked[0][0]] || ranked[0][0];
+}
+
+/**
+ * Turn mask pixels into inches the same way the measurements are: through the
+ * head-length scale, which is the only thing that sets centimetres. Returns a
+ * function that gives null when the frame had no usable scale.
+ */
+function inchMaker(measured) {
+  const { mask, headCmPerWidth } = measured.debug;
+  const cmPerPx = headCmPerWidth && mask[0] ? headCmPerWidth / mask[0] : 0;
+  if (!cmPerPx) return () => null;
+  return (px) => (px > 0 ? Math.round(((px * cmPerPx) / 2.54) * 10) / 10 : null);
+}
 
 let enginePromise = null;
 
@@ -89,7 +123,7 @@ export function loadPoseEngine({ onProgress } = {}) {
  * @param {File|Blob} file recorded video
  * @param {{count?: number, from?: number, to?: number, maxWidth?: number,
  *          onProgress?: (msg: string) => void}} [opts]
- * @returns {Promise<{frames: object[], width: number, height: number, model: string}>}
+ * @returns {Promise<{frames: object[], seen: object[], width: number, height: number, model: string}>}
  */
 export async function analyzePose(file, opts = {}) {
   const { count = 6, from = 0, to = 1, maxWidth = 720, onProgress } = opts;
@@ -114,6 +148,13 @@ export async function analyzePose(file, opts = {}) {
     const span = Math.max(0.1, t1 - t0);
 
     const frames = [];
+    /**
+     * Every sampled frame, with the picture behind it. This is what the results
+     * screen shows under "What the app saw": a blank or an odd number is nearly
+     * always something visible in the frame, and never something a table of
+     * numbers can show.
+     */
+    const seen = [];
     for (let i = 0; i < count; i += 1) {
       const t = duration ? Math.min(duration - 0.02, t0 + span * ((i + 0.5) / count)) : 0;
       onProgress?.(`Measuring frame ${i + 1} of ${count}…`);
@@ -126,7 +167,14 @@ export async function analyzePose(file, opts = {}) {
       } catch (e) {
         log('detect failed on frame', i, e.message);
       }
-      if (!det || !det.mask) { log('frame', i, 'no pose'); continue; }
+      if (!det || !det.mask) {
+        log('frame', i, 'no pose');
+        seen.push({
+          i, t, person: false, usable: 0, reason: 'no person in this frame',
+          jpeg: drawMeasuredFrame({ src: canvas }),
+        });
+        continue;
+      }
 
       const measured = measureSilhouette({
         mask: det.mask.data,
@@ -137,7 +185,16 @@ export async function analyzePose(file, opts = {}) {
         imgW: canvas.width,
         imgH: canvas.height,
       });
-      if (!measured) { log('frame', i, 'silhouette unusable'); continue; }
+      if (!measured) {
+        log('frame', i, 'silhouette unusable');
+        seen.push({
+          i, t, person: true, usable: 0, reason: 'a person was found, but no torso to read',
+          jpeg: drawMeasuredFrame({
+            src: canvas, mask: det.mask.data, maskW: det.mask.width, maskH: det.mask.height,
+          }),
+        });
+        continue;
+      }
 
       frames.push({ index: i, t, ...measured });
       log('frame', i, `t=${t.toFixed(1)}s`, `view=${measured.view}`, `conf=${measured.confidence.toFixed(2)}`,
@@ -145,8 +202,46 @@ export async function analyzePose(file, opts = {}) {
         `pose cm/width=${measured.debug.poseCmPerWidth ? measured.debug.poseCmPerWidth.toFixed(1) : 'none'}`,
         JSON.stringify(measured.debug.widths));
       for (const n of measured.notes) log('  ·', n);
+
+      const inchOf = inchMaker(measured);
+      seen.push({
+        i,
+        t,
+        person: true,
+        view: measured.view,
+        usable: measured.debug.usableRows,
+        reason: frameReason(measured),
+        headFrom: measured.debug.headPx.from,
+        widths: {
+          shoulder: inchOf(measured.debug.widths.shoulder),
+          chest: inchOf(measured.debug.widths.chest),
+          waist: inchOf(measured.debug.widths.waist),
+          hips: inchOf(measured.debug.widths.hips),
+          arm: inchOf(measured.debug.widths.arm),
+        },
+        jpeg: drawMeasuredFrame({
+          src: canvas,
+          mask: det.mask.data,
+          maskW: det.mask.width,
+          maskH: det.mask.height,
+          landmarks: measured.landmarks,
+          cmPerWidth: measured.debug.headCmPerWidth || 0,
+          sideOn: measured.view === 'side',
+        }),
+      });
     }
 
-    return { frames, width: canvas.width, height: canvas.height, model: engine.model, duration };
+    // Keep the handful of pictures that best explain the result and drop the
+    // rest: each one is a JPEG living in the page, and four frames say as much
+    // as six. A frame that measured something beats one that found nothing.
+    const score = (f) => (f.person ? (f.usable > 0 ? 3 + Math.min(0.9, f.usable / 100) : 2) : 1);
+    const keep = new Set([...seen].sort((a, b) => score(b) - score(a))
+      .slice(0, MAX_SKETCHES).map((f) => f.i));
+    for (const f of seen) if (!keep.has(f.i)) f.jpeg = null;
+
+    log('frames measured', frames.length, 'of', count,
+      '·', seen.filter((f) => f.person && f.usable > 0).length, 'readable');
+
+    return { frames, seen, width: canvas.width, height: canvas.height, model: engine.model, duration };
   });
 }

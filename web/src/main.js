@@ -74,6 +74,10 @@ const startOverBtn = document.getElementById('start-over-btn');
 
 const statusEl = document.getElementById('status');
 
+const seenEl = document.getElementById('seen');
+const seenNote = document.getElementById('seen-note');
+const seenFrames = document.getElementById('seen-frames');
+
 const log = (...args) => console.log('[3dg]', ...args);
 
 const fmtTime = (s) => {
@@ -100,6 +104,13 @@ let recordedBlob = null;
 let videoUrl = null;
 let posterUrl = null;
 let analyzing = false;
+
+/** The frames the last measurement looked at, for "What the app saw". */
+let lastSeen = [];
+let lastSeenNote = '';
+let lastSeenOpen = false;
+/** Object URLs currently held by that section, so they can be given back. */
+let seenUrls = new Set();
 
 /* ---------- helpers ---------- */
 function setStatus(message, kind = '') {
@@ -141,9 +152,86 @@ function releaseMedia() {
   try { trimVideo.load(); } catch { /* ignore */ }
 }
 
+/* ---------- what the app saw ---------- */
+/** One line describing a frame, in the order the app read it. */
+function seenLine(item) {
+  if (item.caption) return item.caption;
+  const head = `Frame ${item.i + 1} · ${fmtTime(item.t)}`;
+  if (!item.person) return `${head} — nobody was found in this frame`;
+  const view = item.view === 'three-quarter' ? 'three-quarter turn' : `${item.view}-on`;
+  if (item.reason) return `${head} · ${view} · ${item.reason}`;
+  return `${head} · ${view} · ${item.usable} rows of your torso measured`;
+}
+
+/** The per-frame widths, so one reading far off the others is visible. */
+function seenWidths(item) {
+  const w = item.widths || {};
+  return [
+    ['chest', 'chest'], ['waist', 'waist'], ['hips', 'hips'],
+    ['shoulder', 'shoulder'], ['arm', 'upper arm'],
+  ]
+    .filter(([key]) => w[key] != null)
+    .map(([key, label]) => `${label} ${w[key]}"`);
+}
+
+function clearSeenDom() {
+  seenFrames.replaceChildren();
+  seenNote.textContent = '';
+  seenEl.hidden = true;
+  seenEl.open = false;
+}
+
+/** Give back the object URLs the section was holding. */
+function releaseSeen() {
+  for (const url of seenUrls) URL.revokeObjectURL(url);
+  seenUrls = new Set();
+  clearSeenDom();
+}
+
+function renderSeen(seen, { note = '', open = false } = {}) {
+  // Only the object URLs still in use survive a re-render; the rest are given
+  // back, so a second analysis does not leak the first one's frames.
+  const keep = new Set((seen || []).map((f) => f.url).filter(Boolean));
+  for (const url of seenUrls) if (!keep.has(url)) URL.revokeObjectURL(url);
+  seenUrls = keep;
+  clearSeenDom();
+
+  if (!seen || !seen.length) return;
+  seenEl.hidden = false;
+  seenEl.open = open;
+  seenNote.textContent = note
+    || 'Every frame the app sampled, with the mask it read you from, the joints it found, and the rows each width was measured at.';
+
+  for (const item of seen) {
+    const li = el('li', 'seen-frame');
+    const src = item.jpeg || item.url;
+    if (src) {
+      const img = document.createElement('img');
+      img.className = 'seen-img';
+      img.src = src;
+      img.alt = seenLine(item);
+      li.append(img);
+    }
+    li.append(el('p', 'seen-cap', seenLine(item)));
+    const widths = seenWidths(item);
+    if (widths.length) li.append(el('p', 'seen-widths', widths.join(' · ')));
+    seenFrames.append(li);
+  }
+}
+
+/** Remember the frames behind a result and show them straight away. */
+function setSeen(seen, note = '', open = false) {
+  lastSeen = seen || [];
+  lastSeenNote = note;
+  lastSeenOpen = open;
+  renderSeen(lastSeen, { note, open });
+}
+
 /* ---------- reset ---------- */
 function resetAll() {
   releaseMedia();
+  releaseSeen();
+  lastSeen = [];
   recordedBlob = null;
   input.value = '';
   trimmer.load(0);
@@ -303,12 +391,15 @@ function renderAnalysis(data) {
   renderMeasures(data);
   renderMath(data);
   renderNotes(data);
+  renderSeen(lastSeen, { note: lastSeenNote, open: lastSeenOpen });
   show('result');
 }
 
 async function runAnalysis() {
   if (analyzing || !recordedBlob) return;
   setBusy(true);
+  lastSeen = [];
+  releaseSeen();
   const startedAt = Date.now();
 
   try {
@@ -331,6 +422,11 @@ async function runAnalysis() {
         });
         log('on-device measurement', measured);
         if (measured.frames.length) {
+          // Keep the frames themselves: if the numbers look wrong, the picture
+          // they came from is the only thing that can say why.
+          lastSeen = measured.seen || [];
+          lastSeenNote = '';
+          lastSeenOpen = false;
           // A chest is the one measurement a size cannot be worked out without,
           // and the one thing a clip standing still can get wrong: arms pressed
           // against the ribs sit in front of the torso, so nothing in the picture
@@ -339,6 +435,8 @@ async function runAnalysis() {
           const anyChest = measured.frames.some((f) => f.landmarks && f.landmarks.armpitL != null);
           if (!anyChest) {
             log('no frame gave a chest measurement — asking for a retake');
+            setSeen(measured.seen,
+              'None of these frames could give a chest measurement, so no size could be worked out from them.', true);
             setStatus('We could not measure your chest: your arms were against your sides in every frame, so there is no way to tell your torso from your arms. Stand with your arms a little away from your body and record again — that one change is what gives you a size.', 'error');
             setBusy(false);
             return;
@@ -368,6 +466,13 @@ async function runAnalysis() {
         frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
       }
       log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
+      lastSeen = frames.map((f, i) => ({
+        i,
+        caption: `Frame ${i + 1} of ${frames.length} — sent to the server`,
+        url: URL.createObjectURL(f),
+      }));
+      lastSeenNote = 'Nothing usable could be measured on the device, so these frames were sent to the server for the vision model to read.';
+      lastSeenOpen = false;
 
       // The tick keeps the status moving so it never looks frozen.
       setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
@@ -382,6 +487,15 @@ async function runAnalysis() {
   } catch (e) {
     log('analyze failed:', e.message);
     setStatus(e.message || 'Something went wrong during analysis.', 'error');
+    // The frames are the whole reason a measurement was refused, so show them
+    // next to the reason rather than leaving the message to explain a picture
+    // the user cannot see.
+    if (lastSeen.length) {
+      renderSeen(lastSeen, {
+        note: 'These are the frames the analysis was working from.',
+        open: true,
+      });
+    }
     setBusy(false);
   }
 }

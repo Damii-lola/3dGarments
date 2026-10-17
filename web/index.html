@@ -98,6 +98,16 @@
         </div>
       </section>
 
+      <!-- What the app actually saw: the frames, the mask, and the rows the
+           widths were read at. A refusal is nearly always something visible in
+           the picture — an arm pressed to the ribs, feet out of frame — so it is
+           shown rather than described. -->
+      <details class="seen" id="seen" hidden>
+        <summary>What the app saw</summary>
+        <p class="seen-note" id="seen-note"></p>
+        <ol class="seen-frames" id="seen-frames"></ol>
+      </details>
+
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </main>
 
