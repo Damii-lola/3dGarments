@@ -7,6 +7,10 @@
    ========================================================= */
 
 :root {
+  /* The page's old flat colour. The page itself is a gradient with stars now,
+     but a panel full of numbers still sits on this exact colour: opaque, so
+     nothing behind it drifts through the digits. */
+  --bg: #0d0e12;
   --panel: #15171e;
   --text: #eef0f4;
   --muted: #8b90a0;
@@ -616,7 +620,10 @@ body::before {
   padding: 1rem 0.9rem 1rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014) 45%, rgba(255, 255, 255, 0.01));
+  /* The plain colour the page used to be, and still is wherever a panel full of
+     numbers sits on it: opaque, so the gradient and the stars do not drift
+     around inside a set of measurements. */
+  background: var(--bg);
   /* An inner hairline along the top edge is what stops a dark panel reading as
      a hole in the page. */
   box-shadow:
@@ -689,7 +696,11 @@ body::before {
   padding: 0.72rem 0.72rem 0.62rem;
   border: 1px solid transparent;
   border-radius: 0.8rem;
-  background: rgba(255, 255, 255, 0.045);
+  /* Opaque too, one step up from the black panel it sits on, so the grid still
+     reads as a grid. The states below are written as solid colours for the same
+     reason: a translucent hover would show the black through it and step *down*
+     in lightness instead of up. */
+  background: var(--panel);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
   cursor: pointer;
   user-select: none;
@@ -722,7 +733,7 @@ body::before {
 .measure:hover::after { opacity: 1; }
 .measure:hover {
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.075);
+  background: #272930;
   transform: translateY(-2px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
@@ -738,7 +749,7 @@ body::before {
 .measure.holding,
 .measure.picked {
   border-color: rgba(255, 91, 58, 0.55);
-  background: rgba(255, 91, 58, 0.075);
+  background: #261c20;
 }
 .measure.picked .measure-value { color: var(--accent-2); }
 .measure.holding::after {
