@@ -128,6 +128,8 @@ const measureGrid = document.getElementById('measure-grid');
 const measuresNote = document.getElementById('measures-note');
 const mathEl = document.getElementById('math');
 const mathList = document.getElementById('math-list');
+const tapeEl = document.getElementById('tape');
+const tapeList = document.getElementById('tape-list');
 const notesEl = document.getElementById('analysis-notes');
 const retakeBtn = document.getElementById('retake-btn');
 const startOverBtn = document.getElementById('start-over-btn');
@@ -417,12 +419,57 @@ function renderFacts(data) {
 }
 
 /**
+ * Where the tape actually goes, in the words you would use standing in front of
+ * a mirror with a tape in your hand.
+ *
+ * The app reads a row of pixels; a tape measure reads a line somebody chose, and
+ * two people measuring "the waist" can easily be three inches apart — and it is
+ * not obvious at all where the hip line is. Printing where each line sits turns
+ * a number you cannot check into one you can, and it is how you find out whether
+ * the 32.2" you took was your waist or your seat.
+ */
+const TAPE_LINES = {
+  head: 'around the widest part of your head, level with the tops of your ears',
+  neck: 'around the base of your neck, one finger of slack under the tape',
+  chest: 'around the fullest part of your chest, level, just under the armpits',
+  bust: 'around the fullest part of your bust, level, just under the armpits',
+  waist: 'around the narrowest part of your torso — level with your navel, where you crease when you bend sideways',
+  lowWaist: 'about 2" below the waist line, where a low-rise waistband sits',
+  hips: 'around the fullest part of your seat, about 8" below the waist line',
+  shoulder: 'straight across your back, bony shoulder point to bony shoulder point',
+  xShoulder: 'straight across your front at chest level, shoulder point to shoulder point',
+  xFront: 'straight across your front at chest level, shoulder point to shoulder point',
+  xBack: 'straight across your back at chest level, shoulder point to shoulder point',
+  backWidth: 'straight across your back at armpit level',
+  topArm: 'around the fullest part of your upper arm, arm hanging relaxed',
+  elbow: 'around your elbow, arm straight',
+  wrist: 'around your wrist bone, just past the little bump',
+  knee: 'around your knee, leg straight and relaxed',
+  calf: 'around the fullest part of your calf',
+  highAnkle: 'around your leg just above the ankle bone',
+  ankle: 'around your ankle bone, over the bump',
+  sleeveLength: 'from the bony point of your shoulder, over a slightly bent elbow, to the wrist bone',
+  sleeveJersey: 'from the bone at the base of your neck, over your shoulder, down to the wrist bone',
+  napeToWaist: 'from the bump at the base of your neck, down your back, to the waist line',
+  shoulderToWaist: 'from the shoulder line down your front to the waist line',
+  armholeDepth: 'from the shoulder line straight down to the armpit line',
+  waistToKnee: 'from the waist line straight down to the middle of the knee',
+  waistToHip: 'from the waist line down to the fullest part of your seat',
+  waistToFloor: 'from the waist line straight down to the floor',
+  bodyRise: 'sitting on a flat chair: from the waist line down to the seat',
+  upperbodyHeight: 'from the crown of your head down to the waist line',
+  lowerbodyHeight: 'from the waist line down to the floor',
+  totalHeight: 'standing straight against a wall, heels together, no shoes',
+};
+
+/**
  * The catalogue: every category this clip actually showed, in the group the
  * user picked. The list IS the answer, so a category the video never contained
  * is not listed at all — no blank rows, no "not measured" placeholders.
  */
 function renderMeasures(data) {
   measureGrid.replaceChildren();
+  tapeList.replaceChildren();
   const items = data.catalogue?.items || [];
   const group = data.catalogue?.group;
   measuresTitle.textContent = group === 'female' ? "What we measured (women's sheet)"
@@ -434,6 +481,15 @@ function renderMeasures(data) {
     cell.append(el('span', 'measure-label', item.label), el('span', 'measure-value', `${item.in}"`));
     measureGrid.append(cell);
   }
+
+  // Only the lines this clip actually produced, in the same order, so the two
+  // lists can be read side by side against a tape.
+  for (const item of items) {
+    const where = TAPE_LINES[item.key];
+    if (!where) continue;
+    tapeList.append(el('li', 'math-item', `${item.label} (${item.in}") — ${where}`));
+  }
+  tapeEl.hidden = !tapeList.children.length;
 
   if (!items.length) {
     measuresNote.textContent = 'Nothing in this clip could be measured.';
