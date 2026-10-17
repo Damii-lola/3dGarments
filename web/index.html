@@ -182,16 +182,9 @@
         </div>
       </section>
 
-      <!-- What a held card says: what it is in plain words, where the tape goes
-           for it, and the number in both units. A message box rather than a
-           tooltip, because a tooltip on a phone lands under your thumb. -->
-      <div class="tip" id="tip" role="dialog" aria-live="polite" hidden>
-        <p class="tip-title" id="tip-title"></p>
-        <p class="tip-value" id="tip-value"></p>
-        <p class="tip-what" id="tip-what"></p>
-        <p class="tip-where" id="tip-where"></p>
-        <p class="tip-close">Tap anywhere to close</p>
-      </div>
+      <!-- The dim the box sits on. Visual only: a tap passes straight through it
+           to the page beneath, and reaching the page is what closes the box. -->
+      <div class="tip-scrim" id="tip-scrim" hidden></div>
 
       <!-- What a held card says: what it is in plain words, where the tape goes
            for it, and the number in both units. A message box rather than a

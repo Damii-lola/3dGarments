@@ -18,6 +18,11 @@
   --line: rgba(255, 255, 255, 0.10);
   --line-2: rgba(255, 255, 255, 0.16);
   --radius: 1.125rem;
+  /* One motion vocabulary for the whole page. The spring undertracks a little
+     before it settles, which is the difference between "animated" and
+     "expensive"; the soft curve is for anything that has to feel exact. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
   color-scheme: dark;
 }
 
@@ -325,11 +330,15 @@ body {
   font: inherit;
   font-weight: 650;
   cursor: pointer;
-  box-shadow: 0 12px 28px rgba(255, 91, 58, 0.30);
-  transition: filter 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 12px 28px rgba(255, 91, 58, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: filter 0.25s var(--ease-soft), transform 0.3s var(--ease), box-shadow 0.3s var(--ease-soft);
 }
-.btn-primary:hover { filter: brightness(1.06); }
-.btn-primary:active { transform: scale(0.97); }
+.btn-primary:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px -10px rgba(255, 91, 58, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+.btn-primary:active { transform: translateY(0) scale(0.975); }
 .btn-primary:disabled { opacity: 0.5; pointer-events: none; }
 
 .btn-ghost {
@@ -342,13 +351,26 @@ body {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: background 0.25s var(--ease-soft), border-color 0.25s var(--ease-soft),
+    transform 0.3s var(--ease), box-shadow 0.3s var(--ease-soft);
 }
-.btn-ghost:hover { background: rgba(255, 255, 255, 0.09); }
-.btn-ghost:active { transform: scale(0.97); }
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.26);
+  transform: translateY(-1px);
+}
+.btn-ghost:active { transform: translateY(0) scale(0.975); }
 .btn-ghost:disabled { opacity: 0.45; pointer-events: none; }
 
 /* ---------- analysis ---------- */
+/* A step arrives rather than appearing. Only the steps that do not animate
+   their own contents get this: the results run a longer cascade inside. */
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(1rem); }
+  to { opacity: 1; transform: none; }
+}
+.step-in { animation: step-in 0.45s var(--ease) both; }
+
 .analysis {
   width: 100%;
   display: flex;
@@ -358,23 +380,67 @@ body {
 }
 
 /* ---------- results: the numbers, grouped so they can be found ---------- */
-.result-head { display: flex; flex-direction: column; gap: 0.3rem; }
+/* Everything in this section walks in rather than appearing: the heading, then
+   the two facts, then each group with its cards inside it. The stagger is what
+   makes fourteen separate numbers read as one answer. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: none; }
+}
+.analysis.results-in .result-kicker { animation: rise 0.6s var(--ease) both; }
+.analysis.results-in .result-title { animation: rise 0.7s var(--ease) 0.06s both; }
+.analysis.results-in .result-lead { animation: rise 0.6s var(--ease) 0.13s both; }
+.analysis.results-in .facts { animation: rise 0.6s var(--ease) 0.2s both; }
+
+.result-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+/* A soft accent bloom behind the heading — the one thing on this page that is
+   neither a number nor a label, and it does the work a heading colour would. */
+.result-head::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -55%;
+  width: 55%;
+  height: 210%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 91, 58, 0.22), transparent);
+  filter: blur(10px);
+  pointer-events: none;
+}
 .result-kicker {
+  position: relative;
   margin: 0;
   font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--accent-2);
 }
 .result-title {
+  position: relative;
   margin: 0;
-  font-size: clamp(1.5rem, 5.5vw, 1.9rem);
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
+  font-size: clamp(1.6rem, 6vw, 2.05rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
-.result-lead { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+/* A gradient fill on the heading, behind a support check so that a browser
+   without background-clip:text keeps a solid colour rather than no text. */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .result-title {
+    background: linear-gradient(168deg, #ffffff 18%, rgba(255, 255, 255, 0.6));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+}
+.result-lead { position: relative; margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.55; }
 
 /* Two facts, as chips: a pill row reads as a badge, not as a form. */
 .facts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
@@ -382,24 +448,38 @@ body {
   display: flex;
   align-items: baseline;
   gap: 0.35rem;
-  padding: 0.3rem 0.72rem;
+  padding: 0.3rem 0.78rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.022));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   font-size: 0.78rem;
+  transition: border-color 0.3s var(--ease-soft), transform 0.35s var(--ease);
 }
+.fact:hover { border-color: var(--line-2); transform: translateY(-1px); }
 .fact-label { color: var(--faint); }
-.fact-value { font-weight: 600; }
+.fact-value { font-weight: 650; }
 
-.measure-groups { display: flex; flex-direction: column; gap: 0.7rem; }
+.measure-groups { display: flex; flex-direction: column; gap: 0.75rem; }
 .group {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 0.9rem 0.85rem 0.95rem;
+  padding: 1rem 0.9rem 1rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014) 45%, rgba(255, 255, 255, 0.01));
+  /* An inner hairline along the top edge is what stops a dark panel reading as
+     a hole in the page. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 48px -34px rgba(0, 0, 0, 0.95);
+  animation: group-in 0.65s var(--ease) both;
+  animation-delay: calc(var(--gi, 0) * 90ms);
+}
+@keyframes group-in {
+  from { opacity: 0; transform: translateY(0.85rem) scale(0.992); }
+  to { opacity: 1; transform: none; }
 }
 /* The heading is two rows by design: the title with its count on the right, and
    the plain-language note underneath. Laid out as flex, the note got squeezed
@@ -453,75 +533,140 @@ body {
    reacts under your finger says "there is more here" without a label saying so,
    and every one of these has something worth saying about it. */
 .measure {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  padding: 0.7rem 0.7rem 0.6rem;
+  padding: 0.72rem 0.72rem 0.62rem;
   border: 1px solid transparent;
-  border-radius: 0.7rem;
+  border-radius: 0.8rem;
   background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  transition: transform 0.12s ease, border-color 0.16s ease, background 0.16s ease;
-  animation: card-in 0.34s ease-out backwards;
-  animation-delay: calc(var(--i, 0) * 24ms);
+  transition:
+    transform 0.35s var(--ease),
+    border-color 0.3s var(--ease-soft),
+    background 0.3s var(--ease-soft),
+    box-shadow 0.35s var(--ease-soft);
+  animation: card-in 0.6s var(--ease) backwards;
+  animation-delay: calc(var(--i, 0) * 20ms);
 }
 @keyframes card-in {
-  from { opacity: 0; transform: translateY(0.45rem); }
+  from { opacity: 0; transform: translateY(0.6rem) scale(0.965); }
   to { opacity: 1; transform: none; }
 }
+/* A light that follows the pointer: a card should feel like a surface, not a
+   picture of one. */
+.measure::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(9rem circle at var(--mx, 50%) var(--my, -20%), rgba(255, 255, 255, 0.1), transparent 62%);
+  opacity: 0;
+  transition: opacity 0.35s var(--ease-soft);
+  pointer-events: none;
+}
+.measure:hover::after { opacity: 1; }
 .measure:hover {
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.08);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.075);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 30px -22px rgba(0, 0, 0, 0.95);
 }
-.measure:active {
-  transform: translateY(0) scale(0.985);
-  background: rgba(255, 255, 255, 0.11);
-}
+.measure:active { transform: translateY(0) scale(0.985); }
 .measure:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Held: the card lights up while the press matures and a band of accent light
+   sweeps across it, so the hold is something you can watch instead of hope for.
+   Picked: it stays marked while its box is open, so it is clear which number the
+   box is talking about. */
+.measure.holding,
+.measure.picked {
+  border-color: rgba(255, 91, 58, 0.55);
+  background: rgba(255, 91, 58, 0.075);
+}
+.measure.picked .measure-value { color: var(--accent-2); }
+.measure.holding::after {
+  opacity: 1;
+  background: linear-gradient(100deg, transparent 18%, rgba(255, 138, 92, 0.32), transparent 82%);
+  animation: hold-sweep 0.32s ease-out forwards;
+}
+@keyframes hold-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
 .measure-label {
   font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   color: var(--muted);
   line-height: 1.3;
 }
 .measure-line { display: flex; align-items: baseline; gap: 0.22rem; }
 .measure-value {
-  font-size: 1.42rem;
+  font-size: 1.45rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.05;
+  transition: color 0.3s var(--ease-soft);
 }
-.measure-unit { font-size: 0.76rem; font-weight: 600; color: var(--accent-2); }
+.measure-unit { font-size: 0.76rem; font-weight: 650; color: var(--accent-2); }
 .measure-cm { font-size: 0.7rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 
 /* ---------- the box a held card opens ---------- */
 /* A message box, not a tooltip: on a phone a tooltip lands under your thumb. */
+.tip-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: radial-gradient(130% 100% at 50% 110%, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.22) 55%, rgba(0, 0, 0, 0.08));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: fade-in 0.4s var(--ease-soft) both;
+  /* Visual only: a tap still has to reach the page underneath, because that tap
+     is what closes the box. */
+  pointer-events: none;
+}
+.tip-scrim.closing { animation: fade-out 0.22s var(--ease-soft) forwards; }
 .tip {
   position: fixed;
   left: 50%;
   bottom: max(1rem, env(safe-area-inset-bottom));
+  /* The static transform matters: with motion turned off there is no animation
+     to hold the box in the middle of the screen. */
   transform: translateX(-50%);
   z-index: 40;
-  width: min(30rem, calc(100% - 2rem));
+  width: min(30rem, calc(100% - 1.5rem));
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.95rem 1.05rem 0.85rem;
+  gap: 0.42rem;
+  padding: 1rem 1.1rem 0.9rem;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(30, 33, 42, 0.98), rgba(21, 23, 30, 0.98));
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.62);
-  animation: tip-in 0.18s ease-out;
+  border-radius: 1.15rem;
+  background: linear-gradient(180deg, rgba(33, 36, 46, 0.99), rgba(20, 22, 29, 0.99));
+  box-shadow:
+    0 30px 60px -14px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075);
+  animation: tip-in 0.45s var(--ease) both;
 }
+.tip.closing { animation: tip-out 0.22s var(--ease-soft) forwards; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes tip-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(0.6rem); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from { opacity: 0; transform: translate(-50%, 1.6rem) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes tip-out {
+  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  to { opacity: 0; transform: translate(-50%, 1.1rem) scale(0.98); }
 }
 .tip-title {
   margin: 0;
@@ -533,24 +678,30 @@ body {
 }
 .tip-value {
   margin: 0;
-  font-size: clamp(1.15rem, 4.5vw, 1.35rem);
+  font-size: clamp(1.2rem, 4.5vw, 1.4rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
 }
-.tip-what { margin: 0; font-size: 0.87rem; line-height: 1.5; }
-.tip-where { margin: 0; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+.tip-what { margin: 0; font-size: 0.87rem; line-height: 1.55; }
+.tip-where { margin: 0; font-size: 0.82rem; color: var(--muted); line-height: 1.55; }
 .tip-close {
   margin: 0.15rem 0 0;
   font-size: 0.68rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .measure, .tip { animation: none; }
-  .measure { transition: none; }
+  .measure, .group, .tip, .tip-scrim, .step-in, .fact,
+  .analysis.results-in .result-kicker,
+  .analysis.results-in .result-title,
+  .analysis.results-in .result-lead,
+  .analysis.results-in .facts { animation: none; }
+  .measure, .fact { transition: none; }
+  .measure:hover, .fact:hover { transform: none; }
+  .measure::after { display: none; }
 }
 
 /* ---------- the working behind each number ---------- */
@@ -664,6 +815,22 @@ body {
   body { padding-left: 0.9rem; padding-right: 0.9rem; }
   .trim-row { grid-template-columns: 2.6rem 1fr 2.6rem; }
   .measure-grid { grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); }
+  /* The box is a message, not a page. At 189% its own type has to come back
+     down or it covers the very number it is describing. */
+  .tip {
+    width: calc(100% - 1rem);
+    gap: 0.34rem;
+    padding: 0.85rem 0.9rem 0.75rem;
+    border-radius: 0.95rem;
+  }
+  .tip-title { font-size: 0.62rem; letter-spacing: 0.12em; }
+  .tip-value { font-size: 1rem; }
+  .tip-what { font-size: 0.74rem; }
+  .tip-where { font-size: 0.7rem; }
+  .tip-close { font-size: 0.58rem; }
+  /* Three stacked selects rather than two squeezed ones: at this scale "Not
+     sure" was being clipped to "Not sur…". */
+  .fit-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 380px) {

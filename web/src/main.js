@@ -125,6 +125,7 @@ const measuresLead = document.getElementById('measures-lead');
 const measureGroups = document.getElementById('measure-groups');
 const notesEl = document.getElementById('analysis-notes');
 const tipEl = document.getElementById('tip');
+const tipScrim = document.getElementById('tip-scrim');
 const tipTitle = document.getElementById('tip-title');
 const tipValue = document.getElementById('tip-value');
 const tipWhat = document.getElementById('tip-what');
@@ -238,6 +239,9 @@ function setBusy(busy) {
   startOverTrim.disabled = busy;
 }
 
+/** The OS's own answer to "animate this?" beats any animation we can write. */
+const MOTION_OK = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 function show(step) {
   intro.hidden = step !== 'camera';
   openCamera.hidden = step !== 'camera';
@@ -245,6 +249,16 @@ function show(step) {
   analysis.hidden = step !== 'result';
   // The box floats over everything, so it must not survive leaving the results.
   if (step !== 'result') hideTip();
+  // A step arrives instead of appearing. The results animate their own contents
+  // as a longer cascade, so only the other steps get the container move.
+  const entering = step === 'trim' ? trimStep : step === 'camera' ? openCamera : null;
+  if (entering && MOTION_OK) {
+    entering.classList.remove('step-in');
+    // Read a layout property so the browser sees the class actually go away;
+    // without this the re-add is a no-op and nothing animates the second time.
+    void entering.offsetWidth;
+    entering.classList.add('step-in');
+  }
 }
 
 function releaseMedia() {
@@ -454,19 +468,44 @@ const ABOUT = {
 /**
  * Show the box for one card. A message box pinned to the bottom of the screen
  * rather than a tooltip, because a tooltip on a phone lands under your thumb.
+ * The card it belongs to stays marked while it is open, so it is always clear
+ * which number is being explained.
  */
-function showTip(item) {
+let tipClosing = null;
+let tipCard = null;
+
+function showTip(item, cell = null) {
   const info = ABOUT[item.key] || {};
   tipTitle.textContent = item.label;
   tipValue.textContent = `${item.in} in · ${item.cm} cm`;
   tipWhat.textContent = info.what || 'A measurement read from your video.';
   tipWhere.textContent = info.where || '';
   tipWhere.hidden = !info.where;
+  // Reopening while the last one is still fading has to cancel the fade, or the
+  // box would vanish underneath the new one.
+  if (tipClosing) { clearTimeout(tipClosing); tipClosing = null; }
+  if (tipCard && tipCard !== cell) tipCard.classList.remove('picked');
+  tipCard = cell;
+  if (cell) cell.classList.add('picked');
+  tipEl.classList.remove('closing');
+  tipScrim.classList.remove('closing');
   tipEl.hidden = false;
+  tipScrim.hidden = false;
 }
 
 function hideTip() {
-  tipEl.hidden = true;
+  if (tipEl.hidden || tipClosing) return;
+  tipEl.classList.add('closing');
+  tipScrim.classList.add('closing');
+  tipClosing = setTimeout(() => {
+    tipEl.hidden = true;
+    tipScrim.hidden = true;
+    tipEl.classList.remove('closing');
+    tipScrim.classList.remove('closing');
+    if (tipCard) tipCard.classList.remove('picked');
+    tipCard = null;
+    tipClosing = null;
+  }, 220);
 }
 
 /**
@@ -475,18 +514,31 @@ function hideTip() {
  */
 function wireCard(cell, item) {
   let timer = null;
-  const open = () => { timer = null; showTip(item); };
+  const open = () => { timer = null; cell.classList.remove('holding'); showTip(item, cell); };
   cell.addEventListener('pointerdown', (e) => {
     if (Number.isFinite(e.button) && e.button > 0) return;
     if (timer) clearTimeout(timer);
+    // Light the card up for the whole hold: the wait for 320 ms should be
+    // something you can watch, not something you have to trust.
+    cell.classList.add('holding');
     timer = setTimeout(open, 320);
   });
-  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const cancel = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    cell.classList.remove('holding');
+  };
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) cell.addEventListener(ev, cancel);
   // A long press on a phone otherwise selects the text or opens the copy menu.
   cell.addEventListener('contextmenu', (e) => e.preventDefault());
   cell.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTip(item); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTip(item, cell); }
+  });
+  // The light that follows the pointer, so the card feels like a surface under
+  // the cursor rather than a picture of one.
+  cell.addEventListener('pointermove', (e) => {
+    const r = cell.getBoundingClientRect();
+    cell.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    cell.style.setProperty('--my', `${e.clientY - r.top}px`);
   });
 }
 
@@ -529,6 +581,38 @@ const GROUPS = [
 ];
 
 /**
+ * Numbers that arrive instead of appearing.
+ *
+ * The values are already correct on the page before this runs, and it starts on
+ * the card's own entrance animation rather than on a duplicated timer, so the
+ * count can never disagree with the card it belongs to. If a frame is dropped, a
+ * tab is backgrounded or the browser never paints again, the safety net writes
+ * the real number back: a decoration must not be able to leave a wrong one behind.
+ */
+function countOnEnter(cell, inNode, cmNode, item) {
+  if (!MOTION_OK) return;
+  const finish = () => {
+    inNode.textContent = String(item.in);
+    cmNode.textContent = `${item.cm} cm`;
+  };
+  cell.addEventListener('animationstart', (e) => {
+    if (e.animationName !== 'card-in') return;
+    const dur = 700;
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - (1 - p) ** 3;
+      inNode.textContent = (item.in * eased).toFixed(1);
+      cmNode.textContent = `${(item.cm * eased).toFixed(1)} cm`;
+      if (p < 1) requestAnimationFrame(tick);
+      else finish();
+    };
+    requestAnimationFrame(tick);
+    setTimeout(finish, dur + 600);
+  }, { once: true });
+}
+
+/**
  * The catalogue: every category this clip actually showed, in the group the
  * user picked, laid out in the order someone would measure themselves. The list
  * IS the answer, so a category the video never contained is not listed at all —
@@ -554,10 +638,13 @@ function renderMeasures(data) {
   }
 
   let i = 0;
+  let groupIndex = 0;
   for (const bucket of buckets) {
     if (!bucket.items.length) continue;
 
     const section = el('section', 'group');
+    section.style.setProperty('--gi', String(groupIndex));
+    groupIndex += 1;
     const head = el('div', 'group-head');
     // Title, count, then note: the count shares the title's row and the note
     // falls to its own — as flex the note got squeezed to one word per line.
@@ -575,13 +662,12 @@ function renderMeasures(data) {
       cell.setAttribute('role', 'button');
       cell.setAttribute('aria-label', `${item.label}, ${item.in} inches. Hold for what this is.`);
       const line = el('span', 'measure-line');
-      line.append(el('span', 'measure-value', String(item.in)), el('span', 'measure-unit', 'in'));
-      cell.append(
-        el('span', 'measure-label', item.label),
-        line,
-        el('span', 'measure-cm', `${item.cm} cm`),
-      );
+      const inNode = el('span', 'measure-value', String(item.in));
+      const cmNode = el('span', 'measure-cm', `${item.cm} cm`);
+      line.append(inNode, el('span', 'measure-unit', 'in'));
+      cell.append(el('span', 'measure-label', item.label), line, cmNode);
       wireCard(cell, item);
+      countOnEnter(cell, inNode, cmNode, item);
       grid.append(cell);
     }
     section.append(grid);
@@ -615,6 +701,12 @@ function renderAnalysis(data) {
   renderMeasures(data);
   renderNotes(data);
   renderSeen(lastSeen, { note: lastSeenNote, open: lastSeenOpen });
+  // Restart the entrance: the cards are new elements and animate on their own,
+  // but the heading and the chips are the same nodes as last time, so the class
+  // has to be dropped and forced back on for them to run again.
+  analysis.classList.remove('results-in');
+  void analysis.offsetWidth;
+  analysis.classList.add('results-in');
   show('result');
 }
 
