@@ -719,7 +719,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   const rejectedEverywhere = [];
   const droppedByCheck = new Set();
   for (const key of Object.keys(REGIONS)) {
-    const r = measureRegion(key, frames, { depthRatio: depthRatioFor(key, gender.guess) });
+    const r = measureRegion(key, frames, { depthRatio: depthRatioFor(key, gender.guess), gender: gender.guess });
     if (!r) {
       dropped.push(key);
       // Distinguish "never seen" from "seen but not humanly possible".
@@ -747,7 +747,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       widthViews: r.widthViews,
       depthViews: r.depthViews,
       formula: r.girth
-        ? 'ellipse perimeter of half-width x half-depth'
+        ? 'ellipse perimeter of half-width x half-depth, times the tape factor ANSUR II measured for that part'
         : 'horizontal separation of the shoulder landmarks',
       confidence: r.confidence,
       clamped: r.clamped,

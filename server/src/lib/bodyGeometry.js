@@ -22,14 +22,24 @@ export const HEAD_HEIGHT_CM = { male: 23.5, female: 22.5, unsure: 23.0 };
 export const TARGET_HEAD_UNITS = 7.5;
 export const HEAD_UNIT_CORRECTION_LIMIT = 0.08;
 /**
- * Width:depth of a cross-section, used only when no side view exists. A torso
- * is wider than it is deep; a head is the other way round.
+ * Depth as a fraction of width for a cross-section, used only when no side view
+ * exists. A torso is wider than it is deep; a head is the other way round.
+ *
+ * Every torso figure here is the median depth/width of that part in ANSUR II
+ * (4,082 men, 1,986 women, caliper widths and depths taken on the same people):
+ * a male chest is 0.88 as deep as it is wide, a male waist 0.72, hips 0.71, a
+ * female bust 0.92. The old numbers were guesses, and the chest guess (0.72)
+ * was a fifth too shallow, which shortened the tape around every chest.
+ *
+ * The limbs are the survey's other lesson: on the one limb ANSUR measured both
+ * ways (the ankle, 7.5 cm across and 22.9 cm round), pi x width is the tape to
+ * within 2.5%, so a limb is treated as round and the width carries it.
  */
 export const DEPTH_RATIO = {
-  head: 1.30, neck: 0.92, upperChest: 0.72, chest: 0.72, underbust: 0.74,
-  waist: 0.76, lowWaist: 0.78, hips: 0.80,
-  arm: 0.92, elbow: 0.88, wrist: 0.75,
-  knee: 0.88, calf: 0.88, ankle: 0.80,
+  head: 1.30, neck: 0.92, upperChest: 0.88, chest: 0.88, underbust: 0.80,
+  waist: 0.72, lowWaist: 0.72, hips: 0.71,
+  arm: 0.95, elbow: 0.95, wrist: 0.88,
+  knee: 0.95, calf: 0.95, ankle: 0.95,
 };
 
 /**
@@ -97,6 +107,27 @@ export const SPAN_RANGES_CM = {
   hem: { width: [9, 34], depth: [9, 32] },
 };
 
+/**
+ * A torso row can never be this fraction of the shoulder span, whatever the
+ * build. This is the strongest evidence ANSUR II gives about the shape of a
+ * body: across 4,082 men the WIDEST chest breadth is 0.668 of the bideltoid
+ * (median 0.567), the widest waist 0.807 and the widest hip 0.813; across 1,986
+ * women the widest chest is 0.695 and the widest hip 0.961.
+ *
+ * It exists because the absolute ranges above cannot catch the real failure.
+ * When the arms hang against the ribcage the segmentation reads one run from
+ * hand to hand, and a "chest" 45 cm across on a 48 cm shoulder passes a 50 cm
+ * ceiling happily — then a tape round that row reads 65 in. Against the shoulder
+ * span, in a frame's own scale, the same row is obviously the shoulders.
+ *
+ * Front/back/three-quarter only: side-on, every one of these pairs reads the
+ * body's DEPTH, and a chest is nearly as deep as a shoulder is.
+ */
+export const TORSO_SPAN_LIMIT = {
+  male: { upperChest: 0.72, chest: 0.72, underbust: 0.72, waist: 0.86, lowWaist: 0.86, hips: 0.87 },
+  female: { upperChest: 0.74, chest: 0.74, underbust: 0.74, waist: 0.97, lowWaist: 0.97, hips: 1.0 },
+};
+
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 export const round1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
 export const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
@@ -110,6 +141,48 @@ export function ellipsePerimeter(a, b) {
   if (!(a > 0) || !(b > 0)) return null;
   const h = ((a - b) ** 2) / ((a + b) ** 2);
   return Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+}
+
+/**
+ * A tape measure is not an ellipse, and treating it as one is the single largest
+ * error in a silhouette measurement.
+ *
+ * ANSUR II took both from the same 4,082 men and 1,986 women: a caliper width
+ * and depth across a chest, and the tape that went round it. The tape always
+ * comes out longer — by a lot where the cross-section is a flattened box (a
+ * chest) and barely at all where it is genuinely round (a limb). The numbers
+ * below are the median ratios of tape circumference to ellipse perimeter in that
+ * survey, so they are measured, not tuned.
+ *
+ * What they fix: an average 28.9 x 25.4 cm male chest is 105.9 cm round, where
+ * the ellipse says 84.6. That 21 cm gap is most of a size, and every chest the
+ * app measured was short by it.
+ */
+export const GIRTH_SHAPE = {
+  upperChest: { male: 1.237, female: 1.164, unsure: 1.201 },
+  chest: { male: 1.237, female: 1.164, unsure: 1.201 },
+  underbust: { male: 1.146, female: 1.113, unsure: 1.130 },
+  waist: { male: 1.054, female: 1.061, unsure: 1.058 },
+  lowWaist: { male: 1.072, female: 1.079, unsure: 1.076 },
+  hips: { male: 1.089, female: 1.097, unsure: 1.093 },
+};
+
+/**
+ * How much longer a tape is than the ellipse for one cross-section. A head, a
+ * neck and every limb have no survey pair to fit, and the one limb with both
+ * measurements says a round one is right, so they keep the ellipse.
+ */
+export function shapeFactor(ratioKey, gender) {
+  const row = GIRTH_SHAPE[ratioKey];
+  if (!row) return 1;
+  return row[gender] ?? row.unsure;
+}
+
+/** The tape circumference that a width and a depth describe, ANSUR II's way. */
+export function tapeGirth(widthCm, depthCm, ratioKey, gender) {
+  const e = ellipsePerimeter(widthCm / 2, depthCm / 2);
+  if (e == null) return null;
+  return e * shapeFactor(ratioKey, gender);
 }
 
 export function normView(v) {
@@ -323,6 +396,27 @@ export function checkFrame(frame) {
     }
   }
 
+  // The same failure, caught relationally: a torso row wider than this fraction
+  // of the shoulder span is the arms, not the torso. Scale-free (both spans are
+  // read in the same frame), so it holds however far away the camera was.
+  if (frame.view !== 'side' && frame.scale) {
+    const shoulder = spanX(frame, REGIONS.shoulder.left, REGIONS.shoulder.right);
+    const shoulderCm = shoulder == null ? 0 : shoulder * frame.scale.cmPerWidth;
+    if (shoulderCm > 0) {
+      const limits = TORSO_SPAN_LIMIT[frame.gender === 'male' ? 'male' : 'female'];
+      for (const [key, frac] of Object.entries(limits)) {
+        const spec = REGIONS[key];
+        const span = spanX(frame, spec.left, spec.right);
+        if (span == null || span <= 0) continue;
+        const cm = span * frame.scale.cmPerWidth;
+        if (cm > shoulderCm * frac) {
+          bad.add(key);
+          notes.push(`${key} spans ${Math.round(cm)} cm of a ${Math.round(shoulderCm)} cm shoulder — that is the arms`);
+        }
+      }
+    }
+  }
+
   return { bad, fatal: false, heightBad, notes };
 }
 
@@ -433,7 +527,10 @@ export function measureRegion(key, frames, opts = {}) {
   const depthCm = d ? d.value : (spec.girth ? w.value * prior : null);
   const depthSource = spec.girth ? (d ? `side view x${d.n}` : `${prior}x width, modelled`) : null;
 
-  const girthCm = spec.girth ? ellipsePerimeter(w.value / 2, depthCm / 2) : null;
+  // Straight-line widths turned into a tape reading the way ANSUR II's own
+  // measurements say they turn: a torso is a flattened box, not an ellipse.
+  const gender = opts.gender ?? frames.find((f) => f.gender)?.gender ?? 'unsure';
+  const girthCm = spec.girth ? tapeGirth(w.value, depthCm, spec.ratio, gender) : null;
   const valueCm = spec.girth ? girthCm : w.value;
   if (!Number.isFinite(valueCm)) return null;
 

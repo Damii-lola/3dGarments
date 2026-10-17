@@ -38,15 +38,14 @@ import {
  *
  * A man's chest and a woman's bust are NOT the same cross-section, and giving
  * them one number is what sized a large-busted woman two sizes too small: a
- * ribcage sits about three-quarters as deep as it is wide, but a bust projects
+ * ribcage sits about seven-eighths as deep as it is wide, but a bust projects
  * forward, so the tape has to travel a good deal further around it.
  *
- * 0.72 is checked against a tape measure — a 48" chest read 48.4".
- * 0.85 is the population figure that puts a given bust WIDTH at the girth a
- * tape finds around it (a 40" bust is about 35 cm wide and 29 cm deep).
+ * Both are the median depth/width of that part in ANSUR II (4,082 men, 1,986
+ * women), not fitted to any one clip.
  */
-const MALE_BUST_DEPTH_RATIO = 0.72;
-const FEMALE_BUST_DEPTH_RATIO = 0.85;
+const MALE_BUST_DEPTH_RATIO = 0.877;
+const FEMALE_BUST_DEPTH_RATIO = 0.916;
 
 /**
  * The depth prior to use for a region, given the group. Exported so the size
@@ -292,7 +291,7 @@ function howFor(spec, ev, value) {
   if (spec.kind === 'girth') {
     const s = ev.spans[spec.span];
     if (!s) return null;
-    return `${round1(s.widthIn)}" across x ${round1(s.depthIn)}" deep (${s.depthSource}) -> perimeter ${round1(value)}"${s.widthViews ? `, from ${s.widthViews} frame${s.widthViews === 1 ? '' : 's'}` : ''}${spec.note ? ` — ${spec.note}` : ''}`;
+    return `${round1(s.widthIn)}" across x ${round1(s.depthIn)}" deep (${s.depthSource}) -> a tape of ${round1(value)}" around it${s.widthViews ? `, from ${s.widthViews} frame${s.widthViews === 1 ? '' : 's'}` : ''}${spec.note ? ` — ${spec.note}` : ''}`;
   }
   if (spec.kind === 'width') {
     const s = ev.spans[spec.span];
@@ -326,7 +325,7 @@ export function buildCatalogue({ frames, gender, clothing = {} }) {
 
   const spans = {};
   for (const [key, region, views, bustDepth] of SPAN_SETS) {
-    const opts = {};
+    const opts = { gender: group };
     if (views) opts.views = views;
     // The bust depth prior follows the group: a bust projects, a ribcage does not.
     if (bustDepth) opts.depthRatio = depthRatioFor('chest', group);

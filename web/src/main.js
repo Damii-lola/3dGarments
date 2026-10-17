@@ -367,9 +367,10 @@ function renderMeasures(data) {
 }
 
 /**
- * The working: every number is the perimeter of an ellipse whose width came
- * from the front-facing frames and whose depth came from the side-on ones.
- * Showing it is the whole point — these are calculations, not guesses.
+ * The working: every girth is the width the front-facing frames gave and the
+ * depth the side-on frames gave, turned into a tape reading by the factor
+ * ANSUR II measured for that part of the body. Showing it is the whole point —
+ * these are calculations, not guesses.
  */
 function renderMath(data) {
   mathList.replaceChildren();
@@ -572,25 +573,25 @@ if (new URLSearchParams(location.search).has('demo')) {
     frameCount: 6,
     gender: { guess: 'male', confidence: 1, chosen: true },
     clothing: { items: ['t-shirt', 'jeans'], fit: 'regular', density: 'light', thicknessIn: 0.15 },
-    measurements: { chest: 41.2, waist: 36.4, hips: 40.2, shoulder: 18.3, neck: 14.6, arm: 13.1, height: 71.1 },
-    adjusted: { chest: 40.9, waist: 36.1, hips: 39.9, shoulder: 18.0, neck: 14.6, arm: 13.1, height: 71.1, bodyWidthRemovedIn: 0.3 },
+    measurements: { chest: 40.5, waist: 29.4, hips: 35.6, shoulder: 18.3, neck: 14.1, arm: 13.1, height: 71.1 },
+    adjusted: { chest: 40.2, waist: 29.1, hips: 35.3, shoulder: 18.0, neck: 14.1, arm: 13.1, height: 71.1, bodyWidthRemovedIn: 0.3 },
     proportions: { build: 'average', shoulderToHip: 1.15, legToTorso: 0.95 },
     catalogue: {
       group: 'male',
       items: [
-        { key: 'head', label: 'Head', in: 22.7, cm: 57.7, how: '5.9" across x 7.7" deep (1.3x width) -> perimeter 22.7"' },
-        { key: 'neck', label: 'Neck Size', in: 14.6, cm: 37.1, how: '4.7" across x 4.3" deep (side view x2) -> perimeter 14.6"' },
-        { key: 'chest', label: 'Chest', in: 41.2, cm: 104.6, how: '15.0" across x 10.6" deep (side view x2) -> perimeter 41.2"' },
-        { key: 'waist', label: 'Waist', in: 36.4, cm: 92.5, how: '13.0" across x 9.8" deep (side view x2) -> perimeter 36.4"' },
-        { key: 'hips', label: 'Hip/Seat', in: 40.2, cm: 102.1, how: '14.2" across x 11.0" deep (side view x2) -> perimeter 40.2"' },
+        { key: 'head', label: 'Head', in: 21.4, cm: 54.5, how: '5.9" across x 7.7" deep (1.3x width) -> a tape of 21.4" around it' },
+        { key: 'neck', label: 'Neck Size', in: 14.1, cm: 35.8, how: '4.7" across x 4.3" deep (side view x2) -> a tape of 14.1" around it' },
+        { key: 'chest', label: 'Chest', in: 40.2, cm: 102.1, how: '11.0" across x 9.7" deep (side view x2) -> a tape of 40.2" around it' },
+        { key: 'waist', label: 'Waist', in: 29.1, cm: 74.0, how: '10.2" across x 7.3" deep (side view x2) -> a tape of 29.1" around it' },
+        { key: 'hips', label: 'Hip/Seat', in: 35.3, cm: 89.7, how: '12.0" across x 8.5" deep (side view x2) -> a tape of 35.3" around it' },
         { key: 'shoulder', label: 'Shoulder', in: 18.3, cm: 46.5, how: '18.3" across the shoulders, from 3 frames' },
         { key: 'xBack', label: 'X-Back', in: 18.0, cm: 45.7, how: '18.0" across your back at armpit level, read from the frames showing your back, from 2 frames' },
         { key: 'napeToWaist', label: 'Nape to waist', in: 17.4, cm: 44.2, how: '17.4" from the nape of your neck to your waist line, from 4 frames' },
         { key: 'sleeveLength', label: 'Sleeve Length', in: 24.1, cm: 61.2, how: '24.1" from the shoulder point, through the elbow, to the wrist bone, from 3 frames' },
         { key: 'waistToKnee', label: 'Waist to Knee', in: 22.4, cm: 56.9, how: '22.4" from your waist line to your knee, from 4 frames' },
         { key: 'waistToFloor', label: 'Waist to Floor', in: 41.4, cm: 105.2, how: '41.4" from your waist line to the floor, from 4 frames' },
-        { key: 'calf', label: 'Calf', in: 14.6, cm: 37.1, how: '5.0" across x 4.4" deep (0.88x width, modelled) -> perimeter 14.6"' },
-        { key: 'ankle', label: 'Ankle', in: 8.6, cm: 21.8, how: '3.0" across x 2.4" deep (0.8x width, modelled) -> perimeter 8.6"' },
+        { key: 'calf', label: 'Calf', in: 15.3, cm: 38.9, how: '5.0" across x 4.8" deep (0.95x width, modelled) -> a tape of 15.3" around it' },
+        { key: 'ankle', label: 'Ankle', in: 9.1, cm: 23.2, how: '3.0" across x 2.9" deep (0.95x width, modelled) -> a tape of 9.1" around it' },
         { key: 'totalHeight', label: 'Total Height', in: 71.1, cm: 180.6, how: '71.1" from the crown of your head to the floor, from 4 frames' },
       ],
     },

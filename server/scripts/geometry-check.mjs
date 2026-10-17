@@ -8,15 +8,19 @@
  */
 
 import {
+  DEPTH_RATIO,
   checkFrame,
   ellipsePerimeter,
   frameScale,
   measureHeight,
   measureRegion,
   normalizeLandmarks,
+  tapeGirth,
   toIn,
 } from '../src/lib/bodyGeometry.js';
-import { buildCatalogue } from '../src/lib/catalogue.js';
+import { buildCatalogue, depthRatioFor } from '../src/lib/catalogue.js';
+
+const IN_CM = 2.54;
 
 let pass = 0;
 let fail = 0;
@@ -44,10 +48,10 @@ function frontFrame(overrides = {}) {
   const pair = (cm, y, cx = 0.5) => ({ L: { x: cx - P(cm) / 2, y }, R: { x: cx + P(cm) / 2, y } });
   const neck = pair(12, 0.20);
   const shoulders = pair(46, 0.24);
-  const chest = pair(38, 0.30);
+  const chest = pair(28, 0.30);
   const arm = pair(11, 0.30, 0.34);
-  const waist = pair(33, 0.38);
-  const hips = pair(36, 0.46);
+  const waist = pair(29, 0.38);
+  const hips = pair(33, 0.46);
   const footY = headTopY + P(176.25) * aspect; // 7.5 head-heights tall
 
   return {
@@ -84,9 +88,9 @@ function sideFrame(overrides = {}) {
 
   const pair = (cm, y, cx = 0.5) => ({ L: { x: cx - P(cm) / 2, y }, R: { x: cx + P(cm) / 2, y } });
   const neck = pair(11, 0.19);
-  const chest = pair(27, 0.29);
-  const waist = pair(25, 0.37);
-  const hips = pair(28, 0.45);
+  const chest = pair(24, 0.29);
+  const waist = pair(21, 0.37);
+  const hips = pair(23.5, 0.45);
   const footY = headTopY + P(176.25) * aspect; // same 7.5 head-heights
 
   return {
@@ -142,12 +146,12 @@ function catalogFrame() {
   const head = at(15, 12);
   const neck = at(12, 26);
   const shoulders = at(46, 31);
-  const upperChest = at(37, 48);
-  const bust = at(38, 54);
-  const underbust = at(34, 59);
-  const waist = at(33, 71);
-  const lowWaist = at(35, 82);
-  const hips = at(36, 87);
+  const upperChest = at(28, 48);
+  const bust = at(28, 54);
+  const underbust = at(26, 59);
+  const waist = at(29, 71);
+  const lowWaist = at(31, 82);
+  const hips = at(33, 87);
   const arm = at(11, 40, -20);
   const elbow = at(8, 71, -20.5);
   const wrist = at(5.5, 91, -21);
@@ -197,14 +201,35 @@ function catalogFrame() {
 console.log('\n== ellipse perimeter (sanity) ==');
 check('circle r=10 cm -> 2*pi*10 cm, in inches', toIn(ellipsePerimeter(10, 10)), toIn(2 * Math.PI * 10), 0.001);
 
+console.log('\n== a tape is not an ellipse, and the survey says how far off ==');
+// ANSUR II measured a caliper width, a caliper depth AND a tape round the same
+// 4,082 men and 1,986 women. These are its own means for the girths a size is
+// built from, so the arithmetic that turns width + depth into a tape reading has
+// to land on them — not on a clip, and not on a shape that was tuned by eye.
+check('mean male chest tapes what ANSUR measured', toIn(tapeGirth(28.9, 25.4, 'chest', 'male')), 105.9 / IN_CM, 0.6);
+check('mean male waist tapes what ANSUR measured', toIn(tapeGirth(32.6, 23.8, 'waist', 'male')), 94.1 / IN_CM, 0.6);
+check('mean male hip tapes what ANSUR measured', toIn(tapeGirth(34.6, 24.6, 'hips', 'male')), 102.0 / IN_CM, 0.6);
+check('mean female bust tapes what ANSUR measured', toIn(tapeGirth(26.9, 24.7, 'chest', 'female')), 94.7 / IN_CM, 0.6);
+check('mean female waist tapes what ANSUR measured', toIn(tapeGirth(30.0, 21.3, 'waist', 'female')), 86.1 / IN_CM, 0.6);
+check('mean female hip tapes what ANSUR measured', toIn(tapeGirth(35.4, 23.3, 'hips', 'female')), 102.1 / IN_CM, 0.6);
+checkTrue('the plain ellipse was a fifth short on every male chest',
+  tapeGirth(28.9, 25.4, 'chest', 'male') / ellipsePerimeter(28.9 / 2, 25.4 / 2) > 1.2,
+  `x${(tapeGirth(28.9, 25.4, 'chest', 'male') / ellipsePerimeter(28.9 / 2, 25.4 / 2)).toFixed(3)}`);
+checkTrue('a limb is round, so its ellipse was already right',
+  Math.abs(tapeGirth(7.5, 7.5, 'ankle', 'male') / (Math.PI * 7.5) - 1) < 0.02,
+  `${toIn(tapeGirth(7.5, 7.5, 'ankle', 'male')).toFixed(2)} in round a 7.5 cm ankle`);
+checkTrue('a bust is deeper than a ribcage for the same width',
+  depthRatioFor('chest', 'female') > DEPTH_RATIO.chest,
+  `${depthRatioFor('chest', 'female')} vs ${DEPTH_RATIO.chest}`);
+
 console.log('\n== front + side: the whole calculation ==');
 const front = scaled(frontFrame());
 const side = scaled(sideFrame());
 const both = [front, side];
 check('scale from the head alone (front)', front.scale.cmPerWidth, 185.53, 0.5);
-check('chest girth (in)', measureRegion('chest', both).valueIn, 40.48, 0.4);
-check('waist girth (in)', measureRegion('waist', both).valueIn, 36.04, 0.4);
-check('hip girth (in)', measureRegion('hips', both).valueIn, 39.73, 0.4);
+check('chest girth (in)', measureRegion('chest', both).valueIn, 39.84, 0.4);
+check('waist girth (in)', measureRegion('waist', both).valueIn, 32.80, 0.4);
+check('hip girth (in)', measureRegion('hips', both).valueIn, 38.32, 0.4);
 check('neck girth (in)', measureRegion('neck', both).valueIn, 14.25, 0.4);
 check('arm girth (in)', measureRegion('arm', both).valueIn, 12.93, 0.4);
 check('shoulder width (in)', measureRegion('shoulder', both).valueIn, 18.10, 0.2);
@@ -219,6 +244,34 @@ checkTrue('modelled flag reported in depthSource', chestF.depthSource.includes('
 checkTrue('girth still plausible', chestF.valueIn > 36 && chestF.valueIn < 46, `chest ${chestF.valueIn.toFixed(1)} in`);
 checkTrue('modelled girth is a little larger than measured depth gives', chestF.valueIn > measureRegion('chest', both).valueIn, `${chestF.valueIn.toFixed(2)} vs ${measureRegion('chest', both).valueIn.toFixed(2)} in`);
 checkTrue('confidence drops without a side view', chestF.confidence < measureRegion('chest', both).confidence, `${chestF.confidence} vs ${measureRegion('chest', both).confidence}`);
+
+console.log('\n== arms read as part of the torso: the survey says no ==');
+// The failure that matters most. With the arms against the ribcage the mask is
+// one run from hand to hand, so a "chest" 45 cm wide sails past an absolute
+// ceiling of 50 cm — and then tapes 65 in. Against the shoulder span (the same
+// frame, so the same scale) it is obviously the shoulders.
+const body = frontFrame();
+const stretch = (p, k) => ({ x: 0.5 + (p.x - 0.5) * k, y: p.y });
+const fusedChest = ready({
+  ...body,
+  landmarks: {
+    ...body.landmarks,
+    armpitL: stretch(body.landmarks.armpitL, 45 / 28),
+    armpitR: stretch(body.landmarks.armpitR, 45 / 28),
+  },
+});
+checkTrue('a 45 cm "chest" on a 46 cm shoulder is refused', fusedChest.bad.has('chest'), [...fusedChest.bad].join(',') || 'nothing dropped');
+checkTrue('and that frame still gives up its shoulder line', !fusedChest.bad.has('shoulder'), 'shoulder kept');
+const fusedHips = ready({
+  ...body,
+  landmarks: {
+    ...body.landmarks,
+    hipL: stretch(body.landmarks.hipL, 48 / 33),
+    hipR: stretch(body.landmarks.hipR, 48 / 33),
+  },
+});
+checkTrue('a hip row wider than the shoulders is refused too', fusedHips.bad.has('hips'), [...fusedHips.bad].join(',') || 'nothing dropped');
+checkTrue('a chest the arms genuinely clear is kept', !ready(frontFrame()).bad.has('chest'), 'kept');
 
 console.log('\n== what is not visible is left blank ==');
 const torsoOnly = scaled(frontFrame());
@@ -304,7 +357,7 @@ checkTrue('a cuff is quoted from the measured wrist', item(men, 'cuffShirts')?.i
 console.log('\n== the catalogue: what the clip did NOT show is simply absent ==');
 checkTrue('X-Shoulder needs a frame showing the back', item(men, 'xShoulder') === null, 'omitted');
 checkTrue('X-Back needs a frame showing the back', item(men, 'xBack') === null, 'omitted');
-checkTrue('X-Front is read from the front frame', near(item(men, 'xFront')?.in, 14, 17), `x-front ${item(men, 'xFront')?.in} in`);
+checkTrue('X-Front is read from the front frame', near(item(men, 'xFront')?.in, 10.5, 11.5), `x-front ${item(men, 'xFront')?.in} in`);
 checkTrue('Back Width is the same line, from any frame', item(men, 'backWidth') !== null, `back width ${item(men, 'backWidth')?.in} in`);
 checkTrue('a bare ankle is not a trouser bottom', item(men, 'trouserBottom') === null, 'omitted');
 checkTrue('jeans bottom needs jeans to have been seen', item(men, 'jeansBottom') === null, 'omitted');
@@ -322,11 +375,13 @@ checkTrue('and the ankle tape is not read off the trouser leg', item(trousered, 
 checkTrue('jeans bottom still waits for jeans to be seen', item(trousered, 'jeansBottom') === null, 'omitted');
 
 const women = buildCatalogue({ frames: [ready(catalogFrame())], gender: 'female' });
-checkTrue('bust is the full bust line', near(item(women, 'bust')?.in, 42, 45), `bust ${item(women, 'bust')?.in} in`);
-checkTrue('the same silhouette tapes bigger as a bust than as a ribcage', item(women, 'bust')?.in > item(men, 'chest')?.in, `bust ${item(women, 'bust')?.in} vs chest ${item(men, 'chest')?.in} in`);
+checkTrue('bust is the full bust line', near(item(women, 'bust')?.in, 37, 40.5), `bust ${item(women, 'bust')?.in} in`);
+checkTrue('each sex is taped on its own survey line, and both land plausible',
+  item(women, 'bust')?.in > 36 && item(women, 'bust')?.in < 41 && item(men, 'chest')?.in > 38 && item(men, 'chest')?.in < 42,
+  `bust ${item(women, 'bust')?.in} vs chest ${item(men, 'chest')?.in} in`);
 checkTrue('and the woman\'s number says the depth was modelled', /modelled/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
-checkTrue('a man\'s chest stays on the ribcage ratio', /0\.72x width/.test(item(men, 'chest')?.how || ''), item(men, 'chest')?.how);
-checkTrue('a woman\'s bust projects, so its prior is the larger one', /0\.85x width/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
+checkTrue('a man\'s chest stays on the ribcage ratio', /0\.877x width/.test(item(men, 'chest')?.how || ''), item(men, 'chest')?.how);
+checkTrue('a woman\'s bust projects, so its prior is the larger one', /0\.916x width/.test(item(women, 'bust')?.how || ''), item(women, 'bust')?.how);
 checkTrue('a woman\'s chest is the upper chest, above the bust', item(women, 'chest')?.in < item(women, 'bust')?.in, `chest ${item(women, 'chest')?.in} vs bust ${item(women, 'bust')?.in} in`);
 checkTrue('dart is what the bust takes in over the underbust', near(item(women, 'dart')?.in, 1, 7.5), `dart ${item(women, 'dart')?.in} in`);
 checkTrue('top arm, wrist and the leg tapes are all there', ['topArm', 'wrist', 'ankle', 'highAnkle'].every((k) => item(women, k)), ['topArm', 'wrist', 'ankle', 'highAnkle'].map((k) => item(women, k)?.in).join(', '));
