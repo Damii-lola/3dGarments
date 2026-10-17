@@ -875,7 +875,10 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     notes.push(`Your height read ${Math.round(h.spread)} in apart between frames, so film from further back — the whole body needs to fit in shot the whole way round.`);
   }
   if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
-    notes.push('No clear side-on frame, so body depth was modelled from the front width rather than measured.');
+    const sawSide = frames.some((f) => f.view === 'side');
+    notes.push(sawSide
+      ? 'Your side-on frame was not clear enough to read body depth from, so it was modelled from the front width instead — stand straight with your arms down for the sideways part of the turn.'
+      : 'No clear side-on frame, so body depth was modelled from the front width rather than measured.');
   }
 
   const result = {

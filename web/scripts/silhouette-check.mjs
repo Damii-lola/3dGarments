@@ -86,7 +86,37 @@ function joints() {
   return lm;
 }
 
-const run = (mask) => measureSilhouette({ mask, maskW: W, maskH: H, lm: joints(), imgW: W, imgH: H });
+/**
+ * Shoulder line turned 90°, i.e. one shoulder directly in front of the other, so
+ * the shoulder joints are nearly coincident in x and far apart in z.
+ */
+function sideWorld() {
+  const w = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0 }));
+  w[11] = { x: 0, y: 0, z: 0 };
+  w[12] = { x: 0.05, y: 0, z: 0.40 };
+  w[23] = { x: 0, y: 0, z: 0 };
+  w[24] = { x: 0.05, y: 0, z: 0.30 };
+  return w;
+}
+
+/**
+ * The same person seen from the side: one continuous blob, arm against the body.
+ * The horizontal span of that blob is the body's DEPTH, so chest depth here is
+ * 61 px (cols 70-130) narrowing to 41 px at the waist.
+ */
+function sideBody() {
+  const m = blank();
+  fill(m, 20, 24, 95, 105);
+  fill(m, 25, 69, 90, 110);
+  fill(m, 70, 79, 94, 106);
+  taper(m, 80, 160, 70, 130, 80, 120);
+  taper(m, 161, 199, 80, 120, 76, 124);
+  fill(m, 200, 379, 72, 96);
+  fill(m, 200, 379, 104, 128);
+  return m;
+}
+
+const run = (mask, world) => measureSilhouette({ mask, maskW: W, maskH: H, lm: joints(), world, imgW: W, imgH: H });
 
 const span = (r, a, b) => Math.abs(r.landmarks[a].x - r.landmarks[b].x);
 const yOf = (r, k) => r.landmarks[k].y;
@@ -126,6 +156,20 @@ if (!glued) {
   check('shoulder and neck still measured', Boolean(glued.landmarks.shoulderL && glued.landmarks.neckL), true);
   check('reports the torso as unmeasurable', glued.unmeasured.includes('torso'), true);
   check('reports the arm as unmeasurable', glued.unmeasured.includes('arm'), true);
+}
+
+console.log('\n— side-on frame: the arm hangs over the torso, one blob —');
+const side = run(sideBody(), sideWorld());
+if (!side) {
+  console.log('  FAIL returned null');
+  failures.push('null-side');
+} else {
+  check('facing is detected as side-on', side.view, 'side');
+  check('torso is measurable (not refused for merged arms)', side.unmeasured.includes('torso'), false);
+  check('chest depth read at the nipple line, not the deltoid (54 px)', span(side, 'armpitL', 'armpitR'), 27, 2);
+  check('waist depth narrower than chest depth', span(side, 'waistL', 'waistR') < span(side, 'armpitL', 'armpitR'), true);
+  check('hip depth measured', Boolean(side.landmarks.hipL && side.landmarks.hipR), true);
+  check('no arms-not-clear caveat side-on', side.notes.some((n) => /arms were close/.test(n)), false);
 }
 
 console.log('\n— feet out of shot —');

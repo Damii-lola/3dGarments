@@ -331,6 +331,18 @@ async function runAnalysis() {
         });
         log('on-device measurement', measured);
         if (measured.frames.length) {
+          // A chest is the one measurement a size cannot be worked out without,
+          // and the one thing a clip standing still can get wrong: arms pressed
+          // against the ribs sit in front of the torso, so nothing in the picture
+          // says where the torso ends. That is not guessable, so stop here and say
+          // exactly what to change rather than spend a round trip on a blank.
+          const anyChest = measured.frames.some((f) => f.landmarks && f.landmarks.armpitL != null);
+          if (!anyChest) {
+            log('no frame gave a chest measurement — asking for a retake');
+            setStatus('We could not measure your chest: your arms were against your sides in every frame, so there is no way to tell your torso from your arms. Stand with your arms a little away from your body and record again — that one change is what gives you a size.', 'error');
+            setBusy(false);
+            return;
+          }
           setStatus(`Sending ${measured.frames.length} measurements…`);
           data = await analyzeGeometry(measured, {
             onTick: (s) => setStatus(`Working out your measurements… ${s}s`),

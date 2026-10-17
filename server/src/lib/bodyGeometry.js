@@ -268,6 +268,11 @@ export function checkFrame(frame) {
 
   for (const key of Object.keys(REGIONS)) {
     const spec = REGIONS[key];
+    // A breadth-only region read from a side-on frame is the body's DEPTH, and
+    // there is no depth range to judge it against — so it is not a bad reading,
+    // it is simply not a reading. Skipping it here keeps it out of the note that
+    // explains discarded spans.
+    if (!spec.girth && frame.view === 'side') continue;
     const span = spanX(frame, spec.left, spec.right);
     if (span == null || span <= 0 || !frame.scale) continue;
     const cm = span * frame.scale.cmPerWidth;

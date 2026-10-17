@@ -144,6 +144,21 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   const centre = Math.round(((lm[11].x + lm[12].x) / 2) * maskW);
   if (!(shoulderRow > topRow + 6)) return null;
 
+  /**
+   * Which way the person is facing, from the shoulder line in 3D. Needed before
+   * the widths are read, because a side-on frame is measured differently: see
+   * rowVerdict().
+   */
+  let view = 'front';
+  if (world && world[11] && world[12]) {
+    const dx = Math.abs(world[12].x - world[11].x);
+    const dz = Math.abs(world[12].z - world[11].z);
+    const turn = (Math.atan2(dz, Math.max(dx, 1e-6)) * 180) / Math.PI;
+    view = turn > 65 ? 'side' : turn > 25 ? 'three-quarter' : 'front';
+    if (view === 'front' && Math.max(vis(0), vis(7), vis(8)) < 0.3) view = 'back';
+  }
+  const sideOn = view === 'side';
+
   const torsoAt = (y) => runAt(rowRuns(mask, maskW, maskH, y), centre);
   const widthAt = (y) => { const r = torsoAt(y); return r ? r.w : 0; };
   // The shoulder row's silhouette: the outer edge of the deltoids.
@@ -187,27 +202,40 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     }
     return out;
   };
-  const rowUsable = (y, torso, runs) => {
-    if (!torso || torso.w < 3) return false;
+  /** Why a row did or did not count, so a refusal can be diagnosed later. */
+  const rowVerdict = (y, torso, runs) => {
+    if (!torso || torso.w < 3) return 'no-torso';
+    // Side-on, the arm hangs across the torso and the two are one blob in the
+    // picture. The horizontal span of that blob IS the body's depth, so asking
+    // for a gap here would throw away the only frames that can measure depth.
+    // The server range-checks the depth before it is believed.
+    if (sideOn) return 'side';
     // There must be silhouette on BOTH sides of the torso run. Without this, a
     // pair of arms lying flat against the body is one blob and every joint line
     // "clears" a torso run that actually contains the arms.
     const left = runs.some((r) => r.x1 < torso.x0 - 1);
     const right = runs.some((r) => r.x0 > torso.x1 + 1);
-    if (!left || !right) return false;
+    if (!left || !right) return 'no-gap';
     const lines = armLineAt(y);
-    if (lines.length < 2) return false;
-    return lines.every((x) => x < torso.x0 - margin || x > torso.x1 + margin);
+    if (lines.length < 2) return 'no-line';
+    return lines.every((x) => x < torso.x0 - margin || x > torso.x1 + margin) ? 'ok' : 'arm-over-torso';
   };
 
   // ---- torso widths ----
   const usable = [];
   const widthSeries = [];
+  const verdicts = {};
   for (let y = shoulderRow + 1; y <= hipRowLM; y += 1) {
     const runs = rowRuns(mask, maskW, maskH, y);
     const torso = runAt(runs, centre);
-    widthSeries.push({ y, w: torso ? torso.w : 0 });
-    if (rowUsable(y, torso, runs)) usable.push(y);
+    // A row with no torso run — the legs have split, or the mask has a hole — is
+    // missing, not zero-width. Recording it as zero would make the crotch line
+    // win "narrowest torso" and hand back a waist at the hips.
+    if (!torso) continue;
+    widthSeries.push({ y, w: torso.w });
+    const verdict = rowVerdict(y, torso, runs);
+    verdicts[verdict] = (verdicts[verdict] || 0) + 1;
+    if (verdict === 'ok' || verdict === 'side') usable.push(y);
   }
   const smoothed = smooth(widthSeries.map((s) => s.w));
   const smoothedAt = new Map(widthSeries.map((s, i) => [s.y, smoothed[i]]));
@@ -217,18 +245,28 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   let hipRow = -1;
   if (usable.length >= 4) {
     const first = usable[0];
-    const chestTo = Math.min(hipRowLM, Math.round(first + (hipRowLM - first) * 0.45));
-    let best = -1;
-    for (const y of usable) {
-      if (y > chestTo) break;
-      const v = smoothedAt.get(y) ?? 0;
-      if (v > best) { best = v; chestRow = y; }
-    }
-    // A chest that only gets wider as far down as the search allows means the
-    // real widest point is hidden behind an arm, so it is not a chest measure.
-    if (chestRow >= chestTo - 2) {
-      notes.push('The chest was covered by an arm in every frame — stand with your arms clear of your sides.');
-      chestRow = -1;
+    if (sideOn) {
+      // Seen from the side the deepest point of the upper body is the deltoid,
+      // so "widest row" would hand back shoulder depth as if it were chest depth.
+      // The chest is read at the nipple line instead: a fixed way down from the
+      // shoulder to the hip, which is where a tape goes too.
+      chestRow = Math.round(shoulderRow + (hipRowLM - shoulderRow) * 0.18);
+    } else {
+      const chestTo = Math.min(hipRowLM, Math.round(first + (hipRowLM - first) * 0.45));
+      let best = -1;
+      for (const y of usable) {
+        if (y > chestTo) break;
+        const v = smoothedAt.get(y) ?? 0;
+        if (v > best) { best = v; chestRow = y; }
+      }
+      // A chest that only gets wider as far down as the search allows means the
+      // real widest point is hidden behind an arm, so it is not a chest measure.
+      // (The row cannot sit on the shoulder line either: nothing is measured that
+      // close to it, so such a row would be silently discarded later.) No note is
+      // raised here — the server words the gap from which regions came out blank,
+      // and a note from one frame could otherwise contradict a chest read from
+      // another.
+      if (chestRow >= chestTo - 2 || chestRow <= shoulderRow + 2) chestRow = -1;
     }
     let least = Infinity;
     for (const y of usable) {
@@ -248,7 +286,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   // The armpit is where the arms first clear the torso. If that happens far down
   // the torso, the arms were lying against the chest and the widths below are
   // read lower than they should be — say so rather than hide it.
-  const firstClear = usable.length >= 4 ? usable[0] : -1;
+  const firstClear = sideOn ? -1 : (usable.length >= 4 ? usable[0] : -1);
   const torsoPx = Math.max(1, hipRowLM - shoulderRow);
   const armpitOffset = firstClear > 0 ? (firstClear - shoulderRow) / torsoPx : 0;
   if (firstClear > 0 && armpitOffset > 0.38) {
@@ -318,15 +356,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     }
   }
 
-  // ---- which way the person is facing, from the shoulder line in 3D ----
-  let view = 'front';
-  if (world && world[11] && world[12]) {
-    const dx = Math.abs(world[12].x - world[11].x);
-    const dz = Math.abs(world[12].z - world[11].z);
-    const turn = (Math.atan2(dz, Math.max(dx, 1e-6)) * 180) / Math.PI;
-    view = turn > 65 ? 'side' : turn > 25 ? 'three-quarter' : 'front';
-    if (view === 'front' && Math.max(vis(0), vis(7), vis(8)) < 0.3) view = 'back';
-  }
+  // ---- which way the person is facing (detected near the top, before widths) ----
 
   const visible = {
     head: !headCut && chinRow > 0,
@@ -354,6 +384,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
     debug: {
       topRow, botRow, neckRow, chinRow, shoulderRow, elbowRow, armRow, hipRowLM, crotchRow,
       usableRows: usable.length,
+      verdicts,
       rows: { chestRow, waistRow, hipRow },
       widths: {
         shoulder: shoulderRun?.w ?? null,
