@@ -230,6 +230,9 @@ function frameDigest(f, reason) {
 
 async function callModelRaw(model, messages, opts = {}) {
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
+  // Qwen 3.8 reasons at "xhigh" by default, which is wasted thinking for a task
+  // that is meant to be pure observation of one frame.
+  if (/qwen/i.test(model)) payload.reasoning_effort = 'low';
   if (opts.json) payload.response_format = { type: 'json_object' };
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.accountId}/ai/run/${model}`, {
     method: 'POST',

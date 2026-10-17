@@ -24,7 +24,7 @@ services:
       - key: SUPABASE_BUCKET
         value: garments
       - key: CF_VISION_MODEL
-        value: "@cf/meta/llama-4-scout-17b-16e-instruct"
+        value: "@cf/qwen/qwen3.8-27b"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
