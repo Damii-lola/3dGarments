@@ -85,6 +85,9 @@ export function analyzeGeometry(measured, opts = {}) {
     // ruler, and it belongs to that frame alone: the camera moves, so a scale
     // that was right one moment is not right the next.
     references: Array.isArray(opts.references) ? opts.references.slice(0, 4) : [],
+    // What the person was wearing. A tape read over a hoodie is not a body
+    // measurement until the fabric comes off it.
+    clothing: opts.clothing && typeof opts.clothing === 'object' ? opts.clothing : {},
     frames: measured.frames.map((f) => ({
       // The time this frame was taken from, so a marked object finds its frame.
       t: f.t,

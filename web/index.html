@@ -109,6 +109,49 @@
           <p class="who-hint">Men's and women's sheets measure different things, so pick the right one.</p>
         </fieldset>
 
+        <!-- Fabric sits between the tape and the body, and it is over every
+             frame, so its thickness comes off every girth. Left unsaid it stays
+             in the numbers. -->
+        <fieldset class="who">
+          <legend class="who-legend">What are you wearing?</legend>
+          <div class="fit-grid">
+            <label class="calib-field">
+              <span class="calib-field-label">Top</span>
+              <select id="wear-top">
+                <option value="">Not sure</option>
+                <option value="t-shirt">Thin t-shirt</option>
+                <option value="polo">Polo shirt</option>
+                <option value="flannel">Flannel / overshirt</option>
+                <option value="jumper">Knit jumper</option>
+                <option value="hoodie">Hoodie / sweatshirt</option>
+                <option value="jacket">Jacket</option>
+                <option value="puffer">Puffer / down jacket</option>
+                <option value="bare">Bare torso</option>
+              </select>
+            </label>
+            <label class="calib-field">
+              <span class="calib-field-label">Fit</span>
+              <select id="wear-fit">
+                <option value="regular">Regular</option>
+                <option value="fitted">Fitted</option>
+                <option value="loose">Loose</option>
+              </select>
+            </label>
+            <label class="calib-field">
+              <span class="calib-field-label">Lower</span>
+              <select id="wear-lower">
+                <option value="">Not sure</option>
+                <option value="bare">Bare legs / shorts</option>
+                <option value="jeans">Jeans</option>
+                <option value="chinos">Chinos / trousers</option>
+                <option value="joggers">Joggers / sweatpants</option>
+                <option value="thick">Thick or lined trousers</option>
+              </select>
+            </label>
+          </div>
+          <p class="who-hint">Saying what it is takes the fabric's thickness off the numbers, instead of leaving it on as if it were you.</p>
+        </fieldset>
+
         <div class="actions">
           <button class="btn-primary" id="analyze-btn" type="button" disabled>Analyze my size</button>
           <button class="btn-ghost" id="start-over-trim" type="button">Start over</button>

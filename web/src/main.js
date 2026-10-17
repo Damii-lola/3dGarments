@@ -68,6 +68,56 @@ const calibWhat = document.getElementById('calib-what');
 const calibTime = document.getElementById('calib-time');
 const calibStage = document.getElementById('calib-stage');
 const calibNote = document.getElementById('calib-note');
+const wearTop = document.getElementById('wear-top');
+const wearFit = document.getElementById('wear-fit');
+const wearLower = document.getElementById('wear-lower');
+
+/**
+ * What each garment adds on ONE side of the body, in inches. These are the same
+ * numbers the vision prompt has always asked for (a thin tee 0.15, a hoodie 0.6,
+ * a puffer 1.2), so both paths subtract the same fabric.
+ */
+const GARMENTS = {
+  bare: { top: 'nothing', thicknessIn: 0 },
+  't-shirt': { top: 'a thin t-shirt', thicknessIn: 0.15 },
+  polo: { top: 'a polo shirt', thicknessIn: 0.2 },
+  flannel: { top: 'a flannel shirt', thicknessIn: 0.35 },
+  jumper: { top: 'a knit jumper', thicknessIn: 0.45 },
+  hoodie: { top: 'a hoodie', thicknessIn: 0.6 },
+  jacket: { top: 'a jacket', thicknessIn: 0.7 },
+  puffer: { top: 'a puffer jacket', thicknessIn: 1.2 },
+};
+/** Trousers are their own thickness: they cover different rows from a top. */
+const LOWER_GARMENTS = {
+  bare: { lower: 'nothing', thicknessIn: 0 },
+  jeans: { lower: 'jeans', thicknessIn: 0.09 },
+  chinos: { lower: 'chinos', thicknessIn: 0.08 },
+  joggers: { lower: 'joggers', thicknessIn: 0.16 },
+  thick: { lower: 'thick trousers', thicknessIn: 0.15 },
+};
+/** How much more a loose garment stands off the body than a fitted one. */
+const FIT_FACTOR = { fitted: 0.8, regular: 1, loose: 1.4 };
+
+/** The clothing as the measurement engine wants it, or {} if they did not say. */
+function readClothing() {
+  const g = GARMENTS[wearTop.value];
+  const l = LOWER_GARMENTS[wearLower.value];
+  if (!g && !l) return {};
+  const fit = FIT_FACTOR[wearFit.value] ? wearFit.value : 'regular';
+  const out = {};
+  if (g) {
+    out.top = g.top;
+    out.topFit = fit;
+    out.density = g.thicknessIn >= 0.45 ? 'heavy' : g.thicknessIn >= 0.2 ? 'medium' : 'light';
+    out.thicknessIn = Number((g.thicknessIn * FIT_FACTOR[fit]).toFixed(2));
+  }
+  if (l) {
+    out.lower = l.lower;
+    out.lowerFit = fit;
+    out.lowerThicknessIn = Number((l.thicknessIn * FIT_FACTOR[fit]).toFixed(2));
+  }
+  return out;
+}
 
 const analysis = document.getElementById('analysis');
 const sizeValue = document.getElementById('size-value');
@@ -500,8 +550,10 @@ async function runAnalysis() {
           data = await analyzeGeometry(measured, {
             gender: chosenGender,
             // The user's own known size, if they marked one. It is the strongest
-            // anchor there is, and it belongs to the frame it was marked on.
+            // anchor there is, and it is applied across the whole clip.
             references: markedReference ? [markedReference] : [],
+            // Fabric does not leave the numbers unless it is named.
+            clothing: readClothing(),
             onTick: (s) => setStatus(`Working out your measurements… ${s}s`),
           });
         } else {

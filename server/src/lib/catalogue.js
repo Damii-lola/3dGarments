@@ -340,6 +340,28 @@ export function buildCatalogue({ frames, gender, clothing = {} }) {
     spans, verticals, paths, clothing, group, legOpeningCm: ankleWidthCm,
   };
 
+  // Fabric lies over the body on every frame, so it comes off the catalogue the
+  // same way it comes off the size verdict: a layer of thickness t lengthens a
+  // tape by 2*pi*t whatever cross-section it wraps, and adds 2*t across a flat
+  // width. The catalogue is meant to be the body, so it must not still be
+  // carrying a hoodie. A top and a lower garment are separate thicknesses over
+  // separate rows, and a garment that was never named takes nothing off.
+  const topT = Number(clothing.thicknessIn) > 0 ? Number(clothing.thicknessIn) : 0;
+  const lowerT = Number(clothing.lowerThicknessIn) > 0 ? Number(clothing.lowerThicknessIn) : 0;
+  const TOP_ROWS = new Set(['bust', 'waist', 'lowWaist', 'arm', 'shoulder']);
+  const clothOff = (kind, span) => {
+    if (kind === 'width' && span === 'shoulder') return 2 * topT;
+    if (kind !== 'girth') return 0;
+    if (TOP_ROWS.has(span)) return 2 * Math.PI * topT;
+    if (span === 'hips' || span === 'knee' || span === 'calf' || span === 'highAnkle' || span === 'ankle') {
+      return 2 * Math.PI * lowerT;
+    }
+    return 0;
+  };
+  const clothWord = (span) => (TOP_ROWS.has(span)
+    ? (clothing.top || 'your top')
+    : (clothing.lower || 'your trousers'));
+
   const items = [];
   for (const spec of CATALOGUE[group]) {
     let value = null;
@@ -354,12 +376,17 @@ export function buildCatalogue({ frames, gender, clothing = {} }) {
       how = d ? d.how : null;
     }
     if (value == null || !Number.isFinite(value)) continue;
+    const off = clothOff(spec.kind, spec.span);
+    if (off > 0) value -= off;
+    const sentence = how || howFor(spec, ev, value) || spec.label;
     items.push({
       key: spec.key,
       label: spec.label,
       in: round1(value),
       cm: round1(value * CM_PER_IN),
-      how: how || howFor(spec, ev, value) || spec.label,
+      how: off > 0
+        ? `${sentence} — less ${round1(off)}" for ${clothWord(spec.span)}, so this is the body and not the garment`
+        : sentence,
     });
   }
 

@@ -409,6 +409,8 @@ function combineClothing(analyses) {
   let density = null;
   let thickSum = 0;
   let thickN = 0;
+  let lowerSum = 0;
+  let lowerN = 0;
   const fitCount = {};
   const densityCount = {};
 
@@ -423,6 +425,13 @@ function combineClothing(analyses) {
     if (Number.isFinite(Number(c.thicknessIn)) && Number(c.thicknessIn) >= 0 && Number(c.thicknessIn) < 3) {
       thickSum += Number(c.thicknessIn);
       thickN += 1;
+    }
+    // Trousers are not a hoodie: the lower garment is a second thickness, over
+    // different rows, and folding the two together would put a jumper's fabric
+    // round the hips.
+    if (Number.isFinite(Number(c.lowerThicknessIn)) && Number(c.lowerThicknessIn) >= 0 && Number(c.lowerThicknessIn) < 3) {
+      lowerSum += Number(c.lowerThicknessIn);
+      lowerN += 1;
     }
   }
 
@@ -457,6 +466,7 @@ function combineClothing(analyses) {
     fit,
     density,
     thicknessIn: thickN ? Number((thickSum / thickN).toFixed(2)) : null,
+    lowerThicknessIn: lowerN ? Number((lowerSum / lowerN).toFixed(2)) : null,
     waistband: waistband || null,
     note,
   };
@@ -495,6 +505,9 @@ function geometryFrames(body) {
     // Marked size references, each carrying the time of the frame it was marked
     // on so it can be attached to that frame and no other.
     references: Array.isArray(body.references) ? body.references : [],
+    // What the person was wearing, as they told us. A tape read over a hoodie is
+    // not a body measurement until the fabric is taken off it.
+    clothing: body.clothing && typeof body.clothing === 'object' ? body.clothing : {},
     // The user picks who is being measured. It decides the head-length constant
     // (and so every centimetre), which size chart applies, AND which of the two
     // category groups is computed - so it is never guessed from the silhouette.
@@ -619,7 +632,9 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
       landmarks: normalizeLandmarks(raw.landmarks),
       visible: raw.visible && typeof raw.visible === 'object' ? raw.visible : {},
       references: Array.isArray(refByFrame[i]) ? refByFrame[i] : [],
-      clothing: {},
+      // What the person was wearing, on every frame: the fabric is over the whole
+      // body all the way round, so it is not a per-frame property.
+      clothing: geo.clothing && typeof geo.clothing === 'object' ? geo.clothing : {},
       // Sharpness and lighting as the device actually measured them: the raw
       // Laplacian variance and mean luma. scoreCamera() turns them into weights,
       // scoring sharpness against the other frames of the same clip.
@@ -837,7 +852,19 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     ? { guess: chosenGender, confidence: 1, chosen: true, scores: {} }
     : { ...pickGender(frames), chosen: false };
   const clothing = combineClothing(frames);
-  const removed = (clothing.thicknessIn || 0) * 2;
+  const clothT = clothing.thicknessIn || 0;
+  // A layer of fabric wraps the WHOLE way round, and offsetting any closed curve
+  // outward by a thickness t lengthens it by exactly 2*pi*t, whatever its shape —
+  // so that is what comes off a girth. This used to be 2*t, which left two thirds
+  // of a hoodie in the number. A flat width is different: across the shoulders
+  // the fabric only adds its own thickness per side, so 2*t.
+  const removed = 2 * Math.PI * clothT;
+  const removedWidth = 2 * clothT;
+  // The lower garment is a separate thickness over separate rows. If nothing was
+  // said about it, nothing comes off the hips — better a slightly padded hip than
+  // a jumper's fabric subtracted from a trouser measurement.
+  const clothB = clothing.lowerThicknessIn || 0;
+  const removedLower = 2 * Math.PI * clothB;
 
   // 4. Measure every region from the landmark geometry.
   const measured = {};
@@ -938,12 +965,13 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   const adjusted = {
     chest: seen.chest != null ? round1(clamp(seen.chest - removed, RANGES.chest)) : null,
     waist: seen.waist != null ? round1(clamp(seen.waist - removed, RANGES.waist)) : null,
-    hips: seen.hips != null ? round1(clamp(seen.hips - removed, RANGES.hips)) : null,
-    shoulder: seen.shoulder != null ? round1(clamp(seen.shoulder - removed, RANGES.shoulder)) : null,
+    hips: seen.hips != null ? round1(clamp(seen.hips - removedLower, RANGES.hips)) : null,
+    shoulder: seen.shoulder != null ? round1(clamp(seen.shoulder - removedWidth, RANGES.shoulder)) : null,
     neck: seen.neck,
     arm: seen.arm,
     height: seen.height,
     bodyWidthRemovedIn: round1(removed),
+    bodyWidthRemovedLowerIn: round1(removedLower),
   };
 
   // 8. Size.
@@ -993,11 +1021,16 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     notes.push(`Your proportions read as an unusual head-to-body ratio, so the scale was corrected by ${pct}% — keeping your whole head and your feet in shot gives a cleaner read.`);
   }
   if (clothing.items.length || clothing.fit) {
+    // Say exactly what was taken off and from where: a number the user can check
+    // against their own tape is worth more than a silent "adjusted".
+    const clothBits = [];
+    if (removed > 0.05) clothBits.push(`${round1(removed)} in off each top girth and ${round1(removedWidth)} in off the shoulder line`);
+    if (removedLower > 0.05) clothBits.push(`${round1(removedLower)} in off the hip and leg girths`);
     notes.push(
       `Clothing${clothing.items.length ? ` (${clothing.items.join(', ')})` : ''}` +
       `${clothing.density ? ` · ${clothing.density} density` : ''}` +
       `${clothing.fit ? ` · ${clothing.fit} fit` : ''}` +
-      `${removed > 0.05 ? ` — about ${round1(removed)} in of width subtracted from the body estimate` : ''}.`
+      `${clothBits.length ? ` — ${clothBits.join(', and ')} for the fabric` : ''}.`
     );
   }
   if (clothing.note) notes.push(clothing.note);

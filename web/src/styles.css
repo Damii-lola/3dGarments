@@ -195,6 +195,8 @@ body {
 .calib-dot:active { cursor: grabbing; }
 .calib-dot:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
+.fit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+
 /* Who the video is of. Asked, never guessed: the group decides the head-length
    constant, the size chart and which measurement sheet is read. */
 .who {
