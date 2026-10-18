@@ -405,7 +405,7 @@ export function measureSilhouette({ mask, maskW, maskH, lm, world, imgW, imgH, g
   const torsoPx = Math.max(1, hipRowLM - shoulderRow);
   const armpitOffset = firstClear > 0 ? (firstClear - shoulderRow) / torsoPx : 0;
   if (firstClear > 0 && armpitOffset > 0.38) {
-    notes.push('Your arms were close to your sides in some frames, so the tape could not pass around your chest there — hold them a little clear for the truest numbers.');
+    notes.push('Your arms were close to your sides in some frames, so the tape could not pass around your chest there.');
   }
 
   // ---- further named lines on the torso ----

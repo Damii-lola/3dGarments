@@ -620,6 +620,39 @@ export function sawRegion(frames, key) {
 }
 
 /**
+ * Which frames' scales can be believed.
+ *
+ * Every frame is scaled by the head, because the head is the one thing in shot of
+ * a known size — which also makes it the first thing to be mis-placed when the
+ * body turns or the light drops. Nobody's head changes size during one take, so
+ * two frames of the same clip should agree on it within a few per cent; a scale
+ * that no other frame in the clip can corroborate is not a measurement of the
+ * head, it is a mis-detected head. Frames are compared pairwise, not against a
+ * clip-wide average, so a clip where the camera really does drift closer or
+ * further still works: each frame has a neighbour a step away from it.
+ *
+ * This is not cosmetic. A real clip measured here had one three-quarter frame
+ * whose head read a third short, which put every span in it a third long: its
+ * single reading said the knee was 18 cm deep, and the tape came out 19.8 in
+ * around a knee that is 14. So a frame whose ruler nothing else agrees with may
+ * not supply a depth. Its widths still count, where a dozen frames average out.
+ */
+export const RULER_AGREEMENT = 0.15;
+
+export function trustedRulers(frames) {
+  const trusted = new Set();
+  const scaled = frames.filter((f) => f.scale && f.scale.cmPerWidth > 0);
+  // One frame has nothing to be checked against, so the guard cannot speak: a
+  // lone frame is taken at its word.
+  if (scaled.length < 2) return new Set(scaled);
+  for (const f of scaled) {
+    const a = f.scale.cmPerWidth;
+    if (scaled.some((g) => g !== f && Math.abs(a / g.scale.cmPerWidth - 1) <= RULER_AGREEMENT)) trusted.add(f);
+  }
+  return trusted;
+}
+
+/**
  * Measure one region across every frame.
  *
  * Every frame shows a projection of the same cross-section, and how much of the
@@ -650,6 +683,7 @@ export function measureRegion(key, frames, opts = {}) {
 
   const samples = [];
   const viewsUsed = new Set();
+  const trusted = trustedRulers(frames);
   let skipped = 0;
   for (const f of frames) {
     if (!f.scale) continue;
@@ -661,6 +695,7 @@ export function measureRegion(key, frames, opts = {}) {
       cm: span * f.scale.cmPerWidth,
       turn: frameTurn(f),
       weight: frameQuality(f) * (VIEW_WEIGHT[f.view] ?? 0.6),
+      rulerTrusted: trusted.has(f),
     });
     viewsUsed.add(f.view);
   }
@@ -673,7 +708,7 @@ export function measureRegion(key, frames, opts = {}) {
   // weight — a real profile carries the depth, a three-quarter frame helps.
   const depthSamples = samples
     .map((s) => ({ ...s, sin: Math.sin(degToRad(s.turn)) }))
-    .filter((s) => s.sin >= 0.34);
+    .filter((s) => s.sin >= 0.34 && s.rulerTrusted);
   const band = SPAN_RANGES_CM[key] || null;
 
   let k = prior;

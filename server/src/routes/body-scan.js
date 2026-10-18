@@ -1001,7 +1001,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   for (const n of poseNotes) notes.push(n);
   const poseGaps = new Set(frames.flatMap((f) => (Array.isArray(f.unmeasured) ? f.unmeasured : [])));
   if (poseGaps.has('torso') && !measured.chest && !measured.waist && !measured.hips) {
-    notes.push('Your arms were not clear of your sides in any frame, so the tape could not pass around your body. Hold them a little away from you next time.');
+    notes.push('Your arms were not clear of your sides in any frame, so the tape could not pass around your body.');
   }
   if (poseGaps.has('arm') && !measured.arm) {
     notes.push('Your arm was not held clear of your body in any frame, so no tape could be taken around a limb.');
@@ -1014,11 +1014,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     notes.push('A girth read outside the plausible range and has been clamped — treat it as the least reliable number here.');
   }
   if (heightIn == null && (measured.chest || measured.waist || measured.hips)) {
-    notes.push('Your feet were not in shot, so nothing that needs the floor could be read. Keep your whole body in frame.');
+    notes.push('Your feet were not in shot, so nothing that needs the floor could be read.');
   }
   if (headUnitsCorrection && Math.abs(headUnitsCorrection - 1) > 0.02) {
     const pct = Math.round(Math.abs(headUnitsCorrection - 1) * 100);
-    notes.push(`Your proportions read as an unusual head-to-body ratio, so the scale was corrected by ${pct}% — keeping your whole head and your feet in shot gives a cleaner read.`);
+    notes.push(`Your proportions read as an unusual head-to-body ratio, so the scale was corrected by ${pct}%.`);
   }
   if (clothing.items.length || clothing.fit) {
     // Say exactly what was taken off and from where: a number the user can check
@@ -1061,18 +1061,18 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — no frame turned far enough to show body depth — so it could sit one size either way.`);
     }
   } else {
-    notes.push('No size was given: a size needs a straight-on front view with your arms clear of your sides.');
+    notes.push('No size was given: this clip did not show a straight-on front view with the arms clear of the sides.');
   }
-  if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} — a slower turn gives a steadier estimate.`);
+  if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} came out of the video.`);
   if (h && h.views > 1 && h.spread > 3) {
-    notes.push(`Your height read ${Math.round(h.spread)} in apart between frames, so film from further back — the whole body needs to fit in shot the whole way round.`);
+    notes.push(`Your height read ${Math.round(h.spread)} in apart between frames, so it is the least certain number here.`);
   }
   if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
     const profiled = frames.filter((f) => frameTurn(f) >= 70).length;
     const turned = frames.filter((f) => frameTurn(f) >= 20 && frameTurn(f) < 70).length;
     notes.push(profiled || turned
-      ? `The frames turned far enough to show body depth (${profiled} in profile, ${turned} at three-quarter) were not clear enough to read it from, so it was modelled from your front width instead — stand straight with your arms down and pause at the side as you turn.`
-      : 'No frame was turned far enough to show body depth, so it was modelled from your front width rather than measured. Turn slowly through a full profile — three-quarter is already enough.');
+      ? `The frames turned far enough to show body depth (${profiled} in profile, ${turned} at three-quarter) were not clear enough to read it from, so it was modelled from your front width instead.`
+      : 'No frame was turned far enough to show body depth, so it was modelled from your front width rather than measured.');
   }
 
   const result = {

@@ -16,6 +16,7 @@ import { analyzeBody, analyzeGeometry } from './body-scan/analyze.js';
 import { analyzePose } from './body-scan/pose.js';
 import { createTrimmer } from './body-scan/trim.js';
 import { createCalibrator } from './body-scan/calibrate.js';
+import { showNote } from './body-scan/notes.js';
 
 /** ?llm=1 — skip the on-device measurement and use the vision model instead. */
 const forceLlm = new URLSearchParams(location.search).get('llm') === '1';
@@ -698,32 +699,10 @@ function renderMeasures(data) {
   }
 }
 
-/**
- * The catalogue is the whole answer, so the running commentary the engine also
- * produces is not shown: it is written for whoever reads the API, not for the
- * person looking at their own waistline.
- */
-const HIDDEN_NOTES = [
-  /^read against the /i,
-  /^clothing\b/i,
-  /subtracted from the body estimate/i,
-  /^depth came from/i,
-  /measurement sheet/i,
-  // Capture coaching, all of it. The clip is already recorded by the time this
-  // list is on screen, so a note that can only be acted on by filming yourself
-  // again is not information — it is the app telling somebody off for a take
-  // they cannot change. Anything it could not measure is simply absent from the
-  // list above, which already says the same thing without the instruction.
-  /in shot|in frame/i,
-  /clear of your sides|clear of your body/i,
-  /film from further back|slower turn|next time/i,
-  /straight-on front view/i,
-];
-
 function renderNotes(data) {
   notesEl.replaceChildren();
   for (const note of data.notes || []) {
-    if (HIDDEN_NOTES.some((re) => re.test(note))) continue;
+    if (!showNote(note)) continue;
     notesEl.append(el('li', 'note', note));
   }
 }
@@ -927,7 +906,7 @@ if (new URLSearchParams(location.search).has('demo')) {
       height: { in: 71.1, headUnits: 7.5, views: 4, spread: 0.4 },
     },
     notes: [
-      'Your feet were not in shot, so nothing that needs the floor could be read. Keep your whole body in frame.',
+      'Your feet were not in shot, so nothing that needs the floor could be read.',
     ],
     views: ['front', 'three-quarter', 'side', 'back', 'side', 'front'],
   });

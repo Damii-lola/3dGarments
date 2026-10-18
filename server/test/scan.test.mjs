@@ -6,11 +6,16 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { SAMPLE_SVGS } from './fixtures/samples.js';
 
 const TEMPLATE_ID = '11111111-2222-3333-4444-555555555555';
 const GLB = readFileSync(new URL('./fixtures/M_CrewNeckTee.glb', import.meta.url));
+// A URL pathname keeps the leading slash, so on Windows it comes out as
+// "/C:/..." and spawn refuses it as a working directory. fileURLToPath is the
+// one that knows about the drive letter.
+const API_DIR = fileURLToPath(new URL('..', import.meta.url));
 let fake, api, base, apiBase;
 
 before(async () => {
@@ -33,7 +38,7 @@ before(async () => {
   base = `http://127.0.0.1:${fake.address().port}`;
   const port = 20000 + Math.floor(Math.random() * 20000);
   api = spawn(process.execPath, ['src/index.js'], {
-    cwd: new URL('..', import.meta.url).pathname,
+    cwd: API_DIR,
     env: { ...process.env, PORT: String(port), SUPABASE_URL: base, SUPABASE_SERVICE_ROLE_KEY: 'x', SUPABASE_ANON_KEY: 'y', CLOUDFLARE_ACCOUNT_ID: 'a', CLOUDFLARE_API_TOKEN: 'b', CORS_ORIGINS: '*' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -20,6 +20,8 @@ jobs:
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci
       - run: npm run check
+      - name: Geometry — the measurement arithmetic, on synthetic bodies with known answers
+        run: node scripts/geometry-check.mjs
       - run: npm test
 
   web:
@@ -31,6 +33,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci
+      - run: npm run check
       - run: npm run build
 
   lab:
