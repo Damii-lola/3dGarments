@@ -516,5 +516,26 @@ checkTrue('the nudge shrinks the scale, not inflates it', longBody.scale.cmPerWi
 checkTrue('a body under the band is nudged the other way', scaled(bodyOfUnits(6.6)).scale.headUnitsCorrection < 0.95, `x${scaled(bodyOfUnits(6.6)).scale.headUnitsCorrection}`);
 checkTrue('the correction is bounded at 8%', scaled(bodyOfUnits(12)).scale.headUnitsCorrection <= 1.08, `x${scaled(bodyOfUnits(12)).scale.headUnitsCorrection}`);
 
+console.log('\n== a ruler the rest of the clip disowns cannot set a height ==');
+// Height is the one row that needs the floor, so it is usually the work of a
+// single frame — and the frame that shows the floor is the frame with the most
+// body in it to mis-place. A real 16-frame turning clip had fifteen frames with
+// no feet in shot and one with phantom feet whose head measured a third of the
+// others; the height that came back was 86 in, the top of the allowed range.
+const stripFeet = (f) => {
+  const g = { ...f, landmarks: { ...f.landmarks }, visible: { ...f.visible } };
+  delete g.landmarks.footL;
+  delete g.landmarks.footR;
+  g.visible.feet = false;
+  return g;
+};
+const noFeetClip = [scaled(stripFeet(frontFrame())), scaled(stripFeet(sideFrame()))];
+const phantomFrame = scaled(bodyOfUnits(7.7));
+phantomFrame.landmarks = { ...phantomFrame.landmarks, chin: { x: 0.5, y: 0.06 + 0.095 * 0.4 } };
+phantomFrame.scale = frameScale(phantomFrame);
+checkTrue('a phantom-foot frame whose ruler the clip disowns', Math.abs(phantomFrame.scale.cmPerWidth / noFeetClip[0].scale.cmPerWidth - 1) > 0.15, `${phantomFrame.scale.cmPerWidth.toFixed(0)} vs ${noFeetClip[0].scale.cmPerWidth.toFixed(0)} cm/width`);
+checkTrue('cannot set the height', measureHeight([...noFeetClip, phantomFrame]) === null, 'height -> null');
+check('while a frame the clip does agree with still gives one', measureHeight([...noFeetClip, scaled(bodyOfUnits(7.7))]).in, 71.24, 0.5);
+
 console.log(`\n${fail === 0 ? 'ALL GOOD' : 'FAILURES'} - ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1017,6 +1017,13 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   } else if (gender.guess === 'unsure') {
     notes.push('You did not say who this video was for, so the size was picked from the body proportions alone.');
   }
+  // How much of the clip actually turned side-on. Two notes below talk about it —
+  // the size hedge and the modelled-depth disclosure — and telling the viewer
+  // "no frame turned far enough" in one while the other counts seven that did is
+  // the kind of contradiction that makes both of them worthless.
+  const profiled = frames.filter((f) => frameTurn(f) >= 70).length;
+  const turned = frames.filter((f) => frameTurn(f) >= 20 && frameTurn(f) < 70).length;
+
   if (size && adjusted.chest != null) {
     const key = sizeBasis === 'female' ? 'bust' : 'chest';
     const d = adjusted.chest - CHARTS[sizeBasis][size.sizeKey][key];
@@ -1027,7 +1034,10 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     // size either way — and saying so is better than sounding certain.
     if (measured.chest && !measured.chest.depthMeasured) {
       const v = measured.chest.widthViews;
-      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — no frame turned far enough to show body depth — so it could sit one size either way.`);
+      const why = profiled || turned
+        ? 'the frames that did turn were not clear enough to read it from'
+        : 'no frame turned far enough to show body depth';
+      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — ${why} — so it could sit one size either way.`);
     }
   } else {
     notes.push('No size was given: this clip did not show a straight-on front view with the arms clear of the sides.');
@@ -1037,8 +1047,6 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     notes.push(`Your height read ${Math.round(h.spread)} in apart between frames, so it is the least certain number here.`);
   }
   if (Object.values(measured).some((m) => !m.depthMeasured && m.girth)) {
-    const profiled = frames.filter((f) => frameTurn(f) >= 70).length;
-    const turned = frames.filter((f) => frameTurn(f) >= 20 && frameTurn(f) < 70).length;
     notes.push(profiled || turned
       ? `The frames turned far enough to show body depth (${profiled} in profile, ${turned} at three-quarter) were not clear enough to read it from, so it was modelled from your front width instead.`
       : 'No frame was turned far enough to show body depth, so it was modelled from your front width rather than measured.');

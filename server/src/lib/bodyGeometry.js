@@ -609,11 +609,21 @@ export function robustMean(samples) {
 /**
  * Standing height, head to floor, only from frames where the feet were really
  * in shot. Returns null when they never were — a gap beats an invention.
+ *
+ * The frame's ruler has to be one the rest of the clip agrees with, exactly as a
+ * depth does. Height is the one row that needs the floor, so it is usually the
+ * work of a single frame — and the frame that shows the floor is the frame with
+ * the most body in it to mis-place. A real 16-frame turning clip had one such
+ * frame, its head read a third of the others, and the only height in the clip
+ * came out at the top of the allowed range. Half a centimetre of span on a ruler
+ * that is 2.6x the clip's is not a height.
  */
 export function measureHeight(frames) {
+  const trusted = trustedRulers(frames);
   const samples = [];
   for (const f of frames) {
     if (!f.scale || f.heightBad) continue;
+    if (!trusted.has(f)) continue;
     const top = point(f, 'headTop');
     const floorY = meanY(f, 'footL', 'footR');
     if (!top || floorY == null) continue;
