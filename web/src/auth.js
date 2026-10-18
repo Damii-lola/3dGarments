@@ -12,7 +12,7 @@
  *     account cannot come into being without a name.
  */
 import { cloudConfig } from './services/config.js';
-import { getSession, isAccount, signIn, signUp, usernameTaken } from './services/auth.js';
+import { getSession, isAccount, onAuthChange, signIn, signUp, usernameTaken } from './services/auth.js';
 
 /** Where the scanner lives. Siblings, so this holds under any base path. */
 const SCANNER = '../size/';
@@ -243,5 +243,16 @@ loginForm.addEventListener('submit', async (event) => {
   }
   say('');
 })();
+
+/**
+ * A session can also arrive without the form being touched: a confirmation link
+ * signs the tab in as it loads, and if the project still wants email
+ * confirmation, that link is the only way through. Watch for a session turning
+ * up and open the scanner, rather than leaving somebody on a form they have
+ * already satisfied.
+ */
+onAuthChange((session) => {
+  if (isAccount(session)) location.replace(SCANNER);
+});
 
 skipBtn.addEventListener('click', () => location.assign(SCANNER));
