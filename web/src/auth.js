@@ -25,7 +25,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TABS = {
   signup: {
     title: 'Create your account',
-    lead: 'Your size belongs to you, so the scanner asks who it is measuring before it opens the camera. No codes, no confirmations \u2014 a name, an email, a password.',
+    lead: 'Your size belongs to you, so the scanner asks who it is measuring before it opens the camera. A name, an email and a password \u2014 no codes to read out and no app to install.',
   },
   login: {
     title: 'Welcome back',
