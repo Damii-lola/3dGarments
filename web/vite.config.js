@@ -15,15 +15,18 @@ export default defineConfig({
     sourcemap: true,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
-      // Three real pages rather than one page pretending: the landing (the way
-      // in), the account screen it leads to, and the scanner itself, which can
-      // also be opened straight from a link. Each has its own address, so a
-      // stale static host cannot send anyone to the wrong one; /size and /auth
-      // are directories on disk, not routes invented at runtime.
+      // Five real pages rather than one page pretending: the home page (the way
+      // in), the account screen it leads to, the scanner itself — which can also
+      // be opened straight from a link — and the two the bar points at, pricing
+      // and the dashboard. Each has its own address, so a stale static host
+      // cannot send anyone to the wrong one; they are directories on disk, not
+      // routes invented at runtime.
       input: {
         landing: page('index.html'),
         auth: page('auth/index.html'),
         size: page('size/index.html'),
+        pricing: page('pricing/index.html'),
+        dashboard: page('dashboard/index.html'),
       },
       output: { manualChunks: { three: ['three'], supabase: ['@supabase/supabase-js'] } },
     },

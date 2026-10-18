@@ -18,7 +18,7 @@ The bodies are the models in `assets/` (FBX), turned into rigged web models (`we
 
 The fitting room runs entirely in the browser and needs no backend. The API and Supabase back the garment pipeline (cut-out, measurement, AI description) that clothing upload builds on.
 
-The public site is three pages: `/` (the landing — one camera button), `/auth/` (create an account with a username, an email and a password, or log in; no verification step) and `/size/` (the scanner — record a 360° turn, trim it, get a size). The camera on the landing sends you to the account screen, and the account screen hands you on to the scanner; opening `/size` without an account does the same.
+The public site is five pages, all real directories on disk: `/` (the home page — the camera first, then the page the brands read), `/size/` (the scanner — record a 360° turn, trim it, get a size), `/auth/` (create an account with a username, an email and a password, or log in), `/pricing/` and `/dashboard/`. Every page carries the same bar: the brand and the four sections on the left, the account button on the right. The camera sends you to the account screen, and the account screen hands you on to the scanner; opening `/size` without an account does the same. The links in the bar are written as `%BASE_URL%…`, which Vite fills in at build time, so one copy of the markup works in a subdirectory and at a domain root.
 
 ## One-time setup (about 10 minutes)
 
@@ -28,9 +28,10 @@ The public site is three pages: `/` (the landing — one camera button), `/auth/
    - **Project ref**: Settings → General
    - **URL**, **anon key** and **service_role key**: Settings → API
    - **Access token**: Account → Access Tokens
-3. Under Authentication → URL Configuration, set **Site URL** to `https://damii-lola.github.io/3dGarments/`.
+3. Under Authentication → URL Configuration, set **Site URL** to `https://damii-lola.github.io/3dGarments/auth/` and add `https://damii-lola.github.io/3dGarments/**` (plus `http://localhost:5173/**` while developing) to **Redirect URLs**. Supabase falls back to the Site URL whenever a redirect is not in that list, so this is the setting that decides whether a confirmation link lands on the account screen or on something unrelated.
 4. Apply the schema: paste `supabase/setup.sql` into SQL Editor → New query → Run (it is idempotent). It creates the tables, the RLS policies, the private `garments` bucket, and `profiles` — the one row per account that holds the username, plus the trigger that writes it on every signup and the `username_taken()` check the signup form calls.
 5. Under Authentication → Providers → Email, turn **Confirm email** off. Signup then opens the scanner immediately; left on, it emails a link instead and the account screen says so.
+6. Optional, and only if you keep **Confirm email** on: paste `supabase/emails/confirm-signup.html` into Authentication → Email Templates → **Confirm signup**. Its button is `{{ .ConfirmationURL }}`, which comes back to the account screen, picks up the session it carries and opens the scanner — the same destination the signup form asks for with `accountPageUrl()` in `web/src/services/auth.js`. A link that has expired or has been used once says so in words on that screen rather than leaving a blank page.
 
 The migration in `supabase/migrations` creates the tables, RLS policies and the private `garments` bucket. CI applies it automatically.
 

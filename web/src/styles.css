@@ -51,9 +51,12 @@ body {
   color: var(--text);
   font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* A column, centered: the bar, the page, the footer. Each one brings its own
+     width, so the bar can be as wide as the page it belongs to (the marketing
+     pages) or as narrow as the app column (the scanner, the account screen). */
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
   padding: max(1.875rem, env(safe-area-inset-top)) 1.25rem 10vh;
   padding-bottom: calc(10vh + env(safe-area-inset-bottom));
 }
@@ -1065,6 +1068,461 @@ body {
    needed before it can open the camera. */
 .open-camera:disabled { opacity: 0.55; pointer-events: none; }
 
+/* =========================================================
+   The site around the app
+   The bar that is on every page, and the pages that live
+   under it: the home page, pricing, the dashboard.
+   ========================================================= */
+
+/* ---------- the bar ----------
+   Inset from the edges and translucent, so the sky keeps moving behind it and
+   the sections below never have to be padded around it. It sticks on the
+   marketing pages; on the scanner and the account screen it scrolls away,
+   where a line of chrome that never leaves is worth less than the room. */
+.nav { position: sticky; top: 0.5rem; z-index: 20; width: 100%; max-width: 60rem; margin-bottom: 1.4rem; }
+.app .nav { position: static; max-width: 27.5rem; }
+
+.nav-inner {
+  position: relative; /* both panels hang off this */
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.45rem 0.4rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(11, 12, 16, 0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* The brand, once, at the top of every page. */
+.nav-brand { margin-right: auto; text-decoration: none; color: inherit; }
+.nav-brand .brand-mark { width: 1.55rem; height: 1.55rem; border-radius: 0.5rem; }
+.nav-brand .brand-name { font-size: 1rem; }
+
+.nav-links { display: flex; align-items: center; gap: 0.1rem; }
+.nav-link {
+  padding: 0.42rem 0.62rem;
+  border-radius: 0.65rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.18s var(--ease-soft), background 0.18s var(--ease-soft), box-shadow 0.18s var(--ease-soft);
+}
+.nav-link:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.nav-link[aria-current="page"] {
+  color: var(--text);
+  background: rgba(255, 91, 58, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 91, 58, 0.3);
+}
+
+.nav-menu,
+.nav-user {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.05rem;
+  height: 2.05rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.18s var(--ease-soft), background 0.18s var(--ease-soft), border-color 0.18s var(--ease-soft);
+}
+.nav-menu { display: none; } /* phones only: see the 189% block below */
+.nav-user { border-color: var(--line); background: rgba(255, 255, 255, 0.04); }
+.nav-menu:hover,
+.nav-user:hover,
+.nav-menu[aria-expanded="true"],
+.nav-user[aria-expanded="true"] {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--line-2);
+}
+.nav-menu-icon,
+.nav-user-icon { width: 1.05rem; height: 1.05rem; }
+
+/* What the settings icon opens. Filled by nav.js from the session, so it says
+   the truth on the first paint and after a log out. */
+.nav-account {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0.45rem;
+  z-index: 30;
+  width: min(17rem, calc(100vw - 2.4rem));
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  border: 1px solid var(--line-2);
+  border-radius: 0.95rem;
+  background: rgba(16, 18, 23, 0.97);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 1.4rem 3rem rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+.nav-account-name { margin: 0; font-size: 0.9rem; font-weight: 650; }
+.nav-account-note { margin: 0.2rem 0 0.55rem; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+.nav-account-item {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nav-account-item:hover { background: rgba(255, 255, 255, 0.07); }
+.nav-account-out { color: #ff8f8f; }
+
+/* ---------- the pages under the bar ---------- */
+.page {
+  width: 100%;
+  max-width: 60rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4.2rem;
+}
+
+/* Anchors jump past the bar rather than under it. */
+.section[id] { scroll-margin-top: 4.5rem; }
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+.section { width: 100%; display: flex; flex-direction: column; gap: 0.85rem; }
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent-2);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.eyebrow-good { color: var(--good); }
+.eyebrow-faint { color: var(--faint); }
+
+.section-title {
+  margin: 0;
+  max-width: 34rem;
+  font-size: clamp(1.45rem, 4.2vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+.section-lead {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.section-copy {
+  margin: 0;
+  max-width: 36rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+.section-copy strong { color: var(--text); font-weight: 600; }
+/* Links inside prose: the accent, because nothing else on these pages is one. */
+.section p a, .faq a { color: var(--accent-2); text-decoration-color: rgba(255, 138, 92, 0.4); }
+
+/* ---------- the hero ---------- */
+.hero { align-items: center; text-align: center; }
+.hero-title {
+  margin: 0;
+  max-width: 22ch;
+  font-size: clamp(1.9rem, 6.4vw, 3rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  background: linear-gradient(180deg, #ffffff 30%, #b9bfd0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-lead { margin: 0; max-width: 42ch; color: var(--muted); font-size: 1.05rem; line-height: 1.6; }
+.hero-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.6rem; margin-top: 0.4rem; }
+
+/* The buttons on these pages are links — they go somewhere — so they need the
+   one thing a <button> brings for free. */
+a.btn-primary,
+a.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+/* ---------- grids and cards ---------- */
+.grid {
+  width: 100%;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
+}
+.grid-wide {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.35s var(--ease), border-color 0.35s var(--ease-soft), background 0.35s var(--ease-soft);
+}
+.tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+}
+.tile h3 { margin: 0; font-size: 0.95rem; font-weight: 650; letter-spacing: -0.01em; }
+.tile p { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.6; }
+
+.ticks, .costs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.42rem; }
+.ticks li, .costs li { position: relative; padding-left: 1.45rem; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+.ticks li::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.4rem;
+  width: 0.5rem;
+  height: 0.27rem;
+  border-left: 1.7px solid var(--good);
+  border-bottom: 1.7px solid var(--good);
+  transform: rotate(-45deg);
+}
+.costs li::before {
+  content: "\00d7";
+  position: absolute;
+  left: 0.15rem;
+  top: -0.05rem;
+  color: #ff6b6b;
+  font-weight: 700;
+}
+
+/* Three statements, set as lines rather than as prose: each is a beat on its
+   own, and a paragraph would run them together. */
+.beats { display: flex; flex-direction: column; gap: 0.6rem; max-width: 30rem; }
+.beats p {
+  margin: 0;
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--line-2);
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.callout {
+  margin: 0;
+  max-width: 40rem;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 0.75rem 0.75rem 0;
+  background: linear-gradient(90deg, rgba(255, 91, 58, 0.12), rgba(255, 91, 58, 0.02));
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* ---------- the five steps ---------- */
+.steps { list-style: none; margin: 0; padding: 0; max-width: 38rem; }
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.1rem 1fr;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.62rem 0;
+}
+.step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid rgba(255, 91, 58, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 91, 58, 0.24), rgba(255, 46, 99, 0.1));
+  color: var(--accent-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+/* The line between them: drawn by each step that has a next one, so the last
+   one ends clean. */
+.step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 1.05rem;
+  top: 2.75rem;
+  bottom: -0.05rem;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(255, 91, 58, 0.3), rgba(255, 255, 255, 0.05));
+}
+.step-title { margin: 0; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.01em; }
+
+/* ---------- privacy, one step louder than the app's card ---------- */
+.privacy-card {
+  display: flex;
+  gap: 0.9rem;
+  padding: 1.3rem 1.35rem;
+  border: 1px solid rgba(61, 220, 151, 0.26);
+  border-radius: 1.2rem;
+  background: linear-gradient(180deg, rgba(61, 220, 151, 0.09), rgba(61, 220, 151, 0.02));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.privacy-card .privacy-lock { width: 1.9rem; height: 1.9rem; }
+.privacy-body-lg { display: flex; flex-direction: column; gap: 0.6rem; }
+.privacy-close { margin: 0; color: var(--good); font-size: 0.95rem; font-weight: 600; }
+
+/* ---------- the closing card ---------- */
+.cta-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.6rem 1.5rem;
+  border: 1px solid var(--line-2);
+  border-radius: 1.4rem;
+  background: linear-gradient(180deg, rgba(255, 91, 58, 0.1), rgba(21, 24, 31, 0.55));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1.5rem 3rem rgba(0, 0, 0, 0.35);
+}
+.cta-card::after {
+  content: "";
+  position: absolute;
+  inset: -45% 35% 50% -25%;
+  background: radial-gradient(closest-side, rgba(255, 91, 58, 0.34), transparent);
+  pointer-events: none;
+}
+.cta-card > * { position: relative; z-index: 1; }
+.cta-title {
+  margin: 0;
+  max-width: 26rem;
+  font-size: clamp(1.5rem, 5vw, 2.1rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+/* ---------- booking a demo ----------
+   A form, because "Book a Demo" that goes nowhere is worse than no button. It
+   opens the visitor's own mail client with the details filled in, which needs
+   no server of ours and means the reply comes back to them. */
+.demo-form {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+.demo-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.demo-field > span {
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.demo-field input,
+.demo-field textarea {
+  width: 100%;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: rgba(9, 10, 14, 0.55);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  resize: vertical;
+}
+.demo-field input::placeholder,
+.demo-field textarea::placeholder { color: var(--faint); }
+.demo-field input:focus-visible,
+.demo-field textarea:focus-visible {
+  outline: 2px solid rgba(255, 91, 58, 0.5);
+  outline-offset: 1px;
+  border-color: rgba(255, 91, 58, 0.4);
+}
+.demo-wide { grid-column: 1 / -1; }
+.cta-card .actions { justify-content: flex-start; }
+
+/* ---------- questions ---------- */
+.faq { display: flex; flex-direction: column; gap: 0.55rem; width: 100%; max-width: 44rem; }
+.faq details {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+.faq summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; color: var(--accent-2); font-weight: 700; }
+.faq details[open] summary::after { content: "\2013"; }
+.faq p { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.88rem; line-height: 1.65; }
+
+/* ---------- the dashboard ---------- */
+.dash-name { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; }
+.dash-mail { margin: 0; color: var(--muted); font-size: 0.86rem; }
+.tile .actions { margin-top: 0.3rem; justify-content: flex-start; }
+
+/* ---------- the footer ---------- */
+.foot {
+  width: 100%;
+  max-width: 60rem;
+  margin-top: 3.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.foot-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
+.foot-inner .brand-name { font-size: 0.95rem; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin-left: auto; }
+.foot-links a { color: var(--muted); font-size: 0.82rem; text-decoration: none; }
+.foot-links a:hover { color: var(--text); }
+.foot-note { margin: 0; max-width: 46rem; color: var(--faint); font-size: 0.78rem; line-height: 1.6; }
+
+/* ---------- arriving ----------
+   Sections fade up as they are reached. They are only hidden while <html>
+   carries "js" — a flag a one-line script in each page sets before the first
+   paint (so nothing is painted and then hidden) and lifts again after a few
+   seconds, in case the script that reveals them never loads. */
+[data-reveal] { transition: opacity 0.7s var(--ease-soft), transform 0.7s var(--ease); }
+.js [data-reveal] { opacity: 0; transform: translateY(0.9rem); }
+.js [data-reveal].seen { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal] { opacity: 1; transform: none; }
+}
+
 /* ---------- phones: bump the whole UI to 189% ----------
    Matched two ways: a narrow viewport, OR any touch-first device. The second
    path matters because a phone browsing in "desktop site" mode (or a large
@@ -1075,21 +1533,26 @@ body {
   /* As the text grows, trim the side margins so the video and result cards
      keep as much width as possible instead of being squeezed. */
   body { padding-left: 0.9rem; padding-right: 0.9rem; }
+  /* The bar carries the top of the page now, so it does not also need the
+     desktop's block of sky above it: at 189% that block is a row of the
+     scanner's first screen. */
+  body { padding-top: 0.6rem; }
   /* The landing has to keep its action on the first screen: at 189% the prose
      steps back so the camera and the promise are both reachable without a
-     scroll, which at this scale they otherwise are not. */
-  .stage { gap: 0.75rem; }
-  .intro { gap: 0.5rem; }
-  .intro h1 { font-size: 1.35rem; }
-  .lead { font-size: 0.74rem; line-height: 1.5; }
-  .privacy { gap: 0.55rem; padding: 0.7rem 0.8rem; }
-  .privacy-lock { width: 1.05rem; height: 1.05rem; }
-  .privacy-line { font-size: 0.8rem; }
-  .privacy-sub { font-size: 0.64rem; line-height: 1.5; }
+     scroll, which at this scale they otherwise are not. The bar cost that
+     screen a line, so a little more came out of the spacing around it. */
+  .stage { gap: 0.5rem; }
+  .intro { gap: 0.4rem; }
+  .intro h1 { font-size: 1.35rem; line-height: 1.15; }
+  .lead { font-size: 0.68rem; line-height: 1.45; }
+  .privacy { gap: 0.5rem; padding: 0.6rem 0.7rem; }
+  .privacy-lock { width: 1rem; height: 1rem; }
+  .privacy-line { font-size: 0.78rem; }
+  .privacy-sub { font-size: 0.58rem; line-height: 1.45; }
   .capture { gap: 0.7rem; }
-  .open-camera { gap: 0.45rem; padding: 0.2rem 0.5rem; }
-  .cam-icon { width: 2.9rem; height: 2.9rem; }
-  .cam-cta { font-size: 0.62rem; }
+  .open-camera { gap: 0.4rem; padding: 0.15rem 0.4rem; }
+  .cam-icon { width: 2.6rem; height: 2.6rem; }
+  .cam-cta { font-size: 0.58rem; }
   .capture-btn { gap: 0.4rem; padding: 0.5rem 0.7rem; font-size: 0.68rem; }
   .capture-icon { width: 0.95rem; height: 0.95rem; }
   .estimate { font-size: 0.6rem; }
@@ -1119,6 +1582,78 @@ body {
   .auth-field > span { font-size: 0.62rem; }
   .auth-field input { padding: 0.5rem 0.6rem; font-size: 0.8rem; }
   .auth-hint { font-size: 0.6rem; }
+  /* The bar: at 189% four section names do not fit beside the brand on any
+     phone, so they fold into the menu — and the bar itself is trimmed to a
+     line, because on the scanner it is standing next to the camera. */
+  .nav-inner { gap: 0.25rem; padding: 0.28rem 0.3rem 0.28rem 0.5rem; border-radius: 0.85rem; }
+  .nav { margin-bottom: 0.45rem; }
+  .nav-brand .brand-mark { width: 1.05rem; height: 1.05rem; border-radius: 0.35rem; }
+  .nav-brand .brand-name { font-size: 0.72rem; }
+  .nav-menu, .nav-user { width: 1.35rem; height: 1.35rem; border-radius: 0.45rem; }
+  .nav-menu-icon, .nav-user-icon { width: 0.72rem; height: 0.72rem; }
+  .nav-menu { display: inline-flex; }
+  .nav-links { display: none; }
+  .nav-links.open {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.1rem;
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    right: 0;
+    padding: 0.4rem;
+    border: 1px solid var(--line-2);
+    border-radius: 0.9rem;
+    background: rgba(16, 18, 23, 0.98);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 1.4rem 3rem rgba(0, 0, 0, 0.5);
+  }
+  .nav-link { padding: 0.5rem 0.55rem; font-size: 0.72rem; }
+  .nav-account { width: min(15rem, calc(100vw - 2rem)); padding: 0.6rem; }
+  .nav-account-name { font-size: 0.76rem; }
+  .nav-account-note { font-size: 0.62rem; }
+  .nav-account-item { padding: 0.45rem 0.5rem; font-size: 0.7rem; }
+  /* The marketing pages, brought to the same scale as the rest of the app. */
+  .page { gap: 2.4rem; }
+  .section { gap: 0.55rem; }
+  .eyebrow { font-size: 0.54rem; letter-spacing: 0.14em; }
+  .section-title { font-size: 1.15rem; }
+  .section-lead, .section-copy { font-size: 0.7rem; line-height: 1.55; }
+  .hero-title { font-size: 1.5rem; }
+  .hero-lead { font-size: 0.74rem; }
+  .hero-cta { gap: 0.45rem; }
+  .grid { gap: 0.55rem; }
+  .grid-wide { gap: 0.8rem; }
+  .tile { gap: 0.35rem; padding: 0.7rem 0.75rem; border-radius: 0.8rem; }
+  .tile h3 { font-size: 0.74rem; }
+  .tile p { font-size: 0.66rem; }
+  .ticks li, .costs li { padding-left: 1.05rem; font-size: 0.68rem; }
+  .ticks li::before { top: 0.32rem; }
+  .callout { padding: 0.6rem 0.7rem; font-size: 0.7rem; }
+  .beats { gap: 0.4rem; }
+  .beats p { padding-left: 0.6rem; font-size: 0.68rem; }
+  .steps { max-width: none; }
+  .step { grid-template-columns: 1.5rem 1fr; gap: 0.55rem; padding: 0.45rem 0; }
+  .step-n { width: 1.5rem; height: 1.5rem; font-size: 0.6rem; }
+  .step:not(:last-child)::before { left: 0.75rem; top: 2rem; }
+  .step-title { font-size: 0.7rem; }
+  .privacy-card { gap: 0.6rem; padding: 0.9rem; border-radius: 1rem; }
+  .privacy-card .privacy-lock { width: 1.35rem; height: 1.35rem; }
+  .privacy-body-lg { gap: 0.4rem; }
+  .privacy-close { font-size: 0.7rem; }
+  .cta-card { gap: 0.6rem; padding: 1rem 0.9rem; border-radius: 1rem; }
+  .cta-title { font-size: 1.25rem; }
+  .demo-field > span { font-size: 0.54rem; }
+  .demo-field input, .demo-field textarea { padding: 0.5rem 0.55rem; font-size: 0.7rem; }
+  .faq summary { font-size: 0.68rem; }
+  .faq p { font-size: 0.64rem; }
+  .dash-name { font-size: 0.78rem; }
+  .dash-mail { font-size: 0.66rem; }
+  .foot { margin-top: 2.2rem; }
+  .foot-links a { font-size: 0.64rem; }
+  .foot-note { font-size: 0.58rem; }
 }
 
 @media (max-width: 380px) {

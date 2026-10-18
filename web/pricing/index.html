@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d0e12" />
+    <title>3dGarments — Pricing</title>
+    <meta
+      name="description"
+      content="What 3dGarments includes, how it is added to a product page, and how a quote works. Nothing is stored and nothing is charged per return avoided."
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script>
+      document.documentElement.classList.add('js');
+      window.__revealFailSafe = setTimeout(function () {
+        document.documentElement.classList.remove('js');
+      }, 3000);
+    </script>
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true">
+      <span class="sky-layer sky-near"></span>
+      <span class="sky-layer sky-mid"></span>
+      <span class="sky-layer sky-far"></span>
+    </div>
+
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand nav-brand" href="%BASE_URL%" aria-label="3dGarments — home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">3d<b>Garments</b></span>
+        </a>
+
+        <nav class="nav-links" id="nav-links" aria-label="Sections">
+          <a class="nav-link" href="%BASE_URL%">Home</a>
+          <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+          <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+          <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+
+        <button class="nav-menu" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Sections">
+          <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <button class="nav-user" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+          <svg class="nav-user-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <path d="M5.2 20c.5-3.5 3.4-5.6 6.8-5.6s6.3 2.1 6.8 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <div class="nav-account" id="nav-account" hidden>
+          <p class="nav-account-name" id="nav-account-name">Not signed in</p>
+          <p class="nav-account-note" id="nav-account-note"></p>
+          <a class="nav-account-item" id="nav-account-dash" href="%BASE_URL%dashboard/" hidden>Dashboard</a>
+          <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+          <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="section" data-reveal>
+        <p class="eyebrow">Pricing</p>
+        <h1 class="section-title">Quoted per store, by volume</h1>
+        <p class="section-lead">
+          The tool is one button on a product page, and it is priced per store per
+          month against the number of recommendations you run. Nothing is charged
+          per return avoided &mdash; that saving is yours, and it is the reason to
+          do this at all.
+        </p>
+        <p class="section-copy">
+          Numbers on request rather than on a page: a quote depends on how many
+          products you sell and where the button sits. Tell us about your store and
+          we will send one.
+        </p>
+      </section>
+
+      <section class="section" data-reveal>
+        <div class="grid">
+          <div class="tile">
+            <h3>What is included</h3>
+            <ul class="ticks">
+              <li>The scanner, on the phone the shopper already has</li>
+              <li>Measurements shown with the reading behind each one</li>
+              <li>A size scored row by row against the chart</li>
+              <li>Nothing stored, so nothing to look after</li>
+              <li>Support from the people who built it</li>
+            </ul>
+          </div>
+          <div class="tile">
+            <h3>How it is added</h3>
+            <ol class="steps">
+              <li class="step">
+                <span class="step-n" aria-hidden="true">1</span>
+                <p class="step-title">We give you a link and a button to put on the product page</p>
+              </li>
+              <li class="step">
+                <span class="step-n" aria-hidden="true">2</span>
+                <p class="step-title">The shopper records one slow turn, and reads the numbers</p>
+              </li>
+              <li class="step">
+                <span class="step-n" aria-hidden="true">3</span>
+                <p class="step-title">The size is read against that product's chart</p>
+              </li>
+            </ol>
+          </div>
+          <div class="tile">
+            <h3>Getting a quote</h3>
+            <p>
+              One conversation is usually enough: which products, how bad the
+              returns are, and what a size chart of yours looks like.
+            </p>
+            <div class="actions">
+              <a class="btn-primary" href="%BASE_URL%#book">Book a Demo</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" data-reveal>
+        <p class="eyebrow">Questions</p>
+        <h2 class="section-title">What brands ask first</h2>
+        <div class="faq">
+          <details>
+            <summary>Do you store my customers&rsquo; videos or measurements?</summary>
+            <p>
+              No. A video is measured on the phone it was recorded on and is never
+              uploaded, and nothing is kept afterwards: no video, no measurements,
+              no history. There is no body profile to leak, because there is no bit
+              of one anywhere.
+            </p>
+          </details>
+          <details>
+            <summary>Do my customers need an app?</summary>
+            <p>
+              No. They tap a button and use the camera they already have. The whole
+              exchange is one slow turn on the spot, and about ten seconds of
+              waiting while the numbers are read.
+            </p>
+          </details>
+          <details>
+            <summary>Is it a plugin for my store?</summary>
+            <p>
+              Today it is a link behind a button, which works on any storefront
+              without touching its theme. Packaged plugins for the large platforms
+              are the next piece of work, and the first thing to ask for.
+            </p>
+          </details>
+          <details>
+            <summary>What does it need?</summary>
+            <p>
+              A phone with a camera, and a video of the customer turning all the
+              way around &mdash; thirty seconds is the limit, ten is a good clip. On a
+              desktop, a video already on the device can be uploaded instead.
+            </p>
+          </details>
+          <details>
+            <summary>How accurate is it?</summary>
+            <p>
+              It is an estimate, and it says so, in those words, on the result. Every
+              measurement is shown with the reading behind it, and the size is scored
+              against the chart row by row: the worst disagreement decides, so a
+              marginal call lands on the smaller size rather than a hopeful larger
+              one.
+            </p>
+          </details>
+          <details>
+            <summary>Can I try it before talking to anyone?</summary>
+            <p>
+              Yes, and please do. <a href="%BASE_URL%size/">The scanner</a> on this
+              site is the same one your customers would use.
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <section class="section cta-card" data-reveal>
+        <h2 class="cta-title">Ready to cut size returns?</h2>
+        <p class="section-lead">
+          See how the tool works on a real product page and get a clear plan for
+          your store.
+        </p>
+        <div class="actions">
+          <a class="btn-primary" href="%BASE_URL%#book">Book a Demo</a>
+          <a class="btn-ghost" href="%BASE_URL%size/">Try the scanner</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-inner">
+        <span class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">3d<b>Garments</b></span>
+        </span>
+        <nav class="foot-links" aria-label="Footer">
+          <a href="%BASE_URL%">Home</a>
+          <a href="%BASE_URL%size/">Sizing</a>
+          <a href="%BASE_URL%dashboard/">Dashboard</a>
+          <a href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+      </div>
+      <p class="foot-note">
+        Nothing is saved. A video is measured on the phone it was recorded on and
+        is never uploaded. Every measurement is an estimate.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/nav.js"></script>
+  </body>
+</html>

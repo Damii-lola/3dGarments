@@ -14,6 +14,7 @@
  * a copy opens. The same is true if the API that holds the settings is too slow
  * to answer: the door prefers to be open rather than to hang.
  */
+import './nav.js';
 import { cloudConfig } from './services/config.js';
 import { getSession, isAccount } from './services/auth.js';
 

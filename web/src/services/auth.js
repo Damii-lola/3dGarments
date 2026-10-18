@@ -53,6 +53,18 @@ export async function signIn(email, password) {
 }
 
 /**
+ * Where a confirmation link comes back to: this site's account screen, from
+ * which a session is handed straight to the scanner.
+ *
+ * It is written as an absolute URL because it travels in an email, and it is
+ * built from the build's base rather than from the current path, so it is the
+ * account page even when the signup happens somewhere else on the site.
+ */
+export function accountPageUrl() {
+  return new URL(`${import.meta.env.BASE_URL}auth/`, window.location.origin).href;
+}
+
+/**
  * Sign up with the username the account will be known by. It travels in the
  * signup metadata, where the `handle_new_user` trigger (supabase/migrations/…
  * accounts.sql) picks it up and writes the profile row — so an account cannot
@@ -68,7 +80,12 @@ export async function signUp(email, password, username) {
     password,
     options: {
       data: { username },
-      emailRedirectTo: window.location.origin + window.location.pathname,
+      // The link in that email has to land somewhere real. This is the account
+      // screen, which picks up the session the link carries and opens the
+      // scanner — never a blank page, and never a page about nothing. The
+      // project's "Site URL" and redirect allow-list have to include it; see
+      // README.md, "The confirmation email".
+      emailRedirectTo: accountPageUrl(),
     },
   });
   if (error) throw error;

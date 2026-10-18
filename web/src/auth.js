@@ -11,6 +11,7 @@
  *     (supabase/migrations/*_accounts.sql) puts it in the profile row, so an
  *     account cannot come into being without a name.
  */
+import './nav.js';
 import { cloudConfig } from './services/config.js';
 import { getSession, isAccount, onAuthChange, signIn, signUp, usernameTaken } from './services/auth.js';
 
@@ -186,7 +187,7 @@ signupForm.addEventListener('submit', async (event) => {
     // leaving someone staring at a form that seemed to work.
     loginEmail.value = email;
     showTab('login');
-    say(`Account created. Confirm ${email} from the link we sent, then log in here.`, 'ok');
+    say(`Account created. Open the link we sent to ${email} — it comes back to this page, and this page opens the scanner.`, 'ok');
   } catch (error) {
     say(friendly(error, 'Could not create that account.'), 'error');
   } finally {
@@ -217,6 +218,22 @@ loginForm.addEventListener('submit', async (event) => {
 });
 
 /* ---------- arriving ---------- */
+/**
+ * A confirmation link that has expired, or has already been used once, comes
+ * back with the reason in the URL instead of with a session. Say it in words: a
+ * form that silently does nothing looks broken, and a blank page looks worse.
+ */
+function linkProblem() {
+  const raw = `${window.location.search.replace(/^\?/, '')}&${window.location.hash.replace(/^#/, '')}`;
+  const params = new URLSearchParams(raw);
+  const said = `${params.get('error_code') || ''} ${params.get('error') || ''} ${params.get('error_description') || ''}`.trim();
+  if (!said) return '';
+  if (/expired|invalid|otp/i.test(said)) {
+    return 'That link has expired or has already been used. Log in below, or sign up again.';
+  }
+  return 'That link could not be used. Log in below, or sign up again.';
+}
+
 (async function arrive() {
   // A copy with no cloud has nothing to sign in to, and the scanner needs no
   // account of its own: say so and open the way through rather than leaving a
@@ -224,6 +241,10 @@ loginForm.addEventListener('submit', async (event) => {
   const slow = setTimeout(() => say('Waking the account service\u2026'), 4000);
   const config = await cloudConfig().catch(() => null);
   clearTimeout(slow);
+
+  // Read before anything else: if the link failed, the reason is in the address
+  // bar, and the form below is the way out of it rather than a dead end.
+  const problem = linkProblem();
 
   if (!config) {
     titleEl.textContent = 'No accounts on this copy';
@@ -241,6 +262,16 @@ loginForm.addEventListener('submit', async (event) => {
     location.replace(SCANNER);
     return;
   }
+
+  if (problem) {
+    showTab('login');
+    say(problem, 'error');
+    // Taken back out of the address bar, so a reload does not re-report a link
+    // that has already been explained.
+    history.replaceState(null, '', window.location.pathname);
+    return;
+  }
+
   say('');
 })();
 

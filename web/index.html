@@ -4,8 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0d0e12" />
-    <title>3dGarments — Find your size</title>
+    <title>3dGarments — the size is measured, not guessed</title>
+    <meta
+      name="description"
+      content="Give your customers an accurate size recommendation in under a minute, using only a quick 360° video. No app to install, and nothing stored."
+    />
     <link rel="stylesheet" href="/src/styles.css" />
+    <!-- Sets the flag the reveal styles answer to, before anything is painted, and
+         lifts it again if the script below never arrives: a chunk that fails to
+         load must not leave the page invisible. -->
+    <script>
+      document.documentElement.classList.add('js');
+      window.__revealFailSafe = setTimeout(function () {
+        document.documentElement.classList.remove('js');
+      }, 3000);
+    </script>
   </head>
   <body>
     <!-- The sky. Three fields of stars, each on its own tile, each sliding one
@@ -17,52 +30,284 @@
       <span class="sky-layer sky-far"></span>
     </div>
 
-    <main class="stage">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <span class="brand-name">3d<b>Garments</b></span>
-      </div>
+    <!-- The bar, on every page. Its links are written against the site's base —
+         %BASE_URL% is filled in at build time — so the same markup holds in a
+         subdirectory and at a domain root. -->
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand nav-brand" href="%BASE_URL%" aria-label="3dGarments — home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">3d<b>Garments</b></span>
+        </a>
 
-      <header class="intro">
-        <h1>Find your size</h1>
-        <p class="lead">
-          Record a 360&deg; video of yourself, turning slowly all the way around:
-          stand still, whole body in frame, arms a hand's width from your sides
-          &mdash; that gap is how we tell your arms from your torso. Max 30 seconds.
-        </p>
-      </header>
+        <nav class="nav-links" id="nav-links" aria-label="Sections">
+          <a class="nav-link" href="%BASE_URL%">Home</a>
+          <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+          <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+          <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
 
-      <!-- One tap. It goes to the account screen, and the account screen goes to
-           the scanner: a size is worth remembering, so it is tied to a name
-           rather than to a browser tab. -->
-      <div class="capture">
-        <button class="open-camera" id="open-camera" type="button">
-          <svg class="cam-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
-            <circle cx="12" cy="12.2" r="3.6" />
+        <button class="nav-menu" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Sections">
+          <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
           </svg>
-          <span class="cam-cta">Click to Record</span>
         </button>
-      </div>
 
-      <!-- Under the action, on the same screen: said here rather than in a
-           policy nobody reads, because this is the moment the question is
-           actually in someone's head. -->
-      <div class="privacy">
-        <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-          <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
-          <circle cx="12" cy="14.8" r="1.15" fill="currentColor" />
-        </svg>
-        <div class="privacy-body">
-          <p class="privacy-line">Nothing is saved.</p>
-          <p class="privacy-sub">
-            Your video never leaves your phone and is never uploaded. It is
-            measured there, then forgotten &mdash; close the page and it is gone.
-          </p>
+        <button class="nav-user" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+          <svg class="nav-user-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <path d="M5.2 20c.5-3.5 3.4-5.6 6.8-5.6s6.3 2.1 6.8 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <div class="nav-account" id="nav-account" hidden>
+          <p class="nav-account-name" id="nav-account-name">Not signed in</p>
+          <p class="nav-account-note" id="nav-account-note"></p>
+          <a class="nav-account-item" id="nav-account-dash" href="%BASE_URL%dashboard/" hidden>Dashboard</a>
+          <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+          <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
         </div>
       </div>
+    </header>
+
+    <main class="page">
+      <!-- The tool itself, first: one tap opens the camera, and the whole
+           exchange is a phone, a slow turn and about ten seconds. -->
+      <section class="stage">
+        <header class="intro">
+          <h1>Find your size</h1>
+          <p class="lead">
+            Record a 360&deg; video of yourself, turning slowly all the way around:
+            stand still, whole body in frame, arms a hand's width from your sides
+            &mdash; that gap is how we tell your arms from your torso. Max 30 seconds.
+          </p>
+        </header>
+
+        <!-- One tap. It goes to the account screen, and the account screen goes
+             to the scanner: a size is worth keeping, so it is tied to a name
+             rather than to a browser tab. -->
+        <div class="capture">
+          <button class="open-camera" id="open-camera" type="button">
+            <svg class="cam-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+              <circle cx="12" cy="12.2" r="3.6" />
+            </svg>
+            <span class="cam-cta">Click to Record</span>
+          </button>
+        </div>
+
+        <!-- Under the action, on the same screen: said here rather than in a
+             policy nobody reads, because this is the moment the question is
+             actually in someone's head. -->
+        <div class="privacy">
+          <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <circle cx="12" cy="14.8" r="1.15" fill="currentColor" />
+          </svg>
+          <div class="privacy-body">
+            <p class="privacy-line">Nothing is saved.</p>
+            <p class="privacy-sub">
+              Your video never leaves your phone and is never uploaded. It is
+              measured there, then forgotten &mdash; close the page and it is gone.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- From here down the page is written for the brand rather than for the
+           shopper who just used the camera: the same tool, sold to the store. -->
+      <section class="section hero" data-reveal>
+        <p class="eyebrow">For clothing brands</p>
+        <h2 class="hero-title">Stop losing money on size returns</h2>
+        <p class="hero-lead">
+          Give your customers an accurate size recommendation in under a minute
+          &mdash; using only a quick 360&deg; video. Nothing to install, nothing stored.
+        </p>
+        <div class="hero-cta">
+          <a class="btn-primary" href="#book">Book a Demo</a>
+          <a class="btn-ghost" href="#how">See how it works</a>
+        </div>
+      </section>
+
+      <section class="section" id="problem" data-reveal>
+        <p class="eyebrow">The problem</p>
+        <h2 class="section-title">Returns are quietly killing your margins</h2>
+        <p class="section-lead">Most clothing brands lose thousands every month to size-related returns.</p>
+        <div class="grid grid-wide">
+          <div class="beats">
+            <p>Customers don&rsquo;t know their real measurements.</p>
+            <p>Size charts vary wildly between brands.</p>
+            <p>And &ldquo;order two sizes and return one&rdquo; has become normal.</p>
+          </div>
+          <div class="tile">
+            <h3>Every return costs you</h3>
+            <ul class="costs">
+              <li>Double shipping</li>
+              <li>Restocking time</li>
+              <li>Damaged or unsellable product</li>
+              <li>Lost profit</li>
+            </ul>
+          </div>
+        </div>
+        <p class="callout">The result? Lower margins, higher costs, and frustrated customers.</p>
+      </section>
+
+      <section class="section" id="solution" data-reveal>
+        <p class="eyebrow">The solution</p>
+        <h2 class="section-title">A better way to get the size right</h2>
+        <p class="section-copy">
+          Our tool lets shoppers on your product page record a short 360&deg; video
+          of themselves. It reads their body measurements from that video, then
+          recommends the size for that exact product &mdash; in seconds.
+        </p>
+        <div class="grid">
+          <div class="tile">
+            <h3>They see the measurements</h3>
+            <p>Every number is shown, with the reading behind it, so nothing has to be taken on trust.</p>
+          </div>
+          <div class="tile">
+            <h3>They get a clear size</h3>
+            <p>Scored against a size chart row by row: the worst disagreement decides, not the best one.</p>
+          </div>
+          <div class="tile">
+            <h3>Then everything is deleted</h3>
+            <p>The video is measured on the phone it was recorded on and is never uploaded.</p>
+          </div>
+        </div>
+        <p class="callout">No profiles. No saved measurements. No risk.</p>
+      </section>
+
+      <section class="section" id="how" data-reveal>
+        <p class="eyebrow">How it works</p>
+        <h2 class="section-title">Simple for your customers. Powerful for your brand.</h2>
+        <ol class="steps">
+          <li class="step">
+            <span class="step-n" aria-hidden="true">1</span>
+            <p class="step-title">Customer clicks &ldquo;Find my size&rdquo; on your product page</p>
+          </li>
+          <li class="step">
+            <span class="step-n" aria-hidden="true">2</span>
+            <p class="step-title">Records a quick 360&deg; video on their phone</p>
+          </li>
+          <li class="step">
+            <span class="step-n" aria-hidden="true">3</span>
+            <p class="step-title">Their body is measured and the numbers are shown</p>
+          </li>
+          <li class="step">
+            <span class="step-n" aria-hidden="true">4</span>
+            <p class="step-title">They get a size recommendation for that exact product</p>
+          </li>
+          <li class="step">
+            <span class="step-n" aria-hidden="true">5</span>
+            <p class="step-title">All of it is deleted immediately</p>
+          </li>
+        </ol>
+        <p class="callout">They never leave your store. You reduce returns. Everyone wins.</p>
+      </section>
+
+      <section class="section" id="benefits" data-reveal>
+        <p class="eyebrow">What it changes</p>
+        <h2 class="section-title">Built for clothing brands that care about margins</h2>
+        <div class="grid">
+          <div class="tile">
+            <h3>Fewer size returns</h3>
+            <p>People order the size that fits, so the parcel does not come back.</p>
+          </div>
+          <div class="tile">
+            <h3>More confident buying</h3>
+            <p>A number they can see beats a chart they have to guess at.</p>
+          </div>
+          <div class="tile">
+            <h3>A better customer experience</h3>
+            <p>No tape measure, no fitting room, no app to install.</p>
+          </div>
+          <div class="tile">
+            <h3>No data to look after</h3>
+            <p>Nothing is stored, so there is nothing to lose and nothing to report.</p>
+          </div>
+          <div class="tile">
+            <h3>Easy to add anywhere</h3>
+            <p>One button on the product page, on the phone the shopper already has.</p>
+          </div>
+        </div>
+        <p class="callout">Stop treating returns as &ldquo;just part of the business&rdquo;. Fix the root cause.</p>
+      </section>
+
+      <section class="section" id="privacy" data-reveal>
+        <div class="privacy-card">
+          <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <circle cx="12" cy="14.8" r="1.15" fill="currentColor" />
+          </svg>
+          <div class="privacy-body privacy-body-lg">
+            <p class="eyebrow eyebrow-good">Privacy</p>
+            <h2 class="section-title">Privacy by design</h2>
+            <p class="section-lead">We never store videos or body measurements.</p>
+            <p class="section-copy">
+              Everything is processed in real time and is gone right after the size
+              recommendation is shown. No body profiles. No saved measurements. No
+              data kept.
+            </p>
+            <p class="privacy-close">Your customers stay private. Your brand stays trusted.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-card" id="book" data-reveal>
+        <h2 class="cta-title">Ready to cut size returns?</h2>
+        <p class="section-lead">
+          See how the tool works on a real product page and get a clear plan for
+          your store. Leave an address and we will reply.
+        </p>
+        <!-- The form opens the visitor's own mail client with these details
+             filled in: nothing to run on our side, and the reply comes back to
+             the address they typed. DEMO_EMAIL in landing.js is the same one. -->
+        <form class="demo-form" id="demo-form" action="mailto:hello@3dgarments.com" method="post" enctype="text/plain">
+          <label class="demo-field">
+            <span>Name</span>
+            <input id="demo-name" name="name" type="text" autocomplete="name" placeholder="Sam Okafor" required />
+          </label>
+          <label class="demo-field">
+            <span>Store or brand</span>
+            <input id="demo-store" name="store" type="text" autocomplete="organization" placeholder="Okafor &amp; Co." />
+          </label>
+          <label class="demo-field">
+            <span>Email</span>
+            <input id="demo-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+          </label>
+          <label class="demo-field demo-wide">
+            <span>What would you like to fix?</span>
+            <textarea id="demo-message" name="message" rows="3" placeholder="Which product, and how bad the returns are."></textarea>
+          </label>
+          <div class="actions demo-wide">
+            <button class="btn-primary" id="demo-submit" type="submit">Book a Demo</button>
+          </div>
+        </form>
+        <p class="status" id="demo-status" role="status" aria-live="polite"></p>
+      </section>
     </main>
+
+    <footer class="foot">
+      <div class="foot-inner">
+        <span class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">3d<b>Garments</b></span>
+        </span>
+        <nav class="foot-links" aria-label="Footer">
+          <a href="%BASE_URL%">Home</a>
+          <a href="%BASE_URL%size/">Sizing</a>
+          <a href="%BASE_URL%dashboard/">Dashboard</a>
+          <a href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+      </div>
+      <p class="foot-note">
+        Nothing is saved. Your video never leaves your phone: it is measured there
+        and is never uploaded. Every measurement is an estimate, and it is shown
+        with the reading behind it so it can be checked.
+      </p>
+    </footer>
 
     <script type="module" src="/src/landing.js"></script>
   </body>

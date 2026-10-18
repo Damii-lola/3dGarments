@@ -72,14 +72,23 @@ server/                   Express API (Render). ESM, Node 22.
 supabase/
   migrations/             one SQL file per migration (idempotent)
   setup.sql               ALL migrations concatenated — paste into Supabase SQL editor to set up
+  emails/                 paste-ready email templates (Confirm signup ← confirm-signup.html)
 
 web/                      Vite + three.js SPA → GitHub Pages
-  index.html              LANDING — the way in: brand, "Find your size", the camera button, the promise
-  auth/index.html         ACCOUNT SCREEN — sign up (username, email, password ×2) or log in. No codes.
+  index.html              HOME — the camera card first, then the page brands read (problem, solution,
+                          how it works, benefits, privacy, book a demo)
   size/index.html         THE SCANNER — capture → trim → who → measure → results
-  src/landing.js          the landing's one button: a session → size/, otherwise → auth/
-  src/auth.js             the account form: validation, the username check, sign up, log in
+  auth/index.html         ACCOUNT SCREEN — sign up (username, email, password ×2) or log in. No codes.
+  pricing/index.html      PRICING — what is included, how it is added, what brands ask first (FAQ)
+  dashboard/index.html    DASHBOARD — the account, what we hold (a name and an email), and nothing else
+  src/nav.js              THE BAR, on every page: the four sections, the account panel, log out,
+                          and the sections that arrive as you reach them
+  src/landing.js          the home page's camera button (a session → size/, otherwise → auth/)
+                          and the demo form, which opens the visitor's own mail client
+  src/auth.js             the account form: validation, the username check, sign up, log in,
+                          and the expired/used confirmation link
   src/size.js             the door on /size (no account → /auth) and the lazy import of main.js
+  src/dashboard.js        paints the account row, and the log out beside it
   public/body/            BUILT rigged models: male.glb female.glb (from tools/body/prepare.py)
   src/main.js             the scanner: the body-scan flow (native camera hand-off, trim, measure, results)
   src/body-scan/          frames, pose (on-device landmarks), silhouette, trim, notes, overlay
@@ -189,18 +198,43 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
                   + on_auth_user_created on auth.users → handle_new_user() writes the profile row
 ```
 
-- **Three pages, not one page with routes**: `/` (landing), `/auth/` (account screen), `/size/` (the
-  scanner). Built as three Vite entries into three real directories, so GitHub Pages serves them
-  without any rewrite trick, and the links between them are relative (`size/`, `auth/`, `../auth/`,
-  `../size/`) so they survive the `/3dGarments/` base path. `dist/index.html` is copied to
-  `dist/404.html`, so a wrong address lands on the landing page.
+- **Five pages, not one page with routes**: `/` (home), `/auth/` (account screen), `/size/` (the
+  scanner), `/pricing/` and `/dashboard/`. Built as five Vite entries into five real directories, so
+  GitHub Pages serves them without any rewrite trick. The bar's links are written as `%BASE_URL%…`,
+  which Vite substitutes in the HTML at build time (in dev too), so one copy of the markup works in a
+  subdirectory and at a domain root — relative links would break as soon as two pages sit at
+  different depths. `dist/index.html` is copied to `dist/404.html`, so a wrong address lands on the
+  home page.
+- **The bar** (`src/nav.js` + `.nav` in styles.css) is on all five pages: the brand and Home, Sizing,
+  Dashboard, Pricing, then the account button, which opens a panel filled from the session — the
+  username and email, Dashboard, Log out, or "Log in or sign up" when nobody is signed in. Log out
+  reloads the page so a gated one notices. It is `sticky` on the marketing pages and `static` on
+  `/size` and `/auth` (`body.app`), where the room matters more than the chrome; on phones the four
+  sections fold into a menu and the bar is trimmed to a line, because at 189% they do not fit beside
+  the brand. Each page's own `<section data-reveal>` elements fade up as they are reached — the
+  styles only hide them while `<html>` carries `js`, a flag set by a one-line script before the first
+  paint and lifted by the page's own timer unless the observer reports first, so a page can never be
+  left invisible. `aria-current` is set by comparing paths, not by hand in five files.
 - **Click the camera on `/`** → a session? `/size` : `/auth`. Wait capped at 2.5 s; if the cloud
   settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
   in time, the account screen is the default.
+- **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
+  accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
+  current path), and the account screen picks the session up and opens the scanner. That is only half
+  of it: Supabase falls back to the project's **Site URL** whenever a redirect is not in its
+  **Redirect URLs** list, and the default Site URL is `http://localhost:3000` — which is exactly how a
+  confirmation link ends up on a blank page. Both settings are in README.md, step 3. A link that has
+  expired or been used comes back with `error_code=otp_expired` in the fragment: the account screen
+  says so and shows the login tab (`linkProblem()` in `src/auth.js`), and cleans the address bar.
+  `supabase/emails/confirm-signup.html` is the paste-ready template for Authentication → Email
+  Templates → Confirm signup.
 - **`/size` is behind the door**: `src/size.js` waits (4 s cap) for the cloud settings, then requires
   a *non-anonymous* session, else `location.replace('../auth/')`. No cloud configured (or no answer)
   → the scanner opens anyway; it measures on the device and needs no account. `main.js` is imported
   only after the door is open.
+- **`/dashboard` is not gated**: signed out is a state there, not an error, so the page shows the way
+  in instead of redirecting. It shows the account row and, deliberately, nothing else — the scanner
+  stores nothing, so a dashboard full of numbers would be a dashboard full of lies.
 - **The password is never ours.** Supabase auth holds it, hashed. `profiles` has no password column
   and must never have one. The email lives in `auth.users` too; `profiles` holds only the username.
 - **The username rides in the signup metadata** (`options.data.username`), and the trigger writes the
@@ -214,6 +248,11 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   refuses) puts every page in the no-cloud state, so the landing → account → scanner walk can be
   tested without an account. A session can also be faked: `sb-<project-ref>-auth-token` in
   localStorage, `expires_at` in the future, `user.is_anonymous: false`.
+- **"Book a Demo" is a mailto, and the address is a placeholder**: `DEMO_EMAIL` in `src/landing.js`
+  (and the form's `action` in `index.html`, same string) currently says `hello@3dgarments.com`. The
+  form opens the visitor's own mail client with the details filled in, so no form service is involved
+  and the reply goes to the address they typed — but nothing arrives until that address is a real
+  inbox. Change both together.
 
 ---
 

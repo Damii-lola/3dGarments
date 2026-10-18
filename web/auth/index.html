@@ -7,19 +7,53 @@
     <title>3dGarments — Your account</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
-  <body>
+  <body class="app">
     <div class="sky" aria-hidden="true">
       <span class="sky-layer sky-near"></span>
       <span class="sky-layer sky-mid"></span>
       <span class="sky-layer sky-far"></span>
     </div>
 
-    <main class="stage">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <span class="brand-name">3d<b>Garments</b></span>
-      </div>
+    <!-- The bar is on every page. The brand lives in it — one mark, the same
+         place, on all five — so the screens below start with their own thing. -->
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand nav-brand" href="%BASE_URL%" aria-label="3dGarments — home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">3d<b>Garments</b></span>
+        </a>
 
+        <nav class="nav-links" id="nav-links" aria-label="Sections">
+          <a class="nav-link" href="%BASE_URL%">Home</a>
+          <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+          <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+          <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+
+        <button class="nav-menu" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Sections">
+          <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <button class="nav-user" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+          <svg class="nav-user-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <path d="M5.2 20c.5-3.5 3.4-5.6 6.8-5.6s6.3 2.1 6.8 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <div class="nav-account" id="nav-account" hidden>
+          <p class="nav-account-name" id="nav-account-name">Not signed in</p>
+          <p class="nav-account-note" id="nav-account-note"></p>
+          <a class="nav-account-item" id="nav-account-dash" href="%BASE_URL%dashboard/" hidden>Dashboard</a>
+          <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+          <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="stage">
       <header class="intro" id="auth-head">
         <h1 id="auth-title">Create your account</h1>
         <p class="lead" id="auth-lead">
