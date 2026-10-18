@@ -52,12 +52,48 @@ export async function signIn(email, password) {
   return data.session;
 }
 
-export async function signUp(email, password) {
+/**
+ * Sign up with the username the account will be known by. It travels in the
+ * signup metadata, where the `handle_new_user` trigger (supabase/migrations/…
+ * accounts.sql) picks it up and writes the profile row — so an account cannot
+ * come into being without a name.
+ *
+ * Returns the raw supabase result: `data.session` is set when the project is
+ * set to log people straight in, and null when it still wants a click on a
+ * confirmation email first.
+ */
+export async function signUp(email, password, username) {
   const { data, error } = await (await sb()).auth.signUp({
-    email, password, options: { emailRedirectTo: window.location.origin + window.location.pathname },
+    email,
+    password,
+    options: {
+      data: { username },
+      emailRedirectTo: window.location.origin + window.location.pathname,
+    },
   });
   if (error) throw error;
   return data;
+}
+
+/**
+ * Is a username free? Answered by a SECURITY DEFINER function rather than by a
+ * select: a profile is readable by its owner alone, so a plain select would come
+ * back empty for everyone else's names and every one of them would look free.
+ */
+export async function usernameTaken(username) {
+  const c = await sb();
+  if (!c) return false;
+  const { data, error } = await c.rpc('username_taken', { candidate: username });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/**
+ * A session that is an account, as opposed to the anonymous ones the upload
+ * tools sign in as. false = nobody is signed in.
+ */
+export function isAccount(session) {
+  return Boolean(session && !session.user?.is_anonymous);
 }
 
 export async function signOut() {

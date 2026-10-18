@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d0e12" />
+    <title>3dGarments — Your account</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true">
+      <span class="sky-layer sky-near"></span>
+      <span class="sky-layer sky-mid"></span>
+      <span class="sky-layer sky-far"></span>
+    </div>
+
+    <main class="stage">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">3d<b>Garments</b></span>
+      </div>
+
+      <header class="intro" id="auth-head">
+        <h1 id="auth-title">Create your account</h1>
+        <p class="lead" id="auth-lead">
+          Your size belongs to you, so the scanner asks who it is measuring
+          before it opens the camera. No codes, no confirmations &mdash; a name,
+          an email, a password.
+        </p>
+      </header>
+
+      <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="Create an account or log in">
+        <button class="auth-tab on" id="tab-signup" type="button" role="tab" aria-selected="true" aria-controls="signup-form">Sign up</button>
+        <button class="auth-tab" id="tab-login" type="button" role="tab" aria-selected="false" aria-controls="login-form">Log in</button>
+      </div>
+
+      <form class="auth-form" id="signup-form" role="tabpanel" aria-labelledby="tab-signup" novalidate>
+        <label class="auth-field">
+          <span>Username</span>
+          <input id="signup-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="e.g. sam.okafor" />
+        </label>
+        <p class="auth-hint" id="username-state"></p>
+        <label class="auth-field">
+          <span>Email</span>
+          <input id="signup-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" />
+        </label>
+        <label class="auth-field">
+          <span>Password</span>
+          <input id="signup-password" name="password" type="password" autocomplete="new-password" />
+        </label>
+        <label class="auth-field">
+          <span>Confirm password</span>
+          <input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" />
+        </label>
+        <div class="actions">
+          <button class="btn-primary" id="signup-submit" type="submit">Create account</button>
+        </div>
+      </form>
+
+      <form class="auth-form" id="login-form" role="tabpanel" aria-labelledby="tab-login" hidden novalidate>
+        <label class="auth-field">
+          <span>Email</span>
+          <input id="login-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" />
+        </label>
+        <label class="auth-field">
+          <span>Password</span>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" />
+        </label>
+        <div class="actions">
+          <button class="btn-primary" id="login-submit" type="submit">Log in</button>
+        </div>
+      </form>
+
+      <p class="status" id="auth-status" role="status" aria-live="polite"></p>
+
+      <!-- Only ever shown when this copy has no accounts to sign in to. -->
+      <div class="actions" id="auth-local" hidden>
+        <button class="btn-ghost" id="auth-skip" type="button">Continue to the scanner</button>
+      </div>
+
+      <p class="privacy-pill">
+        <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.9" />
+        </svg>
+        Nothing is saved &mdash; your video never leaves your phone.
+      </p>
+    </main>
+
+    <script type="module" src="/src/auth.js"></script>
+  </body>
+</html>

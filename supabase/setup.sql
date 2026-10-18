@@ -174,3 +174,63 @@ do $$ begin
   alter table public.garment_groups add constraint garment_groups_status_check check (status in ('new', 'processing', 'ready', 'failed'));
 exception when duplicate_object then null; end $$;
 
+-- ================================================================ 20261018000000_accounts.sql
+-- Accounts: public.profiles holds the username (the email and the hashed password stay in
+-- Supabase's own auth.users), usernames are unique and case-insensitive, RLS keeps a profile
+-- to its owner, username_taken() lets the signup form check a name without reading the table,
+-- and on_auth_user_created gives every new account its profile row.
+create table if not exists public.profiles (
+  id         uuid primary key references auth.users (id) on delete cascade,
+  username   text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists profiles_username_key on public.profiles (lower(username));
+do $$ begin
+  alter table public.profiles add constraint profiles_username_shape
+    check (username ~ '^[A-Za-z0-9._-]{3,20}$');
+exception when duplicate_object then null; end $$;
+
+alter table public.profiles enable row level security;
+drop policy if exists "profiles: owner read" on public.profiles;
+create policy "profiles: owner read" on public.profiles
+  for select using (auth.uid() = id);
+drop policy if exists "profiles: owner update" on public.profiles;
+create policy "profiles: owner update" on public.profiles
+  for update using (auth.uid() = id) with check (auth.uid() = id);
+
+create or replace function public.username_taken(candidate text)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles where lower(username) = lower(trim(candidate))
+  );
+$$;
+revoke all on function public.username_taken(text) from public;
+grant execute on function public.username_taken(text) to anon, authenticated;
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  wanted text := lower(trim(coalesce(new.raw_user_meta_data ->> 'username', '')));
+begin
+  if wanted !~ '^[a-z0-9._-]{3,20}$' then
+    raise exception 'username must be 3-20 characters of letters, digits, dot, dash or underscore'
+      using errcode = 'check_violation';
+  end if;
+  insert into public.profiles (id, username) values (new.id, wanted)
+  on conflict (id) do update set username = excluded.username;
+  return new;
+end;
+$$;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+

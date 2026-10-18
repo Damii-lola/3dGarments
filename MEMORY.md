@@ -74,8 +74,15 @@ supabase/
   setup.sql               ALL migrations concatenated — paste into Supabase SQL editor to set up
 
 web/                      Vite + three.js SPA → GitHub Pages
+  index.html              LANDING — the way in: brand, "Find your size", the camera button, the promise
+  auth/index.html         ACCOUNT SCREEN — sign up (username, email, password ×2) or log in. No codes.
+  size/index.html         THE SCANNER — capture → trim → who → measure → results
+  src/landing.js          the landing's one button: a session → size/, otherwise → auth/
+  src/auth.js             the account form: validation, the username check, sign up, log in
+  src/size.js             the door on /size (no account → /auth) and the lazy import of main.js
   public/body/            BUILT rigged models: male.glb female.glb (from tools/body/prepare.py)
-  src/main.js             fitting-room UI (the whole panel: sex, skin, measurements, body controls)
+  src/main.js             the scanner: the body-scan flow (native camera hand-off, trim, measure, results)
+  src/body-scan/          frames, pose (on-device landmarks), silhouette, trim, notes, overlay
   src/human/
     human.js              Human class — loads GLBs, arm hang solver, armpit fix, pose engine
     body.js               ModelController, RANGES, BUILDS, SKIN_STOPS, ABDOMEN, LIMITS, measurements
@@ -171,6 +178,42 @@ garment_groups    id, user_id, name, status, photos jsonb, processed_at
 Storage bucket: `garments` (private). Paths: `<user_id>/groups/<group_id>/<image_id>.<ext>`
 
 Anonymous sign-ins must be enabled in Supabase Auth (uploads reach the cloud as anon users).
+
+---
+
+## Accounts (the way into /size)
+
+```
+profiles          id uuid → auth.users (cascade), username text (unique, lower-cased), created_at
+                  + username_taken(candidate text) → boolean   (SECURITY DEFINER, anon may call it)
+                  + on_auth_user_created on auth.users → handle_new_user() writes the profile row
+```
+
+- **Three pages, not one page with routes**: `/` (landing), `/auth/` (account screen), `/size/` (the
+  scanner). Built as three Vite entries into three real directories, so GitHub Pages serves them
+  without any rewrite trick, and the links between them are relative (`size/`, `auth/`, `../auth/`,
+  `../size/`) so they survive the `/3dGarments/` base path. `dist/index.html` is copied to
+  `dist/404.html`, so a wrong address lands on the landing page.
+- **Click the camera on `/`** → a session? `/size` : `/auth`. Wait capped at 2.5 s; if the cloud
+  settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
+  in time, the account screen is the default.
+- **`/size` is behind the door**: `src/size.js` waits (4 s cap) for the cloud settings, then requires
+  a *non-anonymous* session, else `location.replace('../auth/')`. No cloud configured (or no answer)
+  → the scanner opens anyway; it measures on the device and needs no account. `main.js` is imported
+  only after the door is open.
+- **The password is never ours.** Supabase auth holds it, hashed. `profiles` has no password column
+  and must never have one. The email lives in `auth.users` too; `profiles` holds only the username.
+- **The username rides in the signup metadata** (`options.data.username`), and the trigger writes the
+  profile row from it, so an account cannot exist without a name. A duplicate username makes the whole
+  signup fail (unique index on `lower(username)`) — `username_taken()` is only there to say so early.
+- **Email confirmation must be OFF** (Authentication → Providers → Email → Confirm email) for the
+  "no verification step" flow the owner asked for: with it on, `signUp` returns no session and the
+  page says "confirm the link we sent, then log in here" instead of opening the scanner. The project
+  `yzqmpyxfwcqreymbqrhc` still had `mailer_autoconfirm: false` as of 2026-10-18.
+- Local development with no cloud: `VITE_API_URL=http://127.0.0.1:5999 npm run dev` (an address that
+  refuses) puts every page in the no-cloud state, so the landing → account → scanner walk can be
+  tested without an account. A session can also be faked: `sb-<project-ref>-auth-token` in
+  localStorage, `expires_at` in the future, `user.is_anonymous: false`.
 
 ---
 

@@ -23,7 +23,7 @@
         <span class="brand-name">3d<b>Garments</b></span>
       </div>
 
-      <header class="intro" id="intro">
+      <header class="intro">
         <h1>Find your size</h1>
         <p class="lead">
           Record a 360&deg; video of yourself, turning slowly all the way around:
@@ -32,43 +32,23 @@
         </p>
       </header>
 
-      <!-- One tap opens the two ways in. Both are labels over a real file
-           input, so the hand-off to the phone's own camera app needs no
-           scripting and no getUserMedia. -->
-      <div class="capture" id="capture">
-        <button class="open-camera" id="open-camera" type="button" aria-expanded="false" aria-controls="capture-choice">
+      <!-- One tap. It goes to the account screen, and the account screen goes to
+           the scanner: a size is worth remembering, so it is tied to a name
+           rather than to a browser tab. -->
+      <div class="capture">
+        <button class="open-camera" id="open-camera" type="button">
           <svg class="cam-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
             <circle cx="12" cy="12.2" r="3.6" />
           </svg>
           <span class="cam-cta">Click to Record</span>
         </button>
-
-        <div class="capture-choice" id="capture-choice" hidden>
-          <label class="capture-btn" for="video-record">
-            <input id="video-record" class="visually-hidden" type="file" accept="video/*" capture="environment" />
-            <svg class="capture-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="2.6" y="6.6" width="13" height="10.8" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.7" />
-              <path d="M16.4 11.4l4.6-2.7v6.6l-4.6-2.7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
-            </svg>
-            <span class="capture-label">Record a video</span>
-          </label>
-          <label class="capture-btn" for="video-upload">
-            <input id="video-upload" class="visually-hidden" type="file" accept="video/*" />
-            <svg class="capture-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 16.2V4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-              <path d="M7.6 8.6L12 4.2l4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M4.6 14.6v3.4a1.8 1.8 0 0 0 1.8 1.8h11.2a1.8 1.8 0 0 0 1.8-1.8v-3.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-            </svg>
-            <span class="capture-label">Upload a video</span>
-          </label>
-        </div>
       </div>
 
       <!-- Under the action, on the same screen: said here rather than in a
            policy nobody reads, because this is the moment the question is
            actually in someone's head. -->
-      <div class="privacy" id="privacy">
+      <div class="privacy">
         <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
           <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
@@ -82,195 +62,8 @@
           </p>
         </div>
       </div>
-
-      <!-- Step 2: trim the clip's LENGTH before analysing -->
-      <section class="trim" id="trim" hidden>
-        <h2 class="step-title">Trim your clip</h2>
-        <p class="step-hint">Keep the part where you turn all the way around, with your arms held a hand's width from your sides. Drag the sliders to trim off the start and the end.</p>
-
-        <video id="trim-video" class="trim-video" controls playsinline preload="metadata"></video>
-
-        <div class="timeline"><div class="timeline-fill" id="timeline-fill"></div></div>
-
-        <div class="trim-rows">
-          <label class="trim-row">
-            <span class="trim-row-label">Start</span>
-            <input type="range" id="trim-start" min="0" max="100" step="0.25" value="0" />
-            <output id="trim-start-out" class="trim-out">0:00</output>
-          </label>
-          <label class="trim-row">
-            <span class="trim-row-label">End</span>
-            <input type="range" id="trim-end" min="0" max="100" step="0.25" value="100" />
-            <output id="trim-end-out" class="trim-out">0:00</output>
-          </label>
-        </div>
-
-        <p class="step-note" id="trim-note"></p>
-
-        <!-- Scale is the single biggest source of error in the whole pipeline:
-             every centimetre comes from an assumed head length, so a 4% head
-             error moves every measurement by 4%. An object of a known size,
-             marked on one frame, sets the scale outright. -->
-        <details class="calib" id="calib">
-          <summary class="calib-summary">Make it exact &mdash; mark something of a known size</summary>
-          <p class="calib-hint">Hold something you know the size of in one frame &mdash; a bank card flat against your chest, an A4 sheet, a ruler &mdash; then find that frame below and drag the two dots onto its ends. The app then measures you against that instead of against your head, which is the biggest single source of error left.</p>
-
-          <label class="calib-field">
-            <span class="calib-field-label">What are you holding?</span>
-            <select id="calib-what">
-              <option value="">Nothing &mdash; use my head instead</option>
-              <option value="card">A bank card (8.56 cm)</option>
-              <option value="a4short">An A4 sheet, short edge (21.0 cm)</option>
-              <option value="a4long">An A4 sheet, long edge (29.7 cm)</option>
-              <option value="ruler">A 30 cm ruler (30 cm)</option>
-              <option value="door">A standard door (203 cm)</option>
-            </select>
-          </label>
-
-          <label class="calib-field" id="calib-time-field" hidden>
-            <span class="calib-field-label">Frame</span>
-            <input type="range" id="calib-time" min="0" max="100" step="0.25" value="0" />
-          </label>
-
-          <div class="calib-stage" id="calib-stage" hidden>
-            <canvas id="calib-canvas" width="360" height="640"></canvas>
-            <button type="button" class="calib-dot" id="calib-dot-a" aria-label="First end of the object"></button>
-            <button type="button" class="calib-dot" id="calib-dot-b" aria-label="Second end of the object"></button>
-          </div>
-
-          <p class="step-note" id="calib-note"></p>
-        </details>
-
-        <!-- The gender group decides the head-length constant, the size chart AND
-             which of the two measurement sheets is read, so it is asked rather
-             than guessed: a silhouette cannot tell a bust from a chest. -->
-        <fieldset class="who">
-          <legend class="who-legend">Who is this video of?</legend>
-          <div class="who-buttons">
-            <button type="button" class="who-btn" data-gender="male" aria-pressed="false">A man</button>
-            <button type="button" class="who-btn" data-gender="female" aria-pressed="false">A woman</button>
-          </div>
-          <p class="who-hint">Men's and women's sheets measure different things, so pick the right one.</p>
-        </fieldset>
-
-        <!-- Fabric sits between the tape and the body, and it is over every
-             frame, so its thickness comes off every girth. Left unsaid it stays
-             in the numbers. -->
-        <fieldset class="who">
-          <legend class="who-legend">What are you wearing?</legend>
-          <div class="fit-grid">
-            <label class="calib-field">
-              <span class="calib-field-label">Top</span>
-              <select id="wear-top">
-                <option value="">Not sure</option>
-                <option value="t-shirt">Thin t-shirt</option>
-                <option value="polo">Polo shirt</option>
-                <option value="flannel">Flannel / overshirt</option>
-                <option value="jumper">Knit jumper</option>
-                <option value="hoodie">Hoodie / sweatshirt</option>
-                <option value="jacket">Jacket</option>
-                <option value="puffer">Puffer / down jacket</option>
-                <option value="bare">Bare torso</option>
-              </select>
-            </label>
-            <label class="calib-field">
-              <span class="calib-field-label">Fit</span>
-              <select id="wear-fit">
-                <option value="regular">Regular</option>
-                <option value="fitted">Fitted</option>
-                <option value="loose">Loose</option>
-              </select>
-            </label>
-            <label class="calib-field">
-              <span class="calib-field-label">Lower</span>
-              <select id="wear-lower">
-                <option value="">Not sure</option>
-                <option value="bare">Bare legs / shorts</option>
-                <option value="jeans">Jeans</option>
-                <option value="chinos">Chinos / trousers</option>
-                <option value="joggers">Joggers / sweatpants</option>
-                <option value="thick">Thick or lined trousers</option>
-              </select>
-            </label>
-          </div>
-          <p class="who-hint">Saying what it is takes the fabric's thickness off the numbers, instead of leaving it on as if it were you.</p>
-        </fieldset>
-
-        <div class="actions">
-          <button class="btn-primary" id="analyze-btn" type="button" disabled>Analyze my size</button>
-          <button class="btn-ghost" id="start-over-trim" type="button">Start over</button>
-        </div>
-      </section>
-
-      <!-- Step 3: results. The numbers ARE the answer, grouped so a person can
-           find their own waistline in three seconds: everything that goes
-           around or across the body, then everything that is a length. Every
-           value carries its unit, holding any card says what the number is and
-           where the tape goes for it, and the estimate notice says plainly that
-           a video is not a tape measure. -->
-      <section class="analysis" id="analysis" hidden>
-        <header class="result-head">
-          <p class="result-kicker">Your measurements</p>
-          <h1 class="result-title" id="result-title">Read from your video</h1>
-          <p class="result-lead" id="measures-lead">Hold any number to see what it is.</p>
-        </header>
-
-        <p class="estimate">
-          <span class="estimate-mark" aria-hidden="true">&asymp;</span>
-          <span>
-            <b>Everything here is an estimate.</b> These numbers are read off a
-            video, not from a tape measure, so they may not be exactly right.
-          </span>
-        </p>
-
-        <ul class="facts" id="facts"></ul>
-
-        <p class="privacy-pill">
-          <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
-            <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.9" />
-          </svg>
-          Nothing is saved &mdash; your video never leaves your phone.
-        </p>
-
-        <div class="measure-groups" id="measure-groups"></div>
-
-        <ul class="notes" id="analysis-notes"></ul>
-
-        <div class="actions">
-          <button class="btn-ghost" id="retake-btn" type="button">Record again</button>
-          <button class="btn-ghost" id="start-over-btn" type="button">Start over</button>
-        </div>
-      </section>
-
-      <!-- The dim the box sits on. Visual only: a tap passes straight through it
-           to the page beneath, and reaching the page is what closes the box. -->
-      <div class="tip-scrim" id="tip-scrim" hidden></div>
-
-      <!-- What a held card says: what it is in plain words, where the tape goes
-           for it, and the number in both units. A message box rather than a
-           tooltip, because a tooltip on a phone lands under your thumb. -->
-      <div class="tip" id="tip" role="dialog" aria-live="polite" hidden>
-        <p class="tip-title" id="tip-title"></p>
-        <p class="tip-value" id="tip-value"></p>
-        <p class="tip-what" id="tip-what"></p>
-        <p class="tip-where" id="tip-where"></p>
-        <p class="tip-close">Tap anywhere to close</p>
-      </div>
-
-      <!-- What the app actually saw: the frames, the mask, and the rows the
-           widths were read at. A refusal is nearly always something visible in
-           the picture — an arm pressed to the ribs, feet out of frame — so it is
-           shown rather than described. -->
-      <details class="seen" id="seen" hidden>
-        <summary>What the app saw</summary>
-        <p class="seen-note" id="seen-note"></p>
-        <ol class="seen-frames" id="seen-frames"></ol>
-      </details>
-
-      <p class="status" id="status" role="status" aria-live="polite"></p>
     </main>
 
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/landing.js"></script>
   </body>
 </html>

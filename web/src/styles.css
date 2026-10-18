@@ -1009,6 +1009,62 @@ body {
 .status.error { color: #ff5470; }
 .status.ok { color: var(--good); }
 
+/* ---------- accounts ----------
+   Two ways in on one screen: create an account, or log into one. The fields are
+   the only typing in the whole site, so they are given the same dark-panel
+   treatment as the selects rather than left as the browser's own white boxes. */
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+.auth-tab {
+  height: 2.6rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s var(--ease-soft), background 0.2s var(--ease-soft);
+}
+.auth-tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.auth-tab.on { color: var(--text); background: rgba(255, 255, 255, 0.09); }
+.auth-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.auth-form { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; text-align: left; }
+.auth-field { display: grid; gap: 0.3rem; }
+.auth-field > span { font-size: 0.78rem; color: var(--faint); }
+.auth-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line-2);
+  border-radius: 0.6rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font: inherit;
+}
+.auth-field input::placeholder { color: var(--faint); }
+.auth-field input:focus { outline: none; border-color: var(--accent); }
+.auth-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The answer to "is that username free?", said softly when it is free and
+   plainly when it is not. */
+.auth-hint { margin: -0.25rem 0 0; min-height: 1.05em; font-size: 0.78rem; color: var(--faint); }
+.auth-hint.good { color: var(--good); }
+.auth-hint.bad { color: #ff5470; }
+
+/* The landing's one button, while the site works out whether an account is
+   needed before it can open the camera. */
+.open-camera:disabled { opacity: 0.55; pointer-events: none; }
+
 /* ---------- phones: bump the whole UI to 189% ----------
    Matched two ways: a narrow viewport, OR any touch-first device. The second
    path matters because a phone browsing in "desktop site" mode (or a large
@@ -1055,6 +1111,14 @@ body {
   /* Three stacked selects rather than two squeezed ones: at this scale "Not
      sure" was being clipped to "Not sur…". */
   .fit-grid { grid-template-columns: 1fr; }
+  /* The account screen has to fit on one screen as well, so its fields step
+     back the same way the prose does. */
+  .auth-tabs { padding: 0.25rem; }
+  .auth-tab { height: 2.1rem; font-size: 0.68rem; }
+  .auth-field { gap: 0.25rem; }
+  .auth-field > span { font-size: 0.62rem; }
+  .auth-field input { padding: 0.5rem 0.6rem; font-size: 0.8rem; }
+  .auth-hint { font-size: 0.6rem; }
 }
 
 @media (max-width: 380px) {

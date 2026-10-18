@@ -18,6 +18,8 @@ The bodies are the models in `assets/` (FBX), turned into rigged web models (`we
 
 The fitting room runs entirely in the browser and needs no backend. The API and Supabase back the garment pipeline (cut-out, measurement, AI description) that clothing upload builds on.
 
+The public site is three pages: `/` (the landing — one camera button), `/auth/` (create an account with a username, an email and a password, or log in; no verification step) and `/size/` (the scanner — record a 360° turn, trim it, get a size). The camera on the landing sends you to the account screen, and the account screen hands you on to the scanner; opening `/size` without an account does the same.
+
 ## One-time setup (about 10 minutes)
 
 ### 1. Supabase
@@ -27,6 +29,8 @@ The fitting room runs entirely in the browser and needs no backend. The API and 
    - **URL**, **anon key** and **service_role key**: Settings → API
    - **Access token**: Account → Access Tokens
 3. Under Authentication → URL Configuration, set **Site URL** to `https://damii-lola.github.io/3dGarments/`.
+4. Apply the schema: paste `supabase/setup.sql` into SQL Editor → New query → Run (it is idempotent). It creates the tables, the RLS policies, the private `garments` bucket, and `profiles` — the one row per account that holds the username, plus the trigger that writes it on every signup and the `username_taken()` check the signup form calls.
+5. Under Authentication → Providers → Email, turn **Confirm email** off. Signup then opens the scanner immediately; left on, it emails a link instead and the account screen says so.
 
 The migration in `supabase/migrations` creates the tables, RLS policies and the private `garments` bucket. CI applies it automatically.
 
