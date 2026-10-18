@@ -14,12 +14,13 @@ export const CM_PER_IN = 2.54;
 /** Documented population constants — the only assumptions, and all about scale. */
 export const HEAD_HEIGHT_CM = { male: 23.5, female: 22.5, unsure: 23.0 };
 /**
- * Adult stature runs about 7.1-7.9 of the subject's own head-heights, so a frame
- * that reads outside that range has a mis-placed head landmark (usually a chin
- * set too high). Rather than throw the frame away we nudge the scale back inside
- * the range, bounded, because the head is what every other number is scaled by.
+ * Adult stature runs 7.46 of its own head-heights in ANSUR II men and 7.50 in the
+ * women, with a spread either side of that, so a frame reading outside 7.1-7.9 has
+ * a mis-placed head landmark (usually a chin set too high). Rather than throw the
+ * frame away we nudge the scale to the edge of the range, bounded, because the
+ * head is what every other number is scaled by.
  */
-export const TARGET_HEAD_UNITS = 7.5;
+export const HEAD_UNITS_RANGE = [7.1, 7.9];
 export const HEAD_UNIT_CORRECTION_LIMIT = 0.08;
 /**
  * Depth as a fraction of width for a cross-section, used only when no side view
@@ -416,13 +417,25 @@ export function frameScale(frame) {
   if (headSpan && headSpan > 0.02 && frame.visible?.head !== false) {
     const headCm = HEAD_HEIGHT_CM[frame.gender] || HEAD_HEIGHT_CM.unsure;
 
-    // If the whole body is in shot we can check the head against adult
-    // proportions and correct a small head-landmark error, which would
-    // otherwise inflate every measurement by the same percentage.
+    // If the whole body is in shot, the head can be checked against adult
+    // proportions. A ratio INSIDE the adult band is a head that was placed
+    // correctly, so the head stays the ruler and nothing is changed; only a ratio
+    // outside the band is evidence that the head itself was mis-placed, and then
+    // the scale moves to the nearest edge of the band and no further.
+    //
+    // This used to pull every full-body frame toward the middle of the band, which
+    // made the whole body the ruler and the head a decoration. Projecting 80 real
+    // ANSUR II bodies into camera geometry showed what that costs: putting the feet
+    // in shot roughly doubled the error on every row for both sexes (a man's chest
+    // 1.84% -> 3.52% mean absolute error, p90 3.9% -> 8.0%) and gave every woman a
+    // +3% bias, because "7.5 head-heights" is a man's ratio and a whole-body ruler
+    // cannot report anyone whose height is not the one it assumes. It also meant
+    // the height it printed was that assumption rather than a measurement.
     const statureSpan = spanY(frame, point(frame, 'headTop')?.y, meanY(frame, 'footL', 'footR'));
     if (statureSpan && statureSpan > headSpan * 5) {
       const units = statureSpan / headSpan;
-      headUnitsCorrection = clamp(units / TARGET_HEAD_UNITS, [1 - HEAD_UNIT_CORRECTION_LIMIT, 1 + HEAD_UNIT_CORRECTION_LIMIT]);
+      const adult = clamp(units, HEAD_UNITS_RANGE);
+      headUnitsCorrection = clamp(units / adult, [1 - HEAD_UNIT_CORRECTION_LIMIT, 1 + HEAD_UNIT_CORRECTION_LIMIT]);
     }
     const effectiveSpan = headSpan * headUnitsCorrection;
 

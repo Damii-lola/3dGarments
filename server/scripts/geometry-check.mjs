@@ -21,6 +21,7 @@ import {
   toIn,
 } from '../src/lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../src/lib/catalogue.js';
+import { bestSize } from '../src/lib/sizing.js';
 
 const IN_CM = 2.54;
 
@@ -473,21 +474,47 @@ checkTrue('and nothing below the waist is in the list', !item(upper, 'waistToFlo
 checkTrue('every item that IS listed carries a number', upper.items.every((i) => Number.isFinite(i.in) && i.in > 0), 'all measured');
 checkTrue('each item can say how it was worked out', upper.items.every((i) => typeof i.how === 'string' && i.how.length > 8), upper.items[0]?.how);
 
-console.log('\n== a mis-placed head is corrected against adult proportions ==');
-// The model put the chin too high, so the head reads short and the body looks
-// 8.0 head-heights tall instead of 7.5. Everything scaled off that head would
-// come out ~7% too big.
-const longBody = frontFrame();
-longBody.landmarks.footL = { x: 0.47, y: 0.06 + 0.95 * 0.75 * (8.0 / 7.5) };
-longBody.landmarks.footR = { x: 0.53, y: longBody.landmarks.footL.y };
-const longScaled = scaled(longBody);
-checkTrue('an 8-head body gets its scale pulled back', longScaled.scale.headUnitsCorrection > 1.03 && longScaled.scale.headUnitsCorrection <= 1.08, `x${longScaled.scale.headUnitsCorrection}`);
-checkTrue('the correction shrinks the scale, not inflates it', longScaled.scale.cmPerWidth < front.scale.cmPerWidth, `${longScaled.scale.cmPerWidth.toFixed(1)} vs ${front.scale.cmPerWidth.toFixed(1)} cm/width`);
-checkTrue('the corrected height lands in adult range', measureHeight([longScaled]).in < 71 && measureHeight([longScaled]).in > 68, `${measureHeight([longScaled]).in.toFixed(1)} in`);
-const wildBody = frontFrame();
-wildBody.landmarks.footL = { x: 0.47, y: 0.06 + 0.95 * 0.75 * 1.6 };
-wildBody.landmarks.footR = { x: 0.53, y: wildBody.landmarks.footL.y };
-checkTrue('the correction is bounded at 8%', scaled(wildBody).scale.headUnitsCorrection <= 1.08, `x${scaled(wildBody).scale.headUnitsCorrection}`);
+console.log('\n== the size is the chart row that fits worst-case best ==');
+// A chart lists three girths per size and a body need not agree with all three.
+// Sizing off the chest alone is what put a real 38" chest - exactly on the 36/40
+// boundary - on S while his hips were saying M.
+const onTheLine = bestSize('male', { chest: 38.0, waist: 30.2, hips: 41.8 });
+checkTrue('a body squarely in one row takes that row', bestSize('male', { chest: 36.2, waist: 30.1, hips: 38.2 }).sizeKey === 'S', bestSize('male', { chest: 36.2, waist: 30.1, hips: 38.2 }).sizeKey);
+checkTrue('the live 38" chest is scored against the waist AND the hips', onTheLine.misfit > 3.7 && onTheLine.misfit < 3.9, `worst row disagreement ${onTheLine.misfit.toFixed(2)} in`);
+checkTrue('and the same body with the survey waist picks the larger size', bestSize('male', { chest: 38.0, waist: 32.4, hips: 41.8 }).sizeKey === 'M', `${bestSize('male', { chest: 38.0, waist: 32.4, hips: 41.8 }).sizeKey} - his waist reads 2" narrow, and that is the whole reason the two rules disagree here`);
+checkTrue('a chest-only measurement is still the nearest nominal', bestSize('male', { chest: 38.0 }).sizeKey === 'S' && bestSize('male', { chest: 41.5 }).sizeKey === 'M', `${bestSize('male', { chest: 38.0 }).sizeKey} / ${bestSize('male', { chest: 41.5 }).sizeKey}`);
+checkTrue('women are scored on the bust column, waist and hips', bestSize('female', { chest: 36.0, waist: 28.0, hips: 38.0 }).sizeKey === 'M' && bestSize('female', { chest: 39.0, waist: 31.0, hips: 41.0 }).sizeKey === 'L', `${bestSize('female', { chest: 39, waist: 31, hips: 41 }).sizeKey}`);
+checkTrue('no chest means no size', bestSize('male', { waist: 30, hips: 38 }) === null);
+checkTrue('a size row can be read back for the chart the page shows', bestSize('male', { chest: 40, waist: 34, hips: 40 }).row.chest === 40);
+
+console.log('\n== the head stays the ruler; the whole body only cross-checks it ==');
+// The scale used to be pulled to the middle of the adult band on every frame that
+// had the feet in shot, which made the whole body the ruler and the head a
+// decoration: every measurement came out multiplied by (176.25 cm / the person's
+// real height). Projecting 80 real ANSUR II bodies into camera geometry showed
+// what that costs - if the feet are in shot, the error roughly doubles on every
+// row for both sexes (a man's chest 1.84% -> 3.52% mean absolute, p90 3.9% ->
+// 8.0%) and every woman gains a +3% bias, because "7.5 head-heights" is a man's
+// ratio. A ratio outside the band is still treated as a mis-placed head.
+const bodyOfUnits = (units) => {
+  const f = frontFrame();
+  f.landmarks.footL = { x: 0.47, y: 0.06 + 0.95 * 0.75 * (units / 7.5) };
+  f.landmarks.footR = { x: 0.53, y: f.landmarks.footL.y };
+  return f;
+};
+const inside = scaled(bodyOfUnits(7.7));
+checkTrue('a body inside the adult band keeps its own head as the ruler', inside.scale.headUnitsCorrection === 1, `x${inside.scale.headUnitsCorrection}`);
+const noFeet = bodyOfUnits(7.7);
+delete noFeet.landmarks.footL;
+delete noFeet.landmarks.footR;
+noFeet.visible.feet = false;
+checkTrue('so a full-body frame scales exactly as the same head on its own', Math.abs(scaled(noFeet).scale.cmPerWidth - inside.scale.cmPerWidth) < 1e-9, `${scaled(noFeet).scale.cmPerWidth.toFixed(3)} vs ${inside.scale.cmPerWidth.toFixed(3)} cm/width`);
+checkTrue('and its height is measured, not assumed to be 176.25 cm tall', Math.abs(measureHeight([inside]).in - 71.24) < 0.5, `${measureHeight([inside]).in.toFixed(1)} in for a 7.7-head body`);
+const longBody = scaled(bodyOfUnits(8.4));
+checkTrue('a body over the band is nudged to its edge, not to the middle', longBody.scale.headUnitsCorrection > 1.05 && longBody.scale.headUnitsCorrection <= 1.08, `x${longBody.scale.headUnitsCorrection}`);
+checkTrue('the nudge shrinks the scale, not inflates it', longBody.scale.cmPerWidth < front.scale.cmPerWidth, `${longBody.scale.cmPerWidth.toFixed(1)} vs ${front.scale.cmPerWidth.toFixed(1)} cm/width`);
+checkTrue('a body under the band is nudged the other way', scaled(bodyOfUnits(6.6)).scale.headUnitsCorrection < 0.95, `x${scaled(bodyOfUnits(6.6)).scale.headUnitsCorrection}`);
+checkTrue('the correction is bounded at 8%', scaled(bodyOfUnits(12)).scale.headUnitsCorrection <= 1.08, `x${scaled(bodyOfUnits(12)).scale.headUnitsCorrection}`);
 
 console.log(`\n${fail === 0 ? 'ALL GOOD' : 'FAILURES'} - ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

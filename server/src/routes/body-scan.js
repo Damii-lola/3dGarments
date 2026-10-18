@@ -75,6 +75,7 @@ import {
   spanX,
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
+import { CHARTS, bestSize } from '../lib/sizing.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -85,26 +86,6 @@ const upload = multer({
 export const bodyScan = Router();
 
 const log = (...args) => console.log('[body-scan]', ...args);
-
-/** US retail size charts (inches). Men size on chest, women on bust. */
-const CHARTS = {
-  male: {
-    XS: { chest: 32, waist: 26, hips: 34, height: 66 },
-    S: { chest: 36, waist: 30, hips: 38, height: 68 },
-    M: { chest: 40, waist: 34, hips: 40, height: 70 },
-    L: { chest: 44, waist: 38, hips: 44, height: 71 },
-    XL: { chest: 48, waist: 42, hips: 48, height: 72 },
-    XXL: { chest: 52, waist: 46, hips: 52, height: 73 },
-  },
-  female: {
-    XS: { bust: 32, waist: 24, hips: 34, height: 62 },
-    S: { bust: 34, waist: 26, hips: 36, height: 64 },
-    M: { bust: 36, waist: 28, hips: 38, height: 65 },
-    L: { bust: 38, waist: 30, hips: 40, height: 66 },
-    XL: { bust: 40, waist: 33, hips: 43, height: 67 },
-    XXL: { bust: 42, waist: 36, hips: 46, height: 68 },
-  },
-};
 
 /** Plausible adult ranges in inches — used to reject/repair absurd values. */
 const RANGES = {
@@ -470,18 +451,6 @@ function combineClothing(analyses) {
     waistband: waistband || null,
     note,
   };
-}
-
-function bestSize(sex, girth) {
-  if (girth == null) return null;
-  const chart = CHARTS[sex];
-  const key = sex === 'female' ? 'bust' : 'chest';
-  let best = null;
-  for (const [sizeKey, row] of Object.entries(chart)) {
-    const diff = Math.abs(girth - row[key]);
-    if (!best || diff < best.diff) best = { sizeKey, diff, row, key };
-  }
-  return best;
 }
 
 /* ---------------- route ---------------- */
@@ -978,11 +947,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   let size = null;
   let sizeBasis = null;
   if (gender.guess === 'male' || gender.guess === 'female') {
-    size = bestSize(gender.guess, adjusted.chest);
+    size = bestSize(gender.guess, adjusted);
     if (size) sizeBasis = gender.guess;
   } else if (adjusted.chest != null) {
-    const m = bestSize('male', adjusted.chest);
-    const f = bestSize('female', adjusted.chest);
+    const m = bestSize('male', adjusted);
+    const f = bestSize('female', adjusted);
     if (m && f) {
       size = m.diff <= f.diff ? m : f;
       sizeBasis = m.diff <= f.diff ? 'male' : 'female';
