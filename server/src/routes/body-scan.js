@@ -81,6 +81,7 @@ import {
   spanX,
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
+import { aiErrorMessage, classifyAiError, recordVision } from '../lib/cloudflare.js';
 import { bestSize, chartFromInput } from '../lib/sizing.js';
 
 /**
@@ -278,16 +279,26 @@ async function callModelRaw(model, messages, opts = {}) {
       },
       body: JSON.stringify(payload),
     });
-    if (res.ok) return res.json();
+    if (res.ok) {
+      recordVision(true);
+      return res.json();
+    }
     const body = await res.text().catch(() => '');
+    const kind = classifyAiError(res.status, body);
+    recordVision(false, { status: res.status, kind, message: body.slice(0, 300) });
     // Cloudflare's GPUs are shared: a burst of frames can be told "capacity
     // temporarily exceeded". One short wait and the same frame is read for
-    // real, which is much better than throwing a measurement away.
-    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+    // real, which is much better than throwing a measurement away. A spent
+    // daily allowance is NOT that — it will not clear in a second.
+    if ((kind === 'capacity' || kind === 'upstream') && attempt < 2) {
       await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
       continue;
     }
-    throw new HttpError(502, `Cloudflare AI error: ${res.status} ${body.slice(0, 400)}`);
+    if (kind === 'quota') {
+      log('!! Workers AI daily allowance is spent — every scan will refuse until it resets (around 00:00 UTC)');
+    }
+    if (kind === 'auth') log('!! Workers AI rejected the API token (401/403) — a new token is needed');
+    throw new HttpError(502, aiErrorMessage(kind));
   }
 }
 

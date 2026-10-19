@@ -39,6 +39,80 @@ export async function runModel(model, input, { timeoutMs = 60_000 } = {}) {
   return json?.result ?? json;
 }
 
+/* ------------------------------------------------------------------ */
+/* What Workers AI last said                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A running note of every vision call, so "are we out of allowance?" is a
+ * question the deployment can answer itself instead of a guess made from a log
+ * that Render has already scrolled past. In memory only: a restart resets the
+ * count, which is honest — it is a monitor, not a ledger.
+ */
+const monitor = {
+  calls: 0,
+  callsToday: 0,
+  day: new Date().toISOString().slice(0, 10),
+  errors: 0,
+  lastOkAt: null,
+  lastError: null, // { at, status, kind, message }
+};
+
+export function recordVision(ok, info = {}) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== monitor.day) {
+    monitor.day = today;
+    monitor.callsToday = 0;
+  }
+  monitor.calls += 1;
+  monitor.callsToday += 1;
+  if (ok) {
+    monitor.lastOkAt = new Date().toISOString();
+    return;
+  }
+  monitor.errors += 1;
+  monitor.lastError = { at: new Date().toISOString(), ...info };
+}
+
+export function visionStatus() {
+  return { ...monitor };
+}
+
+/**
+ * Which kind of "no" is this? They are not interchangeable, and a new API key
+ * does not fix the first one:
+ *
+ *   capacity — Cloudflare's shared GPUs are busy. Wait a minute, retry.
+ *   quota    — the account's daily free neurons are spent. A new TOKEN on the
+ *              same account does nothing; the allowance is per account, per day.
+ *   auth     — the token itself was rejected/revoked. THIS is the one a new key
+ *              fixes.
+ */
+export function classifyAiError(status, body) {
+  const text = String(body || '');
+  if (status === 401 || status === 403) return 'auth';
+  if (/daily free allocation|neurons|\bquota\b|usage limit|exceeded your/i.test(text)) return 'quota';
+  if (status === 429) return 'capacity';
+  if (status >= 500) return 'upstream';
+  return 'error';
+}
+
+/** Something a shopper can act on, rather than a status code. */
+export function aiErrorMessage(kind) {
+  switch (kind) {
+    case 'quota':
+      return 'The measuring service has used its daily allowance. Please try again tomorrow.';
+    case 'capacity':
+      return 'The measuring service is at capacity right now. Please try again in a minute.';
+    case 'auth':
+      return 'The measuring service cannot read anything at the moment (its key was rejected).';
+    case 'upstream':
+      return 'The measuring service did not answer. Please try again.';
+    default:
+      return 'The measuring service could not read this clip. Please try again.';
+  }
+}
+
 const licensed = new Set();
 /** Some Meta models require a one-time "agree" call per account. Handle it transparently. */
 async function runLicensed(model, input, opts) {

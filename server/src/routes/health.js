@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { config, missingConfig } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
-import { cloudflareConfigured, verifyCloudflare } from '../lib/cloudflare.js';
+import { cloudflareConfigured, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 
 const started = Date.now();
 export const health = Router();
@@ -35,6 +35,9 @@ health.get('/deep', async (_req, res) => {
   }
   out.cloudflare_ai = await verifyCloudflare();
   out.cloudflare_ai.model = config.cloudflare.visionModel;
+  // What Workers AI last said, including whether the daily allowance is spent.
+  // `lastError.kind` is one of capacity | quota | auth | upstream | error.
+  out.cloudflare_ai.vision = visionStatus();
   const ok = Object.values(out).every((v) => v.ok);
   res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
 });

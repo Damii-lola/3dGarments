@@ -255,6 +255,12 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   is the fix, not more code. **Vision calls run six at a time, not sixteen**: a live 16-frame scan came
   back with a 429 ("capacity temporarily exceeded"), which is a measurement thrown away, and
   `callModelRaw` now retries a 429/5xx twice with a short backoff.
+- **Telling a spent allowance apart from a busy GPU.** `classifyAiError` in `lib/cloudflare.js` returns
+  `capacity` (429 with no quota words — retry), `quota` (the body mentions neurons/the daily allocation —
+  a new TOKEN on the same account changes nothing), or `auth` (401/403 — only this one is fixed by a new
+  key). `recordVision` keeps `callsToday` + `lastError` in memory and `/health/deep` exposes them under
+  `cloudflare_ai.vision`, so "are we out?" is a request, not a guess. The shopper-facing message comes
+  from `aiErrorMessage`, so a spent allowance does not read as "we could not find a person".
 - **The privacy copy now says the clip is sent and deleted**, not "your video never leaves your phone".
   That promise could not survive the decision to send the video; what survives is "Nothing is saved" and
   the deletion itself (`res.on('finish')` unlink, plus the frames temp dir removed in a `finally`). Every
