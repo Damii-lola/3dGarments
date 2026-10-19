@@ -127,7 +127,7 @@ Rebuild the body models (only after changing `assets/` or `tools/body/`): start 
 |---|---|---|
 | GET | `/health`, `/health/deep` | liveness, integration check |
 | GET | `/api/garments` | list, with signed image URLs |
-| POST | `/api/body-scan` | measure a clip: `video` (multipart — the default path; the server decodes it, takes up to 16 stills and reads them) or JPEG `frames` (multipart, `?frames=1` in the app and the automatic fallback) or `pose` landmarks measured on the device (JSON, `?local=1`). Optional `from`/`to` (the trimmed span, seconds), `chart` (the brand's size chart — `{ name, sex, unit, columns, rows }` — used only to pick a size, never to measure). Returns the measurements, the notes, and `size` / `sizeChart` / `sizeSource` |
+| POST | `/api/body-scan` | measure a clip: `video` (multipart — the default path; the server decodes it, takes 8 stills and reads them) or JPEG `frames` (multipart, `?frames=1` in the app and the automatic fallback) or `pose` landmarks measured on the device (JSON, `?local=1`). Optional `from`/`to` (the trimmed span, seconds), `chart` (the brand's size chart — `{ name, sex, unit, columns, rows }` — used only to pick a size, never to measure). Returns the measurements, the notes, and `size` / `sizeChart` / `sizeSource` |
 | POST | `/api/garments` | multipart `image` returns 202 and processes in the background |
 | GET / PATCH / DELETE | `/api/garments/:id` | read, rename / recategorise / fit, delete |
 | POST | `/api/garments/:id/reprocess` | re-run the pipeline |

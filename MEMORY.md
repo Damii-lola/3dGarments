@@ -242,7 +242,7 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
   in time, the account screen is the default.
 - **The CLIP goes to the server; the phone does no video work at all.** `analyzeVideo()` posts the
-  trimmed recording as multipart `video` with `from`/`to`; `server/src/lib/videoFrames.js` pulls up to 16
+  trimmed recording as multipart `video` with `from`/`to`; `server/src/lib/videoFrames.js` pulls eight
   stills out of it with the bundled `ffmpeg-static` (keyframe pass first — an I-frame is sharp and skipping
   the rest is ~10× cheaper — then an even `fps` pass if that found fewer than six), and the existing vision
   loop reads them. Uploaded files land in `os.tmpdir()` and are unlinked on `res.finish`/`res.close`.
@@ -252,9 +252,16 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   pose model, numbers only) and is still **imported dynamically**, so a normal visit never parses it.
 - **`ffmpeg-static` in the API.** ~45 MB Windows / ~78 MB Linux binary fetched at `npm ci`; nothing to
   install on Render. Decoding on the free instance (0.1 CPU) is the slow part of a scan — a paid instance
-  is the fix, not more code. **Vision calls run six at a time, not sixteen**: a live 16-frame scan came
-  back with a 429 ("capacity temporarily exceeded"), which is a measurement thrown away, and
-  `callModelRaw` now retries a 429/5xx twice with a short backoff.
+  is the fix, not more code. **Eight frames, eight in flight, one wave — measured, not guessed.** On the
+  live API a vision call costs ~30 s, so 16 frames took 90 s of model time plus ~15 s of decode; eight
+  takes ~30 s total. Eight samples over one turn are 45° apart (worst case 22.5° off square-on), and
+  `measurePath` divides that out by cos(turn). Sixteen fired at once also drew a 429 ("capacity
+  temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a 429/5xx twice with
+  a short backoff as a second line of defence.
+- **The server draws the grid too.** `framesFromVideo` composites the same labelled 10×10 ruler the
+  canvas path draws (sharp + an SVG), because `FRAME_PROMPT` tells the model the top numbers are x and the
+  left numbers are y. Frames from a clip never touched a canvas, so before this the prompt was describing
+  a ruler that was not on the picture — the one thing worse than no grid is a promise of one.
 - **Telling a spent allowance apart from a busy GPU.** `classifyAiError` in `lib/cloudflare.js` returns
   `capacity` (429 with no quota words — retry), `quota` (the body mentions neurons/the daily allocation —
   a new TOKEN on the same account changes nothing), or `auth` (401/403 — only this one is fixed by a new
@@ -477,7 +484,7 @@ Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applySha
 | `POST /api/groups` | create group |
 | `PATCH /api/groups/:id` | update group (name / photos) |
 | `DELETE /api/groups/:id` | delete group |
-| `POST /api/body-scan` | measure a clip (open route — no bearer): multipart `video` + `from`/`to` (the default path — the server decodes the clip with ffmpeg and reads up to 16 stills), multipart `frames` JPEGs (`?frames=1`, and the fallback), or `source: 'pose'` + on-device landmarks (`?local=1`). Optional `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
+| `POST /api/body-scan` | measure a clip (open route — no bearer): multipart `video` + `from`/`to` (the default path — the server decodes the clip with ffmpeg and reads 8 stills), multipart `frames` JPEGs (`?frames=1`, and the fallback), or `source: 'pose'` + on-device landmarks (`?local=1`). Optional `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
 
 ---
 

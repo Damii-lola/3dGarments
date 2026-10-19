@@ -25,10 +25,19 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import sharp from 'sharp';
 
 const run = promisify(execFile);
 
-export const MAX_FRAMES = 16;
+/**
+ * Eight, not sixteen. The vision model costs about 30 seconds a frame, so the
+ * count is not "how many pictures can we afford to send" but "how few angles
+ * can still measure a body". Eight samples over one turn are 45° apart, worst
+ * case 22.5° off square-on — and measurePath undoes that turn by cos, so the
+ * error it used to cause is gone. Sixteen was 90 s of model time for views the
+ * arithmetic did not need.
+ */
+export const MAX_FRAMES = 8;
 
 /**
  * The ffmpeg binary, resolved once and never allowed to take the API down with
@@ -106,7 +115,7 @@ async function grab(filePath, dir, { from, span, count, maxWidth, timeoutMs, key
   const names = (await readdir(dir)).filter((n) => n.endsWith('.jpg')).sort().slice(0, count);
   const frames = [];
   for (const [i, name] of names.entries()) {
-    const buffer = await readFile(join(dir, name));
+    const buffer = await withGrid(await readFile(join(dir, name)));
     frames.push({
       buffer,
       size: buffer.length,
@@ -115,4 +124,64 @@ async function grab(filePath, dir, { from, span, count, maxWidth, timeoutMs, key
     });
   }
   return frames;
+}
+
+/**
+ * The same labelled 10x10 ruler the browser draws over a still frame, drawn here
+ * instead because these pictures never touch a canvas.
+ *
+ * This is not decoration. The prompt tells the model that the numbers along the
+ * top are x and down the left edge are y, on the 0-100 scale every landmark is
+ * answered in; without the grid on the picture it was being told something
+ * untrue, and precision is exactly what the measurements are built on. A frame
+ * with no ruler is worth less than a frame with one, whatever else it shows.
+ */
+function gridSvg(w, h) {
+  const line = Math.max(1, Math.round(Math.min(w, h) / 420));
+  const fontSize = Math.max(11, Math.round(w / 60));
+  const lines = [];
+  for (let i = 1; i < 10; i += 1) {
+    const x = Math.round((w * i) / 10) + 0.5;
+    const y = Math.round((h * i) / 10) + 0.5;
+    lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}"/>`);
+    lines.push(`<line x1="0" y1="${y}" x2="${w}" y2="${y}"/>`);
+  }
+  const plates = [];
+  const texts = [];
+  for (let i = 1; i < 10; i += 1) {
+    const label = String(i * 10);
+    const tw = label.length * fontSize * 0.62;
+    const x = (w * i) / 10;
+    const y = (h * i) / 10;
+    const boxW = tw + 6;
+    const boxH = fontSize + 4;
+    plates.push(`<rect x="${x + 2}" y="2" width="${boxW}" height="${boxH}"/>`);
+    plates.push(`<rect x="2" y="${y + 2}" width="${boxW}" height="${boxH}"/>`);
+    texts.push(`<text x="${x + 5}" y="4" dominant-baseline="hanging">${label}</text>`);
+    texts.push(`<text x="5" y="${y + 4}" dominant-baseline="hanging">${label}</text>`);
+  }
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
+    + `<g stroke="rgba(0,240,130,0.45)" stroke-width="${line}">${lines.join('')}</g>`
+    + `<g fill="rgba(0,0,0,0.62)">${plates.join('')}</g>`
+    + `<g font-family="sans-serif" font-size="${fontSize}" font-weight="600" fill="#8dffbe">${texts.join('')}</g>`
+    + '</svg>',
+  );
+}
+
+async function withGrid(buffer) {
+  try {
+    const image = sharp(buffer);
+    const { width, height } = await image.metadata();
+    if (!width || !height) return buffer;
+    return await image
+      .composite([{ input: gridSvg(width, height), top: 0, left: 0 }])
+      .jpeg({ quality: 88 })
+      .toBuffer();
+  } catch {
+    // A frame without its ruler is still a frame; the measurement engine checks
+    // what it gets, and losing the whole scan over a failed composite would be
+    // the worse trade.
+    return buffer;
+  }
 }

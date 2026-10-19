@@ -245,10 +245,12 @@ function frameDigest(f, reason) {
 /**
  * Run `fn` over `items`, at most `limit` at a time, keeping the order.
  *
- * Sixteen frames fired at Cloudflare at once is more than its shared GPUs will
- * take — a live 16-frame scan came back with one 429 — and a 429 here is a
- * measurement that never happened. Six at a time is three short waves instead of
- * one queue, and it fits inside what the plan actually serves.
+ * The count and the limit are the same number on purpose: eight frames, eight
+ * in flight, one wave. A vision call costs roughly 30 seconds, so a second wave
+ * is another 30 seconds the shopper spends watching a spinner — and sixteen
+ * fired at once is more than Cloudflare's shared GPUs will take (a live scan
+ * came back with a 429, which is a measurement that never happened). Eight is
+ * enough angles to measure a body and small enough to leave the GPUs alone.
  */
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
@@ -803,7 +805,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     const to = Number.isFinite(wanted) && wanted > from ? wanted : from + 30;
     log(`> POST received - clip ${(clip.size / 1048576).toFixed(1)} MB, ${round2(Math.min(30, to - from))}s from ${round2(from)}s`);
     try {
-      files = await framesFromVideo(clip.path, { from, to, count: 16 });
+      files = await framesFromVideo(clip.path, { from, to });
       log(`  ${files.length} still(s) taken out of the clip (${Date.now() - startedAt}ms)`);
     } catch (e) {
       throw new HttpError(422, `Could not read that video (${e.message})`);
@@ -835,7 +837,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
   if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart.rows).length} size(s), for ${brand.sex})`);
 
-  await mapLimit(files, 6, async (file, i) => {
+  await mapLimit(files, 8, async (file, i) => {
     const frameStart = Date.now();
     try {
       const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1600, json: true });
