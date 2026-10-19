@@ -698,6 +698,14 @@ async function runAnalysis() {
   setBusy(true);
   setStatus('Starting the measurement…', 'busy');
   const startedAt = Date.now();
+  /**
+   * Where the numbers were actually read. The phone path is the fast one; the
+   * server path means the browser could not run the pose model at all, and the
+   * last line of the status says so plainly. It is one word on a results screen,
+   * and it is the difference between "the phone is slow" and "the phone could
+   * not do this at all" — two problems with two different fixes.
+   */
+  let measuredOn = 'this phone';
 
   try {
     const { from, to } = trimmer.getSpan();
@@ -768,6 +776,7 @@ async function runAnalysis() {
     // 2. Fallback: JPEG frames for the vision model. Also the only path when the
     //    browser cannot run the pose model at all.
     if (!data) {
+      measuredOn = 'the server';
       setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
       let frames;
       try {
@@ -790,7 +799,7 @@ async function runAnalysis() {
 
     log('analysis result', data);
     renderAnalysis(data);
-    setStatus(`Done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`, 'ok');
+    setStatus(`Done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s · measured on ${measuredOn}`, 'ok');
   } catch (e) {
     log('analyze failed:', e.message);
     setStatus(e.message || 'Something went wrong during analysis.', 'error');
