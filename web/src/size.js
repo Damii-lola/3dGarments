@@ -37,7 +37,7 @@ const chartCode = (params.get('g') || '').trim();
 /** The popup on the store's own page. No bar, no footer, no account — just the tool. */
 const embedded = params.get('embed') === '1';
 if (embedded) {
-  // The class goes on the root as well as the body: the popup's 20% size
+  // The class goes on the root as well as the body: the popup's 60% size
   // reduction is a root font-size, and CSS cannot reach an ancestor from a
   // descendant. Everything inside is in rem, so one number scales it all.
   document.documentElement.classList.add('embed');

@@ -1839,11 +1839,12 @@ a.btn-ghost {
    there — which looks exactly like the change "not working" on the device. */
 @media (max-width: 768px), (hover: none) and (pointer: coarse) {
   html { font-size: 189%; }
-  /* The popup inside a store's page runs the same UI a fifth smaller (189% x
-     0.8). The frame around it is the store's and does not change; the type,
-     cards and spacing inside it do, so the whole tool fits the panel instead of
-     reading like a phone page in a box. */
-  html.embed { font-size: calc(189% * 0.8); }
+  /* The popup inside a store's page runs the same UI at 40% of the phone size
+     (189% x 0.4), i.e. 60% down from the full page. The frame around it is the
+     store's and does not change; the type, cards and spacing inside it do, so
+     the whole tool sits compactly in the panel instead of reading like a phone
+     page in a box. */
+  html.embed { font-size: calc(189% * 0.4); }
   /* As the text grows, trim the side margins so the video and result cards
      keep as much width as possible instead of being squeezed. */
   body { padding-left: 0.9rem; padding-right: 0.9rem; }

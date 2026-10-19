@@ -225,8 +225,9 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   which is the one thing that must not. `.app .nav-links { display: none }` plus one menu button fits
   at any root size, and the dropdown itself (`.nav-links.open`) is defined once for both cases. Inside
   a brand's popup (`html.embed` + `body.embed`) the bar is the brand alone — centred, its link
-  stripped, no menu or account — the sky comes off, and the phone UI runs at **80%** of its 189% root
-  (151.2%): the panel the store sized is untouched, only what is drawn inside it. Each page's own
+  stripped, no menu or account — the sky comes off, and the phone UI runs at **40%** of its 189% root
+  (75.6%), 60% down from the full page: the panel the store sized is untouched, only what is drawn
+  inside it. Each page's own
   `<section data-reveal>` elements fade up as they are reached — the
   styles only hide them while `<html>` carries `js`, a flag set by a one-line script before the first
   paint and lifted by the page's own timer unless the observer reports first, so a page can never be
