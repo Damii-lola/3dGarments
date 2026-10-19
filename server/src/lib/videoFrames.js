@@ -97,7 +97,11 @@ export async function framesFromVideo(filePath, opts = {}) {
 async function grab(filePath, dir, { from, span, count, maxWidth, timeoutMs, keyframesOnly = false, fps = null }) {
   await mkdir(dir, { recursive: true });
   const pattern = join(dir, 'f-%03d.jpg');
-  const vf = [fps ? `fps=${fps.toFixed(3)}` : null, `scale=${maxWidth}:-2`].filter(Boolean).join(',');
+  // Never upscale. A phone clip is often narrower than the target (WhatsApp
+  // sends 478x850), and stretching that to 900 would invent no detail at all
+  // while multiplying the image tokens the model has to read.
+  const scale = `scale=min(${maxWidth}\\,iw):-2`;
+  const vf = [fps ? `fps=${fps.toFixed(3)}` : null, scale].filter(Boolean).join(',');
 
   await run(await ffmpegBinary(), [
     '-hide_banner', '-loglevel', 'error',
@@ -107,23 +111,49 @@ async function grab(filePath, dir, { from, span, count, maxWidth, timeoutMs, key
     '-t', String(span),
     '-i', filePath,
     '-vf', vf,
+    // passthrough, not the default: with -skip_frame the decoder hands back one
+    // frame it never filled in, and the default frame-rate machinery then CLONES
+    // that empty (black) picture across the whole set - which is exactly how a
+    // real clip arrived as eight black frames and was refused as "no person".
+    '-fps_mode', 'passthrough',
     '-frames:v', String(count),
     '-q:v', '3',
     '-y', pattern,
   ], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
 
-  const names = (await readdir(dir)).filter((n) => n.endsWith('.jpg')).sort().slice(0, count);
+  const names = (await readdir(dir)).filter((n) => n.endsWith('.jpg')).sort();
   const frames = [];
-  for (const [i, name] of names.entries()) {
-    const buffer = await withGrid(await readFile(join(dir, name)));
+  for (const name of names) {
+    if (frames.length >= count) break;
+    const raw = await readFile(join(dir, name));
+    // Belt and braces for the same bug: a picture with no picture in it is not
+    // a view of anybody, whatever produced it.
+    if (await isBlank(raw)) continue;
+    const buffer = await withGrid(raw);
     frames.push({
       buffer,
       size: buffer.length,
-      originalname: `frame-${String(i + 1).padStart(2, '0')}.jpg`,
+      originalname: `frame-${String(frames.length + 1).padStart(2, '0')}.jpg`,
       mimetype: 'image/jpeg',
     });
   }
   return frames;
+}
+
+/**
+ * A frame with no content: essentially black, and essentially uniform. A dark
+ * room still has shape in it (so the deviation saves it); an undecoded frame is
+ * flat and empty. Returns the stats too, because nothing else needs them twice.
+ */
+async function isBlank(buffer) {
+  try {
+    const { channels } = await sharp(buffer).stats();
+    const mean = channels[0]?.mean ?? 0;
+    const deviation = channels[0]?.stdev ?? 0;
+    return mean < 6 && deviation < 4;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -257,6 +257,19 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   22.5° off square-on) and `measurePath` divides that out by cos(turn). Sixteen fired at once drew a 429
   ("capacity temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a
   429/5xx twice with a short backoff as a second line of defence.
+- **`ffmpeg -skip_frame nokey` was serving BLACK frames, and that is why real clips were refused.**
+  The decoder hands back one frame it never filled in, and the default frame-rate machinery clones that
+  empty picture across the whole output set — every frame black, personVisible false, "Could not find a
+  person". Found on the first real clip ever run through this path (478×850 WhatsApp video). Three
+  defences now: `-fps_mode passthrough` so nothing is cloned, `isBlank()` (sharp `stats()`) drops a frame
+  that is flat and dark, and the even-`fps` second pass still runs if the keyframe pass yields fewer than
+  six. **Never trust `-skip_frame nokey` without looking at one frame it produced.**
+- **Never upscale a frame.** `scale=min(900\,iw):-2`: a phone clip is often narrower than 900 (WhatsApp
+  sends 478×850), and stretching it invents no detail while multiplying the image tokens the model reads.
+- **The underlying cause of "it took forever" is often Render's cold start**, not the scan: a sleeping
+  free instance adds ~50 s before any work begins. `.github/workflows/keep-warm.yml` pings `/health`
+  every 10 minutes between 06:00 and 23:00 UTC (18 h/day, so the free plan's 750 instance-hours a month
+  still has headroom).
 - **The server draws the grid too.** `framesFromVideo` composites the same labelled 10×10 ruler the
   canvas path draws (sharp + an SVG), because `FRAME_PROMPT` tells the model the top numbers are x and the
   left numbers are y. Frames from a clip never touched a canvas, so before this the prompt was describing

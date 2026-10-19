@@ -1,0 +1,32 @@
+name: Keep the API warm
+
+# Render's free instance sleeps after ~15 minutes idle, and waking it adds the
+# better part of a minute to the next scan - the "it took forever" that no code
+# in the app can fix. A ping every ten minutes during waking hours keeps the
+# instance up. Deliberately not 24/7: the free plan also caps instance hours at
+# 750 a month, and 18 h/day leaves headroom for that.
+on:
+  schedule:
+    - cron: '*/10 6-23 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake the API
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 https://threedgarments.onrender.com/health)
+            echo "attempt $i -> $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          # A missed ping is not a failed deploy: the next one retries in ten
+          # minutes, and nobody should get a red build for a sleeping server.
+          echo "API did not answer this time"
