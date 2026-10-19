@@ -56,7 +56,7 @@ import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { config } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
-import { framesFromVideo } from '../lib/videoFrames.js';
+import { framesFromVideo, MAX_FRAMES } from '../lib/videoFrames.js';
 import {
   CM_PER_IN,
   GIRTH_REGIONS,
@@ -221,6 +221,8 @@ function frameDigest(f, reason) {
     file: f.file,
     ...(reason ? { reason } : {}),
     ms: f.ms,
+    tokens: f.usage?.completion_tokens ?? null,
+    neurons: f.usage?.neurons == null ? null : Math.round(f.usage.neurons),
     view: f.view,
     turn: round1(frameTurn(f)),
     camera: f.camera,
@@ -269,9 +271,16 @@ async function mapLimit(items, limit, fn) {
 
 async function callModelRaw(model, messages, opts = {}) {
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
-  // Qwen 3.8 reasons at "xhigh" by default, which is wasted thinking for a task
-  // that is meant to be pure observation of one frame.
-  if (/qwen/i.test(model)) payload.reasoning_effort = 'low';
+  if (/qwen/i.test(model)) {
+    // Qwen 3 reasons before it answers, and that reasoning is billed as output
+    // AND counted against max_tokens. At 1600 the JSON was being cut off
+    // mid-landmark on six frames out of eight, which surfaced as "unreadable
+    // reply" and left the scan measuring a body from the one frame that got
+    // through. Placing a point on a photograph needs no deliberation, so the
+    // thinking is switched off at the template instead of paid for.
+    payload.reasoning_effort = 'low';
+    payload.chat_template_kwargs = { ...(payload.chat_template_kwargs || {}), enable_thinking: false };
+  }
   if (opts.json) payload.response_format = { type: 'json_object' };
   for (let attempt = 0; ; attempt += 1) {
     const res = await fetch(modelUrl(model), {
@@ -825,7 +834,12 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     const to = Number.isFinite(wanted) && wanted > from ? wanted : from + 30;
     log(`> POST received - clip ${(clip.size / 1048576).toFixed(1)} MB, ${round2(Math.min(30, to - from))}s from ${round2(from)}s`);
     try {
-      files = await framesFromVideo(clip.path, { from, to, info: clipInfo });
+      // How many angles to read. The app asks for the full set; a smaller number
+      // is a legitimate way to trade precision for time (and for the metered
+      // reading budget), and the sanity checks below refuse a body measured from
+      // too little rather than pretend.
+      const count = Math.min(MAX_FRAMES, Math.max(1, Math.round(Number(req.body?.count) || MAX_FRAMES)));
+      files = await framesFromVideo(clip.path, { from, to, count, info: clipInfo });
       decodeMs = Date.now() - startedAt;
       log(`  ${files.length} still(s) taken out of the clip (${Date.now() - startedAt}ms)`);
     } catch (e) {
@@ -861,7 +875,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   await mapLimit(files, 8, async (file, i) => {
     const frameStart = Date.now();
     try {
-      const { text: raw, meta } = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1600, json: true });
+      const { text: raw, meta } = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 2600, json: true });
       const parsed = parseJson(raw);
       const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
@@ -889,6 +903,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
 
         frame.scale = frameScale(frame);
         frame.ms = ms;
+        frame.usage = meta.usage;
 
         // A frame whose landmarks are not a human shape is thrown away whole.
         // Confident nonsense is worse than no measurement.

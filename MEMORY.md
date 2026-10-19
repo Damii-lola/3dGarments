@@ -259,8 +259,8 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   429/5xx twice with a short backoff as a second line of defence.
 - **Frames come out of a clip ONE SEEK AT A TIME, and that is a correctness decision as much as a speed
   one.** `framesFromVideo` runs one short ffmpeg per frame, each with `-ss <time>` before `-i` and
-  `-frames:v 1`: a keyframe seek plus a handful of decoded frames, eight times, evenly spread, four at a
-  time. Nothing asks ffmpeg for a *rate* of frames, so no frame-rate machinery sits in the middle to
+  `-frames:v 1`: a keyframe seek plus a handful of decoded frames, eight times, evenly spread, all at
+  once. Nothing asks ffmpeg for a *rate* of frames, so no frame-rate machinery sits in the middle to
   duplicate, reorder or substitute anything. The version before this used `-skip_frame nokey` with the
   default frame-rate mode and **served eight BLACK frames for every real phone clip** — the decoder hands
   back one frame it never filled in and vsync clones that empty picture across the whole set, so the first
@@ -271,6 +271,17 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **The clip's real length is probed, not assumed** (`ffmpeg -i`, parsing `Duration:` from the "just
   describe it" run), so a 21 s clip asked for "0 to 30" spreads its eight frames over its own 21 s instead
   of aiming three of them into nothing.
+- **The vision reply was being cut off, and that is what "only one usable frame" meant.**
+  `@cf/qwen/qwen3.8-27b` reasons before it answers, and those hidden reasoning tokens are billed as
+  output AND counted against `max_tokens`. At `max_tokens: 1600` six of eight frames came back
+  `finish_reason: "length"` with the JSON chopped mid-landmark, so they parsed as nothing, the scan
+  measured a body from the one or two frames that survived, and every truncated call still cost 572
+  neurons. The frame call now sends `chat_template_kwargs: { enable_thinking: false }` with
+  `max_tokens: 2600`. A caller can also send `count` (1–8) to trade angles for time.
+- **Cost per scan, measured from `usage`**: 2,595 prompt tokens + up to 1,600 completion tokens =
+  **572 neurons per frame**, so **~4,500 neurons per 8-frame scan**. The free Workers AI allowance is
+  10,000 neurons/day (about $0.11) — roughly **two scans a day**, and it ran out mid-testing. The real
+  fix is Workers Paid; on the paid rates ($0.45/M in, $3.20/M out) a scan is a few cents.
 - **Never upscale a frame.** `scale=min(900\,iw):-2`: a phone clip is often narrower than 900 (WhatsApp
   sends 478×850), and stretching it invents no detail while multiplying the image tokens the model reads.
 - **The underlying cause of "it took forever" is often Render's cold start**, not the scan: a sleeping
