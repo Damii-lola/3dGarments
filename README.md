@@ -103,7 +103,7 @@ Go to Cloudflare dashboard → **AI → Workers AI → Use REST API**. Create a 
 ### 3. Render (live)
 The API is running at **https://threedgarments.onrender.com**. Its secrets are stored only as Render environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. There are no `.env` files in this repo. Render redeploys on every push to `main` once CI passes.
 
-Check it at `https://threedgarments.onrender.com/health/deep` → `"ok": true` means Supabase, Storage and Cloudflare AI are all linked. `cloudflare_ai.vision` reports what Workers AI last said: `calls_today`, `lastOkAt`, and `lastError.kind` — `capacity` (shared GPUs busy, wait a minute), `quota` (the account's daily free neurons are spent; a new token on the same account does not reset it), or `auth` (the token was rejected — that one needs a new key).
+Check it at `https://threedgarments.onrender.com/health/deep` → `"ok": true` means Supabase, Storage and Cloudflare AI are all linked. `cloudflare_ai.credentials` shows what the server is actually holding — the token's length, type (`cfut_` user / `cfat_` account / legacy 40-char), whether it has stray whitespace, an 8-character one-way fingerprint, and the account id — and `attempts` shows what Cloudflare said to each verify endpoint. `cloudflare_ai.vision` reports what Workers AI last said: `calls_today`, `lastOkAt`, and `lastError.kind` — `capacity` (shared GPUs busy, wait a minute), `quota` (the account's daily free neurons are spent; a new token on the same account does not reset it), or `auth` (the token was rejected — check `credentials.token_fingerprint` changed after editing it on Render).
 
 ### 4. GitHub
 - **Settings → Pages → Source: GitHub Actions**

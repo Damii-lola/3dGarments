@@ -251,17 +251,30 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   an upload/decode failure) falls back to 12 device-drawn stills. `?local=1` is the third path (on-device
   pose model, numbers only) and is still **imported dynamically**, so a normal visit never parses it.
 - **`ffmpeg-static` in the API.** ~45 MB Windows / ~78 MB Linux binary fetched at `npm ci`; nothing to
-  install on Render. Decoding on the free instance (0.1 CPU) is the slow part of a scan — a paid instance
-  is the fix, not more code. **Eight frames, eight in flight, one wave — measured, not guessed.** On the
-  live API a vision call costs ~30 s, so 16 frames took 90 s of model time plus ~15 s of decode; eight
-  takes ~30 s total. Eight samples over one turn are 45° apart (worst case 22.5° off square-on), and
-  `measurePath` divides that out by cos(turn). Sixteen fired at once also drew a 429 ("capacity
-  temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a 429/5xx twice with
-  a short backoff as a second line of defence.
+  install on Render. Decode is ~1–2 s locally and perhaps 15 s on the free instance's 0.1 CPU — real,
+  but not what makes a scan long.
+- **Eight frames, eight in flight, one wave.** Eight samples over one turn are 45° apart (worst case
+  22.5° off square-on) and `measurePath` divides that out by cos(turn). Sixteen fired at once drew a 429
+  ("capacity temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a
+  429/5xx twice with a short backoff as a second line of defence.
 - **The server draws the grid too.** `framesFromVideo` composites the same labelled 10×10 ruler the
   canvas path draws (sharp + an SVG), because `FRAME_PROMPT` tells the model the top numbers are x and the
   left numbers are y. Frames from a clip never touched a canvas, so before this the prompt was describing
   a ruler that was not on the picture — the one thing worse than no grid is a promise of one.
+- **The wall is one vision call, not the number of frames — measured, not assumed.** On the live API
+  (free plan) a scan takes ~55–110 s, and 4 stills took 91 s where 8 took 55 s: the per-call latency is
+  ~40–50 s and the parallel calls finish together, so cutting frames saves nothing and costs angles.
+  That is why 8 stays. Free Workers AI is also capacity-limited (a 16-frame burst drew a 429) and
+  metered at 10,000 neurons/day per account — a day of testing spent all of it. A paid plan, or a
+  smaller/faster vision model via `CF_VISION_MODEL`, is the fix; there is no code change that makes a
+  27B model answer faster.
+- **`/health/deep` reports the credentials the server actually holds** (`cloudflare_ai.credentials`:
+  length, type, whitespace, an 8-char one-way fingerprint, and the account id) plus each verify
+  attempt with Cloudflare's own error code. This exists because a rejected token and a token that was
+  never pasted look identical from a 401, and the first version of this check called a valid 58-char
+  `cfut_` token "unexpected" — Cloudflare moved to prefixed scannable tokens in 2026. A user token
+  answers `/user/tokens/verify`; an account token can only answer `/accounts/{id}/tokens/verify`, so
+  "Invalid API Token" on both points at a token paired with the wrong account.
 - **Telling a spent allowance apart from a busy GPU.** `classifyAiError` in `lib/cloudflare.js` returns
   `capacity` (429 with no quota words — retry), `quota` (the body mentions neurons/the daily allocation —
   a new TOKEN on the same account changes nothing), or `auth` (401/403 — only this one is fixed by a new
