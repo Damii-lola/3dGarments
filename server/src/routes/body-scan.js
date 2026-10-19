@@ -765,6 +765,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   const failures = [];
   const rejected = [];
   const unreadable = [];
+  // What the clip itself turned out to be: its real length, the span actually
+  // read, how many seeks landed. Returned in `diagnostics`, so a short or slow
+  // scan can be explained without a log we cannot read from here.
+  const clipInfo = {};
 
   // Frames arrive three ways: taken out of the uploaded clip by ffmpeg, measured
   // on the device, or as JPEGs for the vision model. All three end in the same
@@ -816,7 +820,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     const to = Number.isFinite(wanted) && wanted > from ? wanted : from + 30;
     log(`> POST received - clip ${(clip.size / 1048576).toFixed(1)} MB, ${round2(Math.min(30, to - from))}s from ${round2(from)}s`);
     try {
-      files = await framesFromVideo(clip.path, { from, to });
+      files = await framesFromVideo(clip.path, { from, to, info: clipInfo });
       log(`  ${files.length} still(s) taken out of the clip (${Date.now() - startedAt}ms)`);
     } catch (e) {
       throw new HttpError(422, `Could not read that video (${e.message})`);
@@ -915,6 +919,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     totalBytes,
     sourceModel: config.cloudflare.visionModel,
     poseNotes: [],
+    clip: clipInfo,
     gender: chosenGender,
     chart: brand?.chart || null,
     chartName: brand?.name || '',
@@ -928,10 +933,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, startedAt }) {
+function finishScan(res, { frames, rejected, unreadable, failures, clip = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
-    const details = { diagnostics: { model: sourceModel, rejected, unreadable, failures } };
+    const details = { diagnostics: { model: sourceModel, clip, rejected, unreadable, failures } };
     if (failures.length === attempted) {
       // When every frame failed for the same shopper-facing reason — the daily
       // allowance is spent, the key was rejected — that reason is the answer.
@@ -948,7 +953,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   }
 
   /** Everything each frame reported, for a refusal we have to justify. */
-  const diagnostics = { model: sourceModel, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
+  const diagnostics = { model: sourceModel, clip, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
 
   // 2. Scale. Without an anchor there are no centimetres, so say so rather than
   //    inventing numbers.

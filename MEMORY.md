@@ -257,13 +257,20 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   22.5° off square-on) and `measurePath` divides that out by cos(turn). Sixteen fired at once drew a 429
   ("capacity temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a
   429/5xx twice with a short backoff as a second line of defence.
-- **`ffmpeg -skip_frame nokey` was serving BLACK frames, and that is why real clips were refused.**
-  The decoder hands back one frame it never filled in, and the default frame-rate machinery clones that
-  empty picture across the whole output set — every frame black, personVisible false, "Could not find a
-  person". Found on the first real clip ever run through this path (478×850 WhatsApp video). Three
-  defences now: `-fps_mode passthrough` so nothing is cloned, `isBlank()` (sharp `stats()`) drops a frame
-  that is flat and dark, and the even-`fps` second pass still runs if the keyframe pass yields fewer than
-  six. **Never trust `-skip_frame nokey` without looking at one frame it produced.**
+- **Frames come out of a clip ONE SEEK AT A TIME, and that is a correctness decision as much as a speed
+  one.** `framesFromVideo` runs one short ffmpeg per frame, each with `-ss <time>` before `-i` and
+  `-frames:v 1`: a keyframe seek plus a handful of decoded frames, eight times, evenly spread, four at a
+  time. Nothing asks ffmpeg for a *rate* of frames, so no frame-rate machinery sits in the middle to
+  duplicate, reorder or substitute anything. The version before this used `-skip_frame nokey` with the
+  default frame-rate mode and **served eight BLACK frames for every real phone clip** — the decoder hands
+  back one frame it never filled in and vsync clones that empty picture across the whole set, so the first
+  real clip ever run through the path was refused as "could not find a person". Two remaining guards:
+  `isBlank()` (sharp `stats()`) drops a frame that is flat and dark, and one blank seek is retried a third
+  of a slot later rather than costing that angle. **Never trust `-skip_frame nokey` without looking at a
+  frame it produced.**
+- **The clip's real length is probed, not assumed** (`ffmpeg -i`, parsing `Duration:` from the "just
+  describe it" run), so a 21 s clip asked for "0 to 30" spreads its eight frames over its own 21 s instead
+  of aiming three of them into nothing.
 - **Never upscale a frame.** `scale=min(900\,iw):-2`: a phone clip is often narrower than 900 (WhatsApp
   sends 478×850), and stretching it invents no detail while multiplying the image tokens the model reads.
 - **The underlying cause of "it took forever" is often Render's cold start**, not the scan: a sleeping

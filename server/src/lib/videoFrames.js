@@ -7,22 +7,23 @@
  * is a measurement that never happens), and a server can look at the WHOLE clip
  * rather than at a grid of six times decided before anyone saw it.
  *
- * Two passes, cheapest first:
- *
- *   1. KEYFRAMES. An I-frame is already a sharp, complete picture, and skipping
- *      the frames between them is the difference between decoding twelve seconds
- *      of video and decoding a dozen pictures. Phones write a keyframe every
- *      second or two, so a normal clip yields a clean spread of angles.
- *   2. EVERYTHING, evenly. Only if pass 1 found fewer than six (an unusual
- *      encoder, a very short trim) do we pay to decode the clip properly, at an
- *      even number of frames across the span.
+ * HOW: one short ffmpeg run per frame. Each run seeks straight to its own
+ * timestamp on the file and is asked for exactly one picture. A seek is a
+ * keyframe seek followed by a handful of decoded frames, so eight of them cost a
+ * fraction of decoding the clip once — and because nothing here asks ffmpeg for
+ * a *rate* of frames, there is no frame-rate machinery in the middle that can
+ * duplicate, reorder or substitute anything. An earlier version used
+ * `-skip_frame nokey` with the default frame-rate mode, and that pairing quietly
+ * handed back one undecoded black picture and then CLONED it across the whole
+ * output set: every real phone clip came back as eight black frames and was
+ * refused as "could not find a person". One frame per seek cannot do that.
  *
  * Frames are JPEGs written to a temp directory that is deleted in a `finally`,
  * so a failed scan cannot leave a picture of somebody's body on the disk.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -30,14 +31,19 @@ import sharp from 'sharp';
 const run = promisify(execFile);
 
 /**
- * Eight, not sixteen. The vision model costs about 30 seconds a frame, so the
- * count is not "how many pictures can we afford to send" but "how few angles
- * can still measure a body". Eight samples over one turn are 45° apart, worst
- * case 22.5° off square-on — and measurePath undoes that turn by cos, so the
- * error it used to cause is gone. Sixteen was 90 s of model time for views the
- * arithmetic did not need.
+ * Eight, not sixteen. Read as a spread of angles: eight samples over one turn
+ * are 45° apart, worst case 22.5° off square-on — and measurePath undoes that
+ * turn by cos, so the error it used to cause is gone. Sixteen bought views the
+ * arithmetic did not need and paid for them in waiting.
  */
 export const MAX_FRAMES = 8;
+
+/**
+ * Seeks run side by side, but not all eight at once: the free Render instance
+ * has a fraction of one CPU, and eight ffmpeg processes competing for it finish
+ * no sooner than four do. Four is overlap without a stampede.
+ */
+const SEEK_CONCURRENCY = 4;
 
 /**
  * The ffmpeg binary, resolved once and never allowed to take the API down with
@@ -62,7 +68,7 @@ export async function ffmpegBinary() {
 
 /**
  * @param {string} filePath the uploaded clip on disk
- * @param {{from?: number, to?: number, count?: number, maxWidth?: number, timeoutMs?: number}} [opts]
+ * @param {{from?: number, to?: number, count?: number, maxWidth?: number, timeoutMs?: number, info?: object}} [opts]
  * @returns {Promise<Array<{buffer: Buffer, size: number, originalname: string, mimetype: string}>>}
  */
 export async function framesFromVideo(filePath, opts = {}) {
@@ -71,79 +77,146 @@ export async function framesFromVideo(filePath, opts = {}) {
     to = null,
     count = MAX_FRAMES,
     maxWidth = 900,
-    timeoutMs = 90_000,
+    timeoutMs = 45_000,
+    info = null,
   } = opts;
 
-  // The trim is a LENGTH, and it is the shopper's own: never decode more than
-  // half a minute of a clip, even if the client asks for it.
-  const span = Math.max(0.4, Math.min(30, (Number.isFinite(to) ? to : from + 30) - from));
+  const duration = await probeDuration(filePath);
+
+  // The trim is a LENGTH, and it is the shopper's own: never read more than half
+  // a minute of a clip, and never read past its end — a 21 s clip asked for
+  // "0 to 30" has 21 s to spread eight frames across, and aiming three of them
+  // into nothing would just lose those angles.
+  const asked = Number.isFinite(to) ? to - from : 30;
+  const within = Number.isFinite(duration) && duration > 0 ? duration - from : Infinity;
+  const span = clamp(Math.min(30, asked, within), 0.4, 30);
 
   const root = await mkdtemp(join(tmpdir(), '3dg-clip-'));
   try {
-    const keyframes = await grab(filePath, join(root, 'key'), {
-      from, span, count, maxWidth, timeoutMs, keyframesOnly: true,
-    });
-    if (keyframes.length >= Math.min(6, Math.ceil(span))) return keyframes;
+    // Half a slot in from each end: the first and last moments of a turn are
+    // where somebody is still finding their place, and they are the two frames
+    // most likely to catch a body on its way in or out of the shot.
+    const slots = [];
+    for (let i = 0; i < count; i += 1) {
+      slots.push({
+        name: `frame-${String(i + 1).padStart(2, '0')}`,
+        time: clamp(from + (span * (i + 0.5)) / count, 0, Math.max(0, (duration || Infinity) - 0.05)),
+      });
+    }
 
-    const even = await grab(filePath, join(root, 'even'), {
-      from, span, count, maxWidth, timeoutMs, fps: count / span,
-    });
-    return even.length ? even : keyframes;
+    const results = await sweep(filePath, root, slots, { maxWidth, timeoutMs });
+
+    // One second look at any angle that came back empty. A single seek can land
+    // on a blank instant (the tail of somebody else's cut, a frame the encoder
+    // threw away); the next tenth of a second is usually a perfectly good
+    // picture, and it costs one cheap seek rather than a missing view.
+    const missed = slots.map((_, i) => i).filter((i) => !results[i]);
+    if (missed.length) {
+      const retry = missed.map((i) => ({
+        name: `${slots[i].name}r`,
+        time: clamp(slots[i].time + span / (count * 3), 0, Math.max(0, (duration || Infinity) - 0.05)),
+      }));
+      const second = await sweep(filePath, root, retry, { maxWidth, timeoutMs });
+      missed.forEach((i, k) => {
+        if (second[k]) results[i] = second[k];
+      });
+    }
+
+    const frames = results.filter(Boolean);
+    if (info) {
+      Object.assign(info, {
+        duration: Number.isFinite(duration) ? Number(duration.toFixed(2)) : null,
+        span: Number(span.toFixed(2)),
+        asked: count,
+        taken: frames.length,
+        blank: slots.filter((s) => s.blank).length,
+        errors: slots.filter((s) => s.error).map((s) => `${s.name}: ${s.error}`).slice(0, 4),
+      });
+    }
+    // Nothing at all came out and we know why: say so, rather than let the route
+    // report a generic "could not read that video" over a missing binary.
+    const firstError = slots.find((s) => s.error);
+    if (!frames.length && firstError) throw new Error(firstError.error);
+    return frames;
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-async function grab(filePath, dir, { from, span, count, maxWidth, timeoutMs, keyframesOnly = false, fps = null }) {
-  await mkdir(dir, { recursive: true });
-  const pattern = join(dir, 'f-%03d.jpg');
-  // Never upscale. A phone clip is often narrower than the target (WhatsApp
-  // sends 478x850), and stretching that to 900 would invent no detail at all
-  // while multiplying the image tokens the model has to read.
-  const scale = `scale=min(${maxWidth}\\,iw):-2`;
-  const vf = [fps ? `fps=${fps.toFixed(3)}` : null, scale].filter(Boolean).join(',');
+/** Ask for every slot at once, four at a time, and keep the ones that arrived. */
+async function sweep(filePath, dir, slots, { maxWidth, timeoutMs }) {
+  const results = new Array(slots.length).fill(null);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(SEEK_CONCURRENCY, slots.length) }, async () => {
+    for (;;) {
+      const i = next;
+      next += 1;
+      if (i >= slots.length) return;
+      const slot = slots[i];
+      try {
+        results[i] = await takeAt(filePath, dir, slot.time, slot.name, { maxWidth, timeoutMs });
+        slot.blank = results[i] === null;
+      } catch (e) {
+        slot.error = String(e?.message || e).slice(0, 160);
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
+/** One frame, at one timestamp, from one seek. */
+async function takeAt(filePath, dir, time, name, { maxWidth, timeoutMs }) {
+  const out = join(dir, `${name}.jpg`);
   await run(await ffmpegBinary(), [
     '-hide_banner', '-loglevel', 'error',
-    // -ss before -i seeks by keyframe, which is the fast kind of seek.
-    '-ss', String(from),
-    ...(keyframesOnly ? ['-skip_frame', 'nokey'] : []),
-    '-t', String(span),
+    // Leave stdin alone: a prompt for input is a hang, not a question.
+    '-nostdin',
+    // -ss BEFORE -i: seek to the nearest keyframe and decode forward to the
+    // timestamp asked for. That is the cheap seek, and it still lands on the
+    // exact picture — unlike seeking after -i, which decodes everything before it.
+    '-ss', time.toFixed(3),
     '-i', filePath,
-    '-vf', vf,
-    // passthrough, not the default: with -skip_frame the decoder hands back one
-    // frame it never filled in, and the default frame-rate machinery then CLONES
-    // that empty (black) picture across the whole set - which is exactly how a
-    // real clip arrived as eight black frames and was refused as "no person".
-    '-fps_mode', 'passthrough',
-    '-frames:v', String(count),
+    '-frames:v', '1',
+    '-an', '-sn', '-dn',
+    // Never upscale: a phone clip is often narrower than the target (WhatsApp
+    // sends 478x850), and stretching that to 900 invents no detail at all while
+    // multiplying the image tokens the model has to read.
+    '-vf', `scale=min(${maxWidth}\\,iw):-2`,
     '-q:v', '3',
-    '-y', pattern,
+    '-y', out,
   ], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
 
-  const names = (await readdir(dir)).filter((n) => n.endsWith('.jpg')).sort();
-  const frames = [];
-  for (const name of names) {
-    if (frames.length >= count) break;
-    const raw = await readFile(join(dir, name));
-    // Belt and braces for the same bug: a picture with no picture in it is not
-    // a view of anybody, whatever produced it.
-    if (await isBlank(raw)) continue;
-    const buffer = await withGrid(raw);
-    frames.push({
-      buffer,
-      size: buffer.length,
-      originalname: `frame-${String(frames.length + 1).padStart(2, '0')}.jpg`,
-      mimetype: 'image/jpeg',
+  const raw = await readFile(out);
+  // A picture with no picture in it is not a view of anybody, whatever produced it.
+  if (await isBlank(raw)) return null;
+  const buffer = await withGrid(raw);
+  return { buffer, size: buffer.length, originalname: `${name}.jpg`, mimetype: 'image/jpeg' };
+}
+
+/**
+ * How long the clip actually is, straight out of ffmpeg's own report on it.
+ * There is no ffprobe in this dependency tree, and ffmpeg prints the duration
+ * whether or not it can write anything, so its (failed) "just describe it" run
+ * is the probe. Returns null when the length cannot be read: the caller then
+ * simply trusts the trim it was given.
+ */
+async function probeDuration(filePath) {
+  try {
+    await run(await ffmpegBinary(), ['-hide_banner', '-nostdin', '-i', filePath], {
+      timeout: 20_000, maxBuffer: 1024 * 1024,
     });
+  } catch (e) {
+    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(String(e?.stderr || ''));
+    if (m) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
   }
-  return frames;
+  return null;
 }
 
 /**
  * A frame with no content: essentially black, and essentially uniform. A dark
  * room still has shape in it (so the deviation saves it); an undecoded frame is
- * flat and empty. Returns the stats too, because nothing else needs them twice.
+ * flat and empty.
  */
 async function isBlank(buffer) {
   try {
@@ -214,4 +287,9 @@ async function withGrid(buffer) {
     // the worse trade.
     return buffer;
   }
+}
+
+function clamp(value, low, high) {
+  if (!Number.isFinite(value)) return low;
+  return Math.min(Math.max(value, low), high);
 }
