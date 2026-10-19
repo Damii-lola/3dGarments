@@ -119,6 +119,8 @@ Points:
   waistL, waistR     left/right edges of the torso at the narrowest point of the waist
   hipL, hipR         left/right edges of the body at the widest hip/seat point
   armL, armR         the left and right edges of ONE upper arm (use the arm on the left of the image), midway between shoulder and elbow
+  elbowL, elbowR     the point of the elbow - the bony back of the joint, not the crease in front of it
+  wristL, wristR     the wrist bone where the hand meets the forearm - NOT the knuckles and NOT the fingertips
   crotch      where the legs meet
   footL, footR       left/right feet where they touch the floor
 CRITICAL: "left/right" ALWAYS means the horizontal extremes in THIS image. In a front or back view a left/right pair measures body WIDTH. In a side view the same pair measures body DEPTH, front to back.
@@ -168,6 +170,8 @@ Respond with ONLY this JSON, no markdown and no prose outside it. The numbers in
     "waistL": { "x": 35, "y": 42 }, "waistR": { "x": 65, "y": 42 },
     "hipL": { "x": 34, "y": 47 }, "hipR": { "x": 66, "y": 47 },
     "armL": { "x": 21, "y": 32 }, "armR": { "x": 31, "y": 32 },
+    "elbowL": { "x": 19, "y": 40 }, "elbowR": { "x": 33, "y": 40 },
+    "wristL": { "x": 18, "y": 50 }, "wristR": { "x": 34, "y": 50 },
     "crotch": { "x": 50, "y": 52 },
     "footL": { "x": 45, "y": 95 }, "footR": { "x": 55, "y": 95 }
   },
@@ -666,7 +670,7 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
   });
 }
 
-bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
+bodyScan.post('/', upload.array('frames', 16), ah(async (req, res) => {
   const startedAt = Date.now();
   const geo = geometryFrames(req.body);
   // A store's own chart, if the scan came in through a link that carries one.

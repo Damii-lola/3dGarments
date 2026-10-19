@@ -89,7 +89,7 @@ const VERTICALS = {
  * then cut from.
  */
 const PATHS = {
-  shoulderToWrist: { points: ['shoulderJ', 'elbowJ', 'wristJ'], range: [16, 33] },
+  shoulderToWrist: { points: ['shoulder', 'elbow', 'wrist'], range: [16, 33] },
 };
 
 /** How a row is named when it is described back to the user. */

@@ -788,7 +788,13 @@ async function runAnalysis() {
       setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
       let frames;
       try {
-        frames = await extractFrames(recordedBlob, { count: 6, from, to });
+        // Twelve, not six, and the difference is geometric. A six-frame turn is
+        // sampled every 60 degrees, so unless the clip happens to start square
+        // on, the nearest thing to a front view can be 30 degrees off — and an
+        // arm read 30 degrees round the turn measures cos(30) of its length.
+        // Twelve frames put the worst case at 15 degrees, and give the server
+        // enough views to drop a blurred one without losing a measurement.
+        frames = await extractFrames(recordedBlob, { count: 12, from, to });
       } catch (e) {
         log('frame extraction failed — falling back to a single frame:', e.message);
         const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });

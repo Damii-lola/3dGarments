@@ -242,7 +242,7 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
   in time, the account screen is the default.
 - **The phone is not asked to do the measuring. The server is.** A shopper's phone draws a handful of
-  still frames out of the clip (`extractFrames`: six JPEGs at 900 px with the 10×10 grid, cheap) and
+  still frames out of the clip (`extractFrames`: twelve JPEGs at 900 px with the 10×10 grid, cheap) and
   sends those; the vision model reads the joints on the server and every number after that is
   arithmetic there. Nothing heavy runs on the device — no 9 MB download, no wasm heap, no GPU required.
   That is the fix for a scan that hangs in a WebView: MediaPipe in an Android WebView was minutes.
@@ -258,9 +258,19 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   instead of twelve, and the pass logs per-frame detect times plus the total. (All of this only
   happens under `?local=1` now.)
 - **The privacy copy says "a few still frames", not "nothing is uploaded".** The default path really
-  does send six JPEGs to the server, so every page that claims the video "is never uploaded" had to be
+  does send twelve JPEGs to the server, so every page that claims the video "is never uploaded" had to be
   reworded — the *video* is still never uploaded or stored, which is what the copy now says. This is
   the one place where the server-first architecture is visible to a shopper, and it must stay true.
+- **Twelve frames, because a six-frame turn can miss the front.** Six samples across a full rotation
+  are 60° apart: unless the clip happens to start square on, the closest thing to a front view is 30°
+  off, and a limb seen 30° round the turn projects to cos 30 of its length. Twelve puts the worst case
+  at 15° and leaves room to drop a blurred frame. With 12 the server's multer cap is `frames` 16.
+- **The sleeve length was blank on every vision-path scan, and it was not the frames.** `PATHS.
+  shoulderToWrist` asked for `shoulderJ/elbowJ/wristJ`, which is what the pose model emits; the vision
+  prompt never asked for an elbow or a wrist at all. So no amount of frames or video would have found
+  the arm. The prompt now asks for `elbowL/R` and `wristL/R`, `joint()` in `bodyGeometry.js` accepts
+  either naming scheme, and `measurePath` undoes the frame's turn by dividing the horizontal component
+  by cos(turn) (frames past 60° are skipped — too little left to undo).
 - **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
   accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
   current path), and the account screen picks the session up and opens the scanner. That is only half

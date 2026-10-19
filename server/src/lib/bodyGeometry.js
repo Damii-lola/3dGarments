@@ -362,6 +362,19 @@ export function point(frame, name) {
   return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null;
 }
 
+/**
+ * One joint, under either naming scheme in use. The pose model reports joints
+ * as shoulderJL; the vision model is asked for shoulderL, the same point in
+ * plain words. Asking for both means a measure is not silently blank because
+ * the frame came from the other side of the app.
+ */
+export function joint(frame, name, side) {
+  return point(frame, `${name}J${side}`)
+    || point(frame, `${name}${side}`)
+    || point(frame, `${name}J`)
+    || point(frame, name);
+}
+
 /** Horizontal separation of two landmarks, in image widths. */
 export function spanX(frame, a, b) {
   const p = point(frame, a);
@@ -841,18 +854,29 @@ export function measureVertical(frames, spec) {
 export function measurePath(frames, spec) {
   const {
     points, views = ['front', 'back', 'three-quarter'], range = null, sides = ['L', 'R'],
+    // Past 60 degrees the horizontal part of a limb is less than half of what it
+    // really is, and the arm has usually swung in front of the torso: too little
+    // left to undo honestly.
+    maxTurn = 60,
   } = spec;
   const samples = [];
   for (const f of frames) {
     if (!f.scale) continue;
     if (views && !views.includes(f.view)) continue;
+    const turn = frameTurn(f);
+    if (turn > maxTurn) continue;
+    // A limb is a line in the body's frontal plane, and turning the body by t
+    // compresses only its HORIZONTAL component (x' = x cos t); the vertical one
+    // is untouched. Dividing x back out by cos t puts the length back, so a
+    // three-quarter frame measures the arm instead of shortening it by a third.
+    const cos = Math.max(0.5, Math.cos(degToRad(turn)));
     const perSide = [];
     for (const side of sides) {
-      const pts = points.map((name) => point(f, `${name}${side}`) || point(f, name));
+      const pts = points.map((name) => joint(f, name, side));
       if (pts.some((p) => !p)) continue;
       let span = 0;
       for (let i = 1; i < pts.length; i += 1) {
-        const dx = pts[i].x - pts[i - 1].x;
+        const dx = (pts[i].x - pts[i - 1].x) / cos;
         const dy = (pts[i].y - pts[i - 1].y) / f.aspect;
         span += Math.hypot(dx, dy);
       }
