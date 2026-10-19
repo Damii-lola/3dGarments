@@ -34,10 +34,10 @@ A brand's chart has an unguessable code. Two addresses open it:
 - `/size/?g=CODE` — the scanner, straight in: **no account gate**, because a
   shopper following a product link is not a brand signing in. The size the scan
   comes back with is scored against that chart, and a size card sits above the
-  measurements. The chart answers the scanner's questions for the shopper: its
-  sex picks the sheet, so neither "Who is this video of?" nor "What are you
-  wearing?" is asked when the chart is men's or women's (a unisex chart still
-  asks who, since nothing else says). Opened on a phone it runs at the popup's
+  measurements. The scanner asks the shopper nothing: the chart's own sex picks
+  the sheet when it has one, and when nothing does, both built-in sheets are
+  scored against the body and the closer one is used — said on the results in so
+  many words. Opened on a phone it runs at the popup's
   compact scale; a desktop or tablet keeps the full size.
 - `/size/?g=CODE&embed=1` — the same page inside a popup: the bar is reduced to
   the centred logo, the sky comes off, and the whole tool is drawn 52% smaller

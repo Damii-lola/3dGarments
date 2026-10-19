@@ -392,46 +392,6 @@ body {
 .calib-dot:active { cursor: grabbing; }
 .calib-dot:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
-.fit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-
-/* Who the video is of. Asked, never guessed: the group decides the head-length
-   constant, the size chart and which measurement sheet is read. */
-.who {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.who-legend {
-  padding: 0;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-weight: 600;
-}
-.who-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-.who-btn {
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.who-btn:hover { background: rgba(255, 255, 255, 0.07); }
-.who-btn.on {
-  border-color: var(--accent);
-  background: rgba(255, 91, 58, 0.16);
-  color: #fff;
-}
-.who-hint { margin: 0; font-size: 0.82rem; color: var(--faint); line-height: 1.5; }
-
 .trim-video {
   width: 100%;
   max-height: 46vh;
@@ -990,54 +950,6 @@ body {
 }
 
 /* ---------- the working behind each number ---------- */
-/* ---------- what the app saw (the frames behind the numbers) ---------- */
-.seen {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.02);
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-}
-.seen summary {
-  cursor: pointer;
-  font-size: 0.82rem;
-  color: var(--muted);
-  list-style: none;
-}
-.seen summary::-webkit-details-marker { display: none; }
-.seen summary::before { content: '+ '; color: var(--faint); }
-.seen[open] summary::before { content: '− '; }
-.seen-note {
-  margin: 0.6rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--faint);
-}
-.seen-frames {
-  list-style: none;
-  margin: 0.75rem 0 0.15rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.seen-frame { display: flex; flex-direction: column; gap: 0.375rem; }
-.seen-img {
-  display: block;
-  width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid var(--line);
-  background: #000;
-}
-.seen-cap { margin: 0; font-size: 0.78rem; line-height: 1.45; color: var(--muted); }
-.seen-widths {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
 .notes {
   list-style: none;
   margin: 0;
@@ -1905,9 +1817,6 @@ a.btn-ghost {
   .tip-what { font-size: 0.74rem; }
   .tip-where { font-size: 0.7rem; }
   .tip-close { font-size: 0.58rem; }
-  /* Three stacked selects rather than two squeezed ones: at this scale "Not
-     sure" was being clipped to "Not sur…". */
-  .fit-grid { grid-template-columns: 1fr; }
   /* The account screen has to fit on one screen as well, so its fields step
      back the same way the prose does. */
   .auth-tabs { padding: 0.25rem; }

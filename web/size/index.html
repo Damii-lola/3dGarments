@@ -181,61 +181,6 @@
           <p class="step-note" id="calib-note"></p>
         </details>
 
-        <!-- The gender group decides the head-length constant, the size chart AND
-             which of the two measurement sheets is read, so it is asked rather
-             than guessed: a silhouette cannot tell a bust from a chest. -->
-        <fieldset class="who" id="who">
-          <legend class="who-legend">Who is this video of?</legend>
-          <div class="who-buttons">
-            <button type="button" class="who-btn" data-gender="male" aria-pressed="false">A man</button>
-            <button type="button" class="who-btn" data-gender="female" aria-pressed="false">A woman</button>
-          </div>
-          <p class="who-hint">Men's and women's sheets measure different things, so pick the right one.</p>
-        </fieldset>
-
-        <!-- Fabric sits between the tape and the body, and it is over every
-             frame, so its thickness comes off every girth. Left unsaid it stays
-             in the numbers. -->
-        <fieldset class="who" id="wear">
-          <legend class="who-legend">What are you wearing?</legend>
-          <div class="fit-grid">
-            <label class="calib-field">
-              <span class="calib-field-label">Top</span>
-              <select id="wear-top">
-                <option value="">Not sure</option>
-                <option value="t-shirt">Thin t-shirt</option>
-                <option value="polo">Polo shirt</option>
-                <option value="flannel">Flannel / overshirt</option>
-                <option value="jumper">Knit jumper</option>
-                <option value="hoodie">Hoodie / sweatshirt</option>
-                <option value="jacket">Jacket</option>
-                <option value="puffer">Puffer / down jacket</option>
-                <option value="bare">Bare torso</option>
-              </select>
-            </label>
-            <label class="calib-field">
-              <span class="calib-field-label">Fit</span>
-              <select id="wear-fit">
-                <option value="regular">Regular</option>
-                <option value="fitted">Fitted</option>
-                <option value="loose">Loose</option>
-              </select>
-            </label>
-            <label class="calib-field">
-              <span class="calib-field-label">Lower</span>
-              <select id="wear-lower">
-                <option value="">Not sure</option>
-                <option value="bare">Bare legs / shorts</option>
-                <option value="jeans">Jeans</option>
-                <option value="chinos">Chinos / trousers</option>
-                <option value="joggers">Joggers / sweatpants</option>
-                <option value="thick">Thick or lined trousers</option>
-              </select>
-            </label>
-          </div>
-          <p class="who-hint">Saying what it is takes the fabric's thickness off the numbers, instead of leaving it on as if it were you.</p>
-        </fieldset>
-
         <div class="actions">
           <button class="btn-primary" id="analyze-btn" type="button" disabled>Analyze my size</button>
           <button class="btn-ghost" id="start-over-trim" type="button">Start over</button>
@@ -308,16 +253,6 @@
         <p class="tip-where" id="tip-where"></p>
         <p class="tip-close">Tap anywhere to close</p>
       </div>
-
-      <!-- What the app actually saw: the frames, the mask, and the rows the
-           widths were read at. A refusal is nearly always something visible in
-           the picture — an arm pressed to the ribs, feet out of frame — so it is
-           shown rather than described. -->
-      <details class="seen" id="seen" hidden>
-        <summary>What the app saw</summary>
-        <p class="seen-note" id="seen-note"></p>
-        <ol class="seen-frames" id="seen-frames"></ol>
-      </details>
 
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </main>

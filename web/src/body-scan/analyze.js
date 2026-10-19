@@ -119,9 +119,12 @@ export function analyzeGeometry(measured, opts = {}) {
     'store-chart', body.chart ? `${body.chart.name || 'unnamed'} (${body.chart.rows?.length || 0} sizes)` : 'none',
     body.frames.map((f) => `${f.view} conf=${Number(f.confidence).toFixed(2)} n=${Object.keys(f.landmarks).length}`));
 
+  // A Render instance that has gone to sleep takes the better part of a minute
+  // before it answers the first request; thirty seconds cut that off mid-wake and
+  // reported a working service as broken. The numbers themselves are cheap.
   return request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }, { timeoutMs: 30000, ...opts });
+  }, { timeoutMs: 120000, ...opts });
 }

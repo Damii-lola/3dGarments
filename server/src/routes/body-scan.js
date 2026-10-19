@@ -704,6 +704,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       gender: geo.gender,
       chart: brand?.chart || null,
       chartName: brand?.name || '',
+      chartSex: brand?.chart?.sex || null,
       startedAt,
     });
   }
@@ -801,6 +802,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     gender: chosenGender,
     chart: brand?.chart || null,
     chartName: brand?.name || '',
+    chartSex: brand?.chart?.sex || null,
     startedAt,
   });
 }));
@@ -810,7 +812,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', startedAt }) {
+function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, rejected, unreadable, failures } };
@@ -979,45 +981,56 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
 
   // 8. Size.
   //
-  // Three tables can answer this, in order of who the size is actually for:
+  // Two tables can answer this, in order of who the size is actually for:
   //
   //   1. the store's own chart, when the scan came from a link that carries one.
   //      The shopper is buying that garment, so the store's row for it is the
   //      only answer that matters — and it is scored by exactly the same rule as
   //      everything else, so a chart typed badly is a chart that fits badly.
-  //   2. the built-in men's or women's sheet, when the shopper said who the clip
-  //      is of. Who they are is their own answer, never the video's guess.
-  //   3. both built-in sheets, when nobody said — and then the one that disagrees
-  //      least with the body decides, which is the least we can honestly do.
+  //   2. the built-in sheets. Nobody is asked which one, so both are scored
+  //      against the body and the one that disagrees least with it wins — and
+  //      the result says in so many words that that is how it was chosen.
+  //
+  // A store's chart carries its own sex when the store set one; when it does not
+  // (a unisex chart) the sheet still has to be decided, because a chart that
+  // names a bust and a chart that names a chest are not the same table.
+  let sheet = gender.guess === 'male' || gender.guess === 'female' ? gender.guess : null;
+  let bySheet = null;
+  if (!sheet && adjusted.chest != null) {
+    const m = bestSize('male', adjusted);
+    const f = bestSize('female', adjusted);
+    if (m || f) {
+      if (!m || !f) {
+        bySheet = m || f;
+        sheet = m ? 'male' : 'female';
+      } else {
+        bySheet = m.diff <= f.diff ? m : f;
+        sheet = bySheet === m ? 'male' : 'female';
+      }
+    }
+  }
+
   let size = null;
   let sizeBasis = null;
   let sizeSource = null;
   if (chart) {
-    const sex = gender.guess === 'female' ? 'female' : 'male';
-    size = bestSize(sex, adjusted, chart.rows, chart.columns);
+    size = bestSize(sheet || 'male', adjusted, chart.rows, chart.columns);
     if (size) {
       sizeSource = 'store';
       // The sheet basis is reported as the shopper's own answer, or not at all:
       // the chart decided the column, not the sheet.
-      sizeBasis = sex === gender.guess ? sex : null;
+      sizeBasis = sheet === gender.guess ? sheet : null;
     }
-  } else if (gender.guess === 'male' || gender.guess === 'female') {
-    size = bestSize(gender.guess, adjusted);
+  } else if (bySheet) {
+    size = bySheet;
+    sizeBasis = sheet;
+    sizeSource = 'reference';
+  } else if (sheet) {
+    size = bestSize(sheet, adjusted);
     if (size) {
-      sizeBasis = gender.guess;
+      sizeBasis = sheet;
       sizeSource = 'reference';
     }
-  } else if (adjusted.chest != null) {
-    const m = bestSize('male', adjusted);
-    const f = bestSize('female', adjusted);
-    if (m && f) {
-      size = m.diff <= f.diff ? m : f;
-      sizeBasis = m.diff <= f.diff ? 'male' : 'female';
-    } else if (m || f) {
-      size = m || f;
-      sizeBasis = (m ? 'male' : 'female');
-    }
-    if (size) sizeSource = 'reference';
   }
 
   // 9. Notes. Only ever about what WAS measured, or about the video itself.
@@ -1072,7 +1085,10 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       : `You marked ${marked.what}, but the frame it was on had no usable head, so the scale stayed on the head ruler.`);
   }
   if (gender.chosen) {
-    notes.push(`Read against the ${gender.guess === 'female' ? 'women' : 'men'}'s measurement sheet, as you chose.`);
+    const sheet = gender.guess === 'female' ? "women's" : "men's";
+    notes.push(chartSex
+      ? `This store's chart is cut for ${sheet} sizes, so the measurements were read against the ${sheet} sheet.`
+      : `Read against the ${sheet} measurement sheet.`);
   } else if (gender.guess === 'unsure') {
     notes.push('You did not say who this video was for, so the size was picked from the body proportions alone.');
   }

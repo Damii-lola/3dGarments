@@ -74,56 +74,6 @@ const calibWhat = document.getElementById('calib-what');
 const calibTime = document.getElementById('calib-time');
 const calibStage = document.getElementById('calib-stage');
 const calibNote = document.getElementById('calib-note');
-const wearTop = document.getElementById('wear-top');
-const wearFit = document.getElementById('wear-fit');
-const wearLower = document.getElementById('wear-lower');
-
-/**
- * What each garment adds on ONE side of the body, in inches. These are the same
- * numbers the vision prompt has always asked for (a thin tee 0.15, a hoodie 0.6,
- * a puffer 1.2), so both paths subtract the same fabric.
- */
-const GARMENTS = {
-  bare: { top: 'nothing', thicknessIn: 0 },
-  't-shirt': { top: 'a thin t-shirt', thicknessIn: 0.15 },
-  polo: { top: 'a polo shirt', thicknessIn: 0.2 },
-  flannel: { top: 'a flannel shirt', thicknessIn: 0.35 },
-  jumper: { top: 'a knit jumper', thicknessIn: 0.45 },
-  hoodie: { top: 'a hoodie', thicknessIn: 0.6 },
-  jacket: { top: 'a jacket', thicknessIn: 0.7 },
-  puffer: { top: 'a puffer jacket', thicknessIn: 1.2 },
-};
-/** Trousers are their own thickness: they cover different rows from a top. */
-const LOWER_GARMENTS = {
-  bare: { lower: 'nothing', thicknessIn: 0 },
-  jeans: { lower: 'jeans', thicknessIn: 0.09 },
-  chinos: { lower: 'chinos', thicknessIn: 0.08 },
-  joggers: { lower: 'joggers', thicknessIn: 0.16 },
-  thick: { lower: 'thick trousers', thicknessIn: 0.15 },
-};
-/** How much more a loose garment stands off the body than a fitted one. */
-const FIT_FACTOR = { fitted: 0.8, regular: 1, loose: 1.4 };
-
-/** The clothing as the measurement engine wants it, or {} if they did not say. */
-function readClothing() {
-  const g = GARMENTS[wearTop.value];
-  const l = LOWER_GARMENTS[wearLower.value];
-  if (!g && !l) return {};
-  const fit = FIT_FACTOR[wearFit.value] ? wearFit.value : 'regular';
-  const out = {};
-  if (g) {
-    out.top = g.top;
-    out.topFit = fit;
-    out.density = g.thicknessIn >= 0.45 ? 'heavy' : g.thicknessIn >= 0.2 ? 'medium' : 'light';
-    out.thicknessIn = Number((g.thicknessIn * FIT_FACTOR[fit]).toFixed(2));
-  }
-  if (l) {
-    out.lower = l.lower;
-    out.lowerFit = fit;
-    out.lowerThicknessIn = Number((l.thicknessIn * FIT_FACTOR[fit]).toFixed(2));
-  }
-  return out;
-}
 
 const analysis = document.getElementById('analysis');
 const factsEl = document.getElementById('facts');
@@ -148,15 +98,6 @@ const verdictRow = document.getElementById('verdict-row');
 const verdictNote = document.getElementById('verdict-note');
 
 const statusEl = document.getElementById('status');
-
-const whoButtons = [...document.querySelectorAll('.who-btn')];
-/** The two questions the scanner asks. A store's chart answers both. */
-const whoField = document.getElementById('who');
-const wearField = document.getElementById('wear');
-
-const seenEl = document.getElementById('seen');
-const seenNote = document.getElementById('seen-note');
-const seenFrames = document.getElementById('seen-frames');
 
 const log = (...args) => console.log('[3dg]', ...args);
 
@@ -236,19 +177,11 @@ let posterUrl = null;
 let analyzing = false;
 
 /**
- * Who the video is of, as the user answered. 'unsure' until they pick: the
- * gender group decides the head-length constant (and so every centimetre), the
- * size chart, and which of the two measurement sheets is computed, and none of
- * those may be guessed from a silhouette.
+ * Who the video is of. The scanner never asks: a store's chart says who it is
+ * cut for, and where nothing says, the server reads the size off the body
+ * proportions and says in so many words that it did.
  */
 let chosenGender = 'unsure';
-
-/** The frames the last measurement looked at, for "What the app saw". */
-let lastSeen = [];
-let lastSeenNote = '';
-let lastSeenOpen = false;
-/** Object URLs currently held by that section, so they can be given back. */
-let seenUrls = new Set();
 
 /* ---------- helpers ---------- */
 function setStatus(message, kind = '') {
@@ -266,38 +199,21 @@ function el(tag, className, text) {
   return node;
 }
 
-/** Analyze is only live once the group has been picked and nothing is running. */
+/** Analyze is live as soon as there is a clip to read and nothing is running. */
 function updateAnalyzeEnabled() {
-  analyzeBtn.disabled = analyzing || chosenGender === 'unsure';
-}
-
-/** Record the group the user picked and show which one is on. */
-function setGender(value) {
-  chosenGender = value;
-  for (const btn of whoButtons) {
-    const on = btn.dataset.gender === value;
-    btn.classList.toggle('on', on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  }
-  updateAnalyzeEnabled();
+  analyzeBtn.disabled = analyzing || !recordedBlob;
 }
 
 /**
- * A store's chart already says who it is for, so a shopper who followed one is
- * never quizzed: the sex on the chart picks the head constant, the sheet and the
- * categories, and both questions come off the trim screen — a product page does
- * not get to ask a shopper their sex and their outfit before it will help. The
- * chart is the store's statement, not a guess; a chart with no sex (unisex) or
- * no chart at all still asks, because then there is nothing else to go on.
+ * A store's chart says who it is cut for, so the chart's sex is the measuring
+ * constant, the sheet and the category group — the shopper is never asked. A
+ * chart with no sex (unisex) or no chart at all leaves it unset, and then the
+ * server scores both built-in sheets against the body and reports the one it
+ * used rather than pretending nobody chose.
  */
 function applyChartSex(chart) {
-  if (!chart) return;
-  // The fabric question is precision, not identity: a shopper is never asked it.
-  if (wearField) wearField.hidden = true;
-  const sex = chart.sex;
-  if (sex !== 'male' && sex !== 'female') return;
-  setGender(sex);
-  if (whoField) whoField.hidden = true;
+  const sex = chart && chart.sex;
+  if (sex === 'male' || sex === 'female') chosenGender = sex;
 }
 
 function setBusy(busy) {
@@ -359,87 +275,11 @@ function releaseMedia() {
   try { trimVideo.load(); } catch { /* ignore */ }
 }
 
-/* ---------- what the app saw ---------- */
-/** One line describing a frame, in the order the app read it. */
-function seenLine(item) {
-  if (item.caption) return item.caption;
-  const head = `Frame ${item.i + 1} · ${fmtTime(item.t)}`;
-  if (!item.person) return `${head} — nobody was found in this frame`;
-  const view = item.view === 'three-quarter' ? 'three-quarter turn' : `${item.view}-on`;
-  if (item.reason) return `${head} · ${view} · ${item.reason}`;
-  return `${head} · ${view} · ${item.usable} rows of your torso measured`;
-}
-
-/** The per-frame widths, so one reading far off the others is visible. */
-function seenWidths(item) {
-  const w = item.widths || {};
-  return [
-    ['chest', 'chest'], ['waist', 'waist'], ['hips', 'hips'],
-    ['shoulder', 'shoulder'], ['arm', 'upper arm'],
-  ]
-    .filter(([key]) => w[key] != null)
-    .map(([key, label]) => `${label} ${w[key]}"`);
-}
-
-function clearSeenDom() {
-  seenFrames.replaceChildren();
-  seenNote.textContent = '';
-  seenEl.hidden = true;
-  seenEl.open = false;
-}
-
-/** Give back the object URLs the section was holding. */
-function releaseSeen() {
-  for (const url of seenUrls) URL.revokeObjectURL(url);
-  seenUrls = new Set();
-  clearSeenDom();
-}
-
-function renderSeen(seen, { note = '', open = false } = {}) {
-  // Only the object URLs still in use survive a re-render; the rest are given
-  // back, so a second analysis does not leak the first one's frames.
-  const keep = new Set((seen || []).map((f) => f.url).filter(Boolean));
-  for (const url of seenUrls) if (!keep.has(url)) URL.revokeObjectURL(url);
-  seenUrls = keep;
-  clearSeenDom();
-
-  if (!seen || !seen.length) return;
-  seenEl.hidden = false;
-  seenEl.open = open;
-  seenNote.textContent = note
-    || 'Every frame the app sampled, with the mask it read you from, the joints it found, and the rows each width was measured at.';
-
-  for (const item of seen) {
-    const li = el('li', 'seen-frame');
-    const src = item.jpeg || item.url;
-    if (src) {
-      const img = document.createElement('img');
-      img.className = 'seen-img';
-      img.src = src;
-      img.alt = seenLine(item);
-      li.append(img);
-    }
-    li.append(el('p', 'seen-cap', seenLine(item)));
-    const widths = seenWidths(item);
-    if (widths.length) li.append(el('p', 'seen-widths', widths.join(' · ')));
-    seenFrames.append(li);
-  }
-}
-
-/** Remember the frames behind a result and show them straight away. */
-function setSeen(seen, note = '', open = false) {
-  lastSeen = seen || [];
-  lastSeenNote = note;
-  lastSeenOpen = open;
-  renderSeen(lastSeen, { note, open });
-}
-
 /* ---------- reset ---------- */
 function resetAll() {
   releaseMedia();
-  releaseSeen();
-  lastSeen = [];
   recordedBlob = null;
+  updateAnalyzeEnabled();
   for (const el of inputs) el.value = '';
   trimmer.load(0);
   calibrator.clear();
@@ -453,6 +293,7 @@ function resetAll() {
 /* ---------- after recording: show the trim step ---------- */
 async function handleRecording(file) {
   recordedBlob = file;
+  updateAnalyzeEnabled();
   show('trim');
   setStatus('Loading your video…');
   log('recorded', { name: file.name, type: file.type, bytes: file.size });
@@ -824,7 +665,6 @@ function renderAnalysis(data) {
   renderMeasures(data);
   renderNotes(data);
   renderVerdict(data);
-  renderSeen(lastSeen, { note: lastSeenNote, open: lastSeenOpen });
   // Restart the entrance: the cards are new elements and animate on their own,
   // but the heading and the chips are the same nodes as last time, so the class
   // has to be dropped and forced back on for them to run again.
@@ -857,8 +697,6 @@ async function runAnalysis() {
   if (analyzing || !recordedBlob) return;
   setBusy(true);
   setStatus('Starting the measurement…', 'busy');
-  lastSeen = [];
-  releaseSeen();
   const startedAt = Date.now();
 
   try {
@@ -892,11 +730,6 @@ async function runAnalysis() {
         });
         log('on-device measurement', measured);
         if (measured.frames.length) {
-          // Keep the frames themselves: if the numbers look wrong, the picture
-          // they came from is the only thing that can say why.
-          lastSeen = measured.seen || [];
-          lastSeenNote = '';
-          lastSeenOpen = false;
           // A chest is the one measurement a size cannot be worked out without,
           // and the one thing a clip standing still can get wrong: arms pressed
           // against the ribs sit in front of the torso, so nothing in the picture
@@ -905,8 +738,6 @@ async function runAnalysis() {
           const anyChest = measured.frames.some((f) => f.landmarks && f.landmarks.armpitL != null);
           if (!anyChest) {
             log('no frame gave a chest measurement — asking for a retake');
-            setSeen(measured.seen,
-              'None of these frames could give a chest measurement, so no size could be worked out from them.', true);
             setStatus('We could not measure your chest: your arms were against your sides in every frame, so there is no way to tell your torso from your arms. Stand with your arms a little away from your body and record again — that one change is what gives you a size.', 'error');
             setBusy(false);
             return;
@@ -920,8 +751,10 @@ async function runAnalysis() {
             // The user's own known size, if they marked one. It is the strongest
             // anchor there is, and it is applied across the whole clip.
             references: markedReference ? [markedReference] : [],
-            // Fabric does not leave the numbers unless it is named.
-            clothing: readClothing(),
+            // Nothing is said about what was worn, so nothing is taken off for
+            // it: better a number with the t-shirt still in it than a guess
+            // subtracted from every girth.
+            clothing: {},
             onTick: (s) => setStatus(`Working out your measurements… ${s}s`, 'busy'),
           });
         } else {
@@ -945,13 +778,6 @@ async function runAnalysis() {
         frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
       }
       log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
-      lastSeen = frames.map((f, i) => ({
-        i,
-        caption: `Frame ${i + 1} of ${frames.length} — sent to the server`,
-        url: URL.createObjectURL(f),
-      }));
-      lastSeenNote = 'Nothing usable could be measured on the device, so these frames were sent to the server for the vision model to read.';
-      lastSeenOpen = false;
 
       // The tick keeps the status moving so it never looks frozen.
       setStatus(`Analyzing ${frames.length} frames on the server… ${since(startedAt)}`, 'busy');
@@ -968,15 +794,6 @@ async function runAnalysis() {
   } catch (e) {
     log('analyze failed:', e.message);
     setStatus(e.message || 'Something went wrong during analysis.', 'error');
-    // The frames are the whole reason a measurement was refused, so show them
-    // next to the reason rather than leaving the message to explain a picture
-    // the user cannot see.
-    if (lastSeen.length) {
-      renderSeen(lastSeen, {
-        note: 'These are the frames the analysis was working from.',
-        open: true,
-      });
-    }
     setBusy(false);
   }
 }
@@ -1000,9 +817,6 @@ for (const el of inputs) {
 openCamera.addEventListener('click', () => setChoice(captureChoice.hidden));
 
 analyzeBtn.addEventListener('click', runAnalysis);
-for (const btn of whoButtons) {
-  btn.addEventListener('click', () => setGender(btn.dataset.gender));
-}
 startOverTrim.addEventListener('click', resetAll);
 retakeBtn.addEventListener('click', resetAll);
 startOverBtn.addEventListener('click', resetAll);
