@@ -1997,3 +1997,26 @@ a.btn-ghost {
   .cam-icon { width: 3rem; height: 3rem; }
   .measure-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- the scanner opened as a plain link on a phone ----------
+   The tool was designed to sit at 52% down inside a store's popup (the 48%
+   scale above), but the same page is also opened directly: a WebView in a
+   brand's app, a tab from a message, a home-screen shortcut. There is no
+   `?embed=1` to say so, so the screen says it — a phone-width viewport, or a
+   touch device held sideways. Tablets and desktops keep the size they had. */
+@media (max-width: 600px), (hover: none) and (pointer: coarse) and (max-height: 500px) {
+  html.scan { font-size: calc(189% * 0.48); }
+  /* The bar is chrome, not content, but it still has to be pressable at this
+     scale: a 19px menu button is a miss waiting to happen. */
+  html.scan .nav-inner { padding: 0.3rem 0.35rem 0.3rem 0.6rem; }
+  html.scan .nav-brand .brand-mark { width: 1.2rem; height: 1.2rem; }
+  html.scan .nav-brand .brand-name { font-size: 0.78rem; }
+  html.scan .nav-menu,
+  html.scan .nav-user { width: 3rem; height: 3rem; border-radius: 0.65rem; }
+  html.scan .nav-menu-icon,
+  html.scan .nav-user-icon { width: 1.2rem; height: 1.2rem; }
+  html.scan .nav-account { width: min(18rem, calc(100vw - 2rem)); }
+  html.scan .nav-account-name { font-size: 0.9rem; }
+  html.scan .nav-account-note { font-size: 0.75rem; }
+  html.scan .nav-account-item { font-size: 0.95rem; }
+}

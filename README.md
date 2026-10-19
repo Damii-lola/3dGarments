@@ -34,7 +34,9 @@ A brand's chart has an unguessable code. Two addresses open it:
 - `/size/?g=CODE` — the scanner, straight in: **no account gate**, because a
   shopper following a product link is not a brand signing in. The size the scan
   comes back with is scored against that chart, and a size card sits above the
-  measurements.
+  measurements. Opened on a phone it runs at the popup's compact scale (the page
+  reads the screen, so no parameter is needed); a desktop or tablet keeps the
+  full size.
 - `/size/?g=CODE&embed=1` — the same page inside a popup: the bar is reduced to
   the centred logo, the sky comes off, and the whole tool is drawn 52% smaller
   than on a phone (the panel's own size is the store's and does not change).
