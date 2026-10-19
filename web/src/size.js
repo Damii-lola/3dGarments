@@ -5,6 +5,11 @@
  * this address cold is sent to the same account screen instead, rather than left
  * staring at a camera that is not for them — one door, however you arrive.
  *
+ * The exception is the store's link (?g=CODE), which is a *shopper* following a
+ * garment, not a store signing in. They have no account here and never will, so
+ * that address — and anything carrying ?embed=1, which is the popup on a store's
+ * own page — goes straight to the scanner.
+ *
  * The scanner itself is heavy: a pose model, the silhouette pass, three.js and
  * the garment lab. So it is imported only after the door is open — somebody who
  * has merely followed a link here pays a few kilobytes, not a few megabytes.
@@ -26,9 +31,16 @@ function within(promise, ms, fallback) {
   return Promise.race([promise, new Promise((r) => setTimeout(() => r(fallback), ms))]);
 }
 
+const params = new URLSearchParams(location.search);
+/** The garment in the store's link. A scan with one is a shopper, not a store. */
+const chartCode = (params.get('g') || '').trim();
+/** The popup on the store's own page. No bar, no footer, no account — just the tool. */
+const embedded = params.get('embed') === '1';
+if (embedded) document.body.classList.add('embed');
+
 const config = await within(cloudConfig().catch(() => null), CONFIG_WAIT, null);
 
-if (!config) {
+if (!config || embedded || chartCode) {
   await import('./main.js');
 } else if (isAccount(await getSession())) {
   await import('./main.js');

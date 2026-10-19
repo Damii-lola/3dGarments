@@ -67,6 +67,11 @@
         </p>
       </header>
 
+      <!-- The garment from the store's link, when there is one. Said on the
+           first screen, because a shopper who followed a product link should be
+           able to see that the app knows which product they mean. -->
+      <p class="garment" id="garment" hidden></p>
+
       <!-- One tap opens the two ways in. Both are labels over a real file
            input, so the hand-off to the phone's own camera app needs no
            scripting and no getUserMedia. -->
@@ -249,6 +254,16 @@
           <h1 class="result-title" id="result-title">Read from your video</h1>
           <p class="result-lead" id="measures-lead">Hold any number to see what it is.</p>
         </header>
+
+        <!-- The size, when the scan came in through a store's link: the garment's
+             size first, because that is what that shopper came for, then the
+             numbers it was read from underneath. -->
+        <section class="verdict" id="verdict" hidden>
+          <p class="verdict-eyebrow" id="verdict-eyebrow">Your size</p>
+          <p class="verdict-size" id="verdict-size">&mdash;</p>
+          <p class="verdict-for" id="verdict-for"></p>
+          <p class="verdict-note" id="verdict-note"></p>
+        </section>
 
         <p class="estimate">
           <span class="estimate-mark" aria-hidden="true">&asymp;</span>

@@ -1,8 +1,15 @@
 # 3dGarments
 
-**An embeddable 3D Virtual Fitting Room for e-commerce.** Merchants add a script tag and the widget replaces the last static image in a product gallery with an interactive 3D mannequin. Shoppers match the mannequin to their own proportions (height, weight, bust, waist, hips, thighs, shoulders …, with live girth readouts) to see how a garment will sit on a body like theirs — fewer sizing guesses, fewer returns, longer time on the product page. Brands can also show a digital twin of a garment before it is manufactured (pre-order validation).
+**A size finder for clothing brands.** A brand types a garment's size chart into
+its dashboard, gets a link, and drops a snippet on the product page: the shopper
+presses one button, records a slow 360° turn on their own phone, and is told
+which size of _that_ garment to buy — measured against the brand's own chart, not
+a generic one. No app, no account for the shopper, no video or measurement stored
+anywhere.
 
-Today the repo holds the fitting-room core: male and female mannequins with real-measurement shape controls, garment photo upload and the garment-processing pipeline. The embeddable widget, the merchant dashboard and billing are what comes next.
+The same engine also powers the fitting-room core in this repo: male and female
+mannequins with real-measurement shape controls, and a garment photo pipeline
+(cut-out, measurement, AI description) that clothing upload builds on.
 
 The bodies are the models in `assets/` (FBX), turned into rigged web models (`web/public/body/*.glb`) by `tools/body/`.
 
@@ -18,7 +25,29 @@ The bodies are the models in `assets/` (FBX), turned into rigged web models (`we
 
 The fitting room runs entirely in the browser and needs no backend. The API and Supabase back the garment pipeline (cut-out, measurement, AI description) that clothing upload builds on.
 
-The public site is five pages, all real directories on disk: `/` (the home page — the camera first, then the page the brands read), `/size/` (the scanner — record a 360° turn, trim it, get a size), `/auth/` (create an account with a username, an email and a password, or log in), `/pricing/` and `/dashboard/`. Every page carries the same bar: the brand and the four sections on the left, the account button on the right. The camera sends you to the account screen, and the account screen hands you on to the scanner; opening `/size` without an account does the same. The links in the bar are written as `%BASE_URL%…`, which Vite fills in at build time, so one copy of the markup works in a subdirectory and at a domain root.
+The public site is five pages, all real directories on disk: `/` (the home page — the camera first, then the page the brands read), `/size/` (the scanner — record a 360° turn, trim it, get a size), `/auth/` (create an account with a username, an email and a password, or log in), `/pricing/` and `/dashboard/` (where a brand types its clothing and gets its links). Every page carries the same bar: the brand, the four sections, and the account button. The camera sends you to the account screen, and the account screen hands you on to the scanner; opening `/size` without an account does the same. On the app pages (`/size`, `/auth`) the bar is clamped to the app column, so the four section names fold behind one button at every size rather than crowding the brand. The links in the bar are written as `%BASE_URL%…`, which Vite fills in at build time, so one copy of the markup works in a subdirectory and at a domain root.
+
+### The shopper's link, and the popup
+
+A brand's chart has an unguessable code. Two addresses open it:
+
+- `/size/?g=CODE` — the scanner, straight in: **no account gate**, because a
+  shopper following a product link is not a brand signing in. The size the scan
+  comes back with is scored against that chart, and a size card sits above the
+  measurements.
+- `/size/?g=CODE&embed=1` — the same page inside a popup, with the bar and the
+  sky taken out. This is what `web/public/embed.js` opens in an overlay on the
+  brand's own product page, so the shopper never leaves the page they are buying
+  from. The script is plain JavaScript with no build step, so a brand needs one
+  tag:
+
+  ```html
+  <script src="https://damii-lola.github.io/3dGarments/embed.js"
+          data-chart="CODE" data-label="Find my size"></script>
+  ```
+
+  It also publishes `window.ThreeDG.open({ code, name })` for a button of the
+  brand's own — which is how the dashboard previews a chart.
 
 ## One-time setup (about 10 minutes)
 
@@ -29,7 +58,7 @@ The public site is five pages, all real directories on disk: `/` (the home page 
    - **URL**, **anon key** and **service_role key**: Settings → API
    - **Access token**: Account → Access Tokens
 3. Under Authentication → URL Configuration, set **Site URL** to `https://damii-lola.github.io/3dGarments/auth/` and add `https://damii-lola.github.io/3dGarments/**` (plus `http://localhost:5173/**` while developing) to **Redirect URLs**. Supabase falls back to the Site URL whenever a redirect is not in that list, so this is the setting that decides whether a confirmation link lands on the account screen or on something unrelated.
-4. Apply the schema: paste `supabase/setup.sql` into SQL Editor → New query → Run (it is idempotent). It creates the tables, the RLS policies, the private `garments` bucket, and `profiles` — the one row per account that holds the username, plus the trigger that writes it on every signup and the `username_taken()` check the signup form calls.
+4. Apply the schema: paste `supabase/setup.sql` into SQL Editor → New query → Run (it is idempotent). It creates the tables, the RLS policies, the private `garments` bucket, and `profiles` — the one row per account that holds the username, plus the trigger that writes it on every signup and the `username_taken()` check the signup form calls. It also creates `size_charts`: one row per garment a brand has typed in, readable by its owner only, plus `chart_by_code()` — a `security definer` function that returns one chart to a shopper who has the code and no account. Until this has run, the dashboard says so in words and saving is off; nothing else is affected.
 5. Under Authentication → Providers → Email, turn **Confirm email** off. Signup then opens the scanner immediately; left on, it emails a link instead and the account screen says so.
 6. Optional, and only if you keep **Confirm email** on: paste `supabase/emails/confirm-signup.html` into Authentication → Email Templates → **Confirm signup**. Its button is `{{ .ConfirmationURL }}`, which comes back to the account screen, picks up the session it carries and opens the scanner — the same destination the signup form asks for with `accountPageUrl()` in `web/src/services/auth.js`. A link that has expired or has been used once says so in words on that screen rather than leaving a blank page.
 
@@ -65,10 +94,13 @@ Rebuild the body models (only after changing `assets/` or `tools/body/`): start 
 |---|---|---|
 | GET | `/health`, `/health/deep` | liveness, integration check |
 | GET | `/api/garments` | list, with signed image URLs |
+| POST | `/api/body-scan` | measure a clip: on-device `pose` landmarks (JSON) or JPEG `frames` (multipart). Optional `gender` (the shopper's own answer) and `chart` (the brand's size chart, used only to pick a size — never to measure). Returns the measurements, the notes, and `size` / `sizeSource` |
 | POST | `/api/garments` | multipart `image` returns 202 and processes in the background |
 | GET / PATCH / DELETE | `/api/garments/:id` | read, rename / recategorise / fit, delete |
 | POST | `/api/garments/:id/reprocess` | re-run the pipeline |
 | GET / PUT | `/api/me/body` | body measurements |
 | GET / POST / DELETE | `/api/me/outfits` | saved outfits |
 
-All `/api` routes need `Authorization: Bearer <supabase access token>`.
+All `/api` routes need `Authorization: Bearer <supabase access token>` — except
+`/api/body-scan`, which is open on purpose: it measures a clip and stores nothing,
+and a shopper following a brand's link has no account to present.

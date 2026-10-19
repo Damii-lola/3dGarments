@@ -21,7 +21,7 @@ import {
   toIn,
 } from '../src/lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../src/lib/catalogue.js';
-import { bestSize } from '../src/lib/sizing.js';
+import { bestSize, chartFromInput, chartKey } from '../src/lib/sizing.js';
 
 const IN_CM = 2.54;
 
@@ -486,6 +486,33 @@ checkTrue('a chest-only measurement is still the nearest nominal', bestSize('mal
 checkTrue('women are scored on the bust column, waist and hips', bestSize('female', { chest: 36.0, waist: 28.0, hips: 38.0 }).sizeKey === 'M' && bestSize('female', { chest: 39.0, waist: 31.0, hips: 41.0 }).sizeKey === 'L', `${bestSize('female', { chest: 39, waist: 31, hips: 41 }).sizeKey}`);
 checkTrue('no chest means no size', bestSize('male', { waist: 30, hips: 38 }) === null);
 checkTrue('a size row can be read back for the chart the page shows', bestSize('male', { chest: 40, waist: 34, hips: 40 }).row.chest === 40);
+
+console.log('\n== a store\'s own chart sizes its own shoppers ==');
+// A store types its chart in, and that is the chart its shoppers must be sized
+// against — not ours. The rules do not change with the table: same worst-case
+// row, same tie. What changes is that the labels are the store's and the columns
+// are the store's, and a column the chart does not have cannot move the answer.
+const cmChart = chartFromInput({
+  unit: 'cm',
+  rows: [
+    { key: 'S', chest: 96, waist: 81 },
+    { key: 'M', chest: 101, waist: 86 },
+    { key: 'L', chest: 107, waist: 91 },
+  ],
+});
+checkTrue('a chart typed in centimetres is converted once, into inches', cmChart.M.chest === 39.8 && cmChart.M.waist === 33.9, `${cmChart?.M?.chest} in / ${cmChart?.M?.waist} in`);
+checkTrue('and a body between two of its rows takes the nearer one', bestSize('male', { chest: 40, waist: 32 }, cmChart).sizeKey === 'M', bestSize('male', { chest: 40, waist: 32 }, cmChart)?.sizeKey);
+checkTrue('a column the chart does not have cannot move the answer', bestSize('male', { chest: 40, waist: 32, hips: 60 }, cmChart).sizeKey === 'M', `${bestSize('male', { chest: 40, waist: 32, hips: 60 }, cmChart)?.sizeKey} - 60" hips against a chart with no hips column`);
+checkTrue('the store\'s own labels are what comes back', bestSize('male', { chest: 40, waist: 34 }, chartFromInput({ rows: [{ key: '38', chest: 38 }, { key: '40', chest: 40 }, { key: '42', chest: 42 }] })).sizeKey === '40', bestSize('male', { chest: 40 }, chartFromInput({ rows: [{ key: '38', chest: 38 }, { key: '40', chest: 40 }, { key: '42', chest: 42 }] }))?.sizeKey);
+checkTrue('a chest column is read as a chest column whoever it is for', chartKey({ A: { chest: 36 }, B: { chest: 40 } }) === 'chest' && chartKey({ A: { bust: 34 } }) === 'bust');
+checkTrue('a chart with no girth column sizes nobody rather than everybody', chartKey({ A: { waist: 30 }, B: { waist: 34 } }) === null && bestSize('male', { chest: 40 }, { A: { waist: 30 }, B: { waist: 34 } }) === null);
+checkTrue('a row that cannot be scored is dropped, and the others survive', (() => {
+  const c = chartFromInput({ rows: [{ key: 'M', chest: 40, waist: 34 }, { key: 'L', chest: 'lots' }, { key: 'XL', chest: 400 }] });
+  return Object.keys(c).length === 1 && c.M.chest === 40;
+})());
+checkTrue('two rows with one label are one size', Object.keys(chartFromInput({ rows: [{ key: 'M', chest: 40 }, { key: 'M', chest: 44 }] })).length === 1);
+checkTrue('an empty or unreadable chart is null, never an empty table', chartFromInput(null) === null && chartFromInput({ rows: [] }) === null && chartFromInput({ rows: [{ key: 'M' }] }) === null);
+checkTrue('a store chart answers a tie with the row typed first', bestSize('male', { chest: 39 }, chartFromInput({ rows: [{ key: 'S', chest: 38 }, { key: 'M', chest: 40 }] })).sizeKey === 'S', bestSize('male', { chest: 39 }, chartFromInput({ rows: [{ key: 'S', chest: 38 }, { key: 'M', chest: 40 }] }))?.sizeKey);
 
 console.log('\n== the head stays the ruler; the whole body only cross-checks it ==');
 // The scale used to be pulled to the middle of the adult band on every frame that

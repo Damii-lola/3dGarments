@@ -17,6 +17,7 @@ import { analyzePose } from './body-scan/pose.js';
 import { createTrimmer } from './body-scan/trim.js';
 import { createCalibrator } from './body-scan/calibrate.js';
 import { showNote } from './body-scan/notes.js';
+import { chartByCode, chartColumns } from './services/charts.js';
 
 /** ?llm=1 — skip the on-device measurement and use the vision model instead. */
 const forceLlm = new URLSearchParams(location.search).get('llm') === '1';
@@ -138,6 +139,13 @@ const tipWhere = document.getElementById('tip-where');
 const retakeBtn = document.getElementById('retake-btn');
 const startOverBtn = document.getElementById('start-over-btn');
 
+const garmentEl = document.getElementById('garment');
+const verdictEl = document.getElementById('verdict');
+const verdictEyebrow = document.getElementById('verdict-eyebrow');
+const verdictSize = document.getElementById('verdict-size');
+const verdictFor = document.getElementById('verdict-for');
+const verdictNote = document.getElementById('verdict-note');
+
 const statusEl = document.getElementById('status');
 
 const whoButtons = [...document.querySelectorAll('.who-btn')];
@@ -147,6 +155,37 @@ const seenNote = document.getElementById('seen-note');
 const seenFrames = document.getElementById('seen-frames');
 
 const log = (...args) => console.log('[3dg]', ...args);
+
+/* ---------- the garment in a store's link ---------- */
+/**
+ * ?g=CODE — the size chart of the garment this shopper followed a link to.
+ *
+ * The fetch starts here and is only waited on when a scan is actually sent: the
+ * scanner has to be usable the moment it opens, and a chart that arrives a moment
+ * later is still a chart that arrives. Until it does, the page says nothing about
+ * a garment at all — it never claims to be sizing for something it has not read.
+ */
+const chartCode = (new URLSearchParams(location.search).get('g') || '').trim();
+const garmentPromise = chartCode
+  ? chartByCode(chartCode).catch((e) => {
+    log('the size chart in this link could not be read:', e.message);
+    return null;
+  })
+  : Promise.resolve(null);
+/** The chart once it has arrived, or null. Read at send time, not at load time. */
+let garment = null;
+
+if (chartCode) {
+  garmentPromise.then((chart) => {
+    garment = chart;
+    if (!garmentEl) return;
+    garmentEl.hidden = false;
+    garmentEl.classList.toggle('garment-missing', !chart);
+    garmentEl.textContent = chart
+      ? `Sizing for ${chart.name}.`
+      : 'That size-chart link could not be read — you can still measure yourself.';
+  });
+}
 
 const fmtTime = (s) => {
   const total = Math.max(0, Math.round(s));
@@ -384,6 +423,7 @@ function resetAll() {
   setBusy(false);
   setStatus('');
   trimNote.textContent = '';
+  if (verdictEl) verdictEl.hidden = true;
   show('camera');
 }
 
@@ -707,10 +747,41 @@ function renderNotes(data) {
   }
 }
 
+/**
+ * The size the shopper came for, when the scan was scored against a store's own
+ * chart.
+ *
+ * It is not shown on the plain scanner at all: that page is a tape measure, and a
+ * size off a chart the visitor never asked about would be an answer to a question
+ * nobody put. When a chart WAS read and still no size came back, the card says so
+ * plainly rather than leaving the shopper to notice a missing row.
+ */
+function renderVerdict(data) {
+  if (!verdictEl) return;
+  if (!garment) {
+    verdictEl.hidden = true;
+    return;
+  }
+  const size = data.sizeSource === 'store' ? data.size : null;
+  const name = data.sizeName || garment.name || '';
+  const cols = chartColumns(garment);
+  const from = cols.length ? `your ${cols.join(', ')}` : 'your measurements';
+
+  verdictEl.hidden = false;
+  verdictEl.classList.toggle('verdict-none', !size);
+  verdictEyebrow.textContent = size ? 'Your size' : 'No size from this clip';
+  verdictSize.textContent = size || '';
+  verdictFor.textContent = name ? `for ${name}` : '';
+  verdictNote.textContent = size
+    ? `Worked out from ${from} against this garment's own chart, not a standard one.`
+    : `This clip did not show a straight-on front view with your arms clear of your sides, so there was nothing to work a size out from${name ? ` for ${name}` : ''}.`;
+}
+
 function renderAnalysis(data) {
   renderFacts(data);
   renderMeasures(data);
   renderNotes(data);
+  renderVerdict(data);
   renderSeen(lastSeen, { note: lastSeenNote, open: lastSeenOpen });
   // Restart the entrance: the cards are new elements and animate on their own,
   // but the heading and the chips are the same nodes as last time, so the class
@@ -731,6 +802,12 @@ async function runAnalysis() {
   try {
     const { from, to } = trimmer.getSpan();
     log('analyze start', { bytes: recordedBlob.size, type: recordedBlob.type, from, to });
+
+    // The store's own chart, if a scan is going to be scored against one. Waited
+    // for here rather than at page load: it has had the whole recording to arrive,
+    // so this costs nothing in practice.
+    const chart = garment || (await garmentPromise);
+    if (chartCode) log('sizing against', chart ? `${chart.name} (${chart.rows.length} sizes)` : 'the reference chart — the link could not be read');
 
     // 1. Measure ON THE DEVICE first. The pose model finds the joints and the
     //    person's own silhouette gives every width, so nothing is recalled from
@@ -775,6 +852,9 @@ async function runAnalysis() {
           setStatus(`Sending ${measured.frames.length} measurements…`);
           data = await analyzeGeometry(measured, {
             gender: chosenGender,
+            // The garment the shopper followed a link to, when there is one: the
+            // size they are shown is the size of the thing they want to buy.
+            chart,
             // The user's own known size, if they marked one. It is the strongest
             // anchor there is, and it is applied across the whole clip.
             references: markedReference ? [markedReference] : [],
@@ -815,6 +895,7 @@ async function runAnalysis() {
       setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
       data = await analyzeBody(frames, {
         gender: chosenGender,
+        chart,
         onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`),
       });
     }
@@ -871,9 +952,31 @@ window.addEventListener('pagehide', releaseMedia);
  * checked without recording a video. Local only; it touches no network.
  */
 if (new URLSearchParams(location.search).has('demo')) {
+  // ?demo=1&store=1 — the same results screen with a store's own chart behind it
+  // and a size card on it, so that half of the page can be checked without a
+  // link, a video, or a cloud.
+  const demoStore = new URLSearchParams(location.search).has('store');
+  if (demoStore) {
+    garment = {
+      name: 'Oxford Shirt',
+      sex: 'male',
+      unit: 'in',
+      rows: [
+        { key: 'S', chest: 36, waist: 30, hips: 38 },
+        { key: 'M', chest: 40, waist: 34, hips: 40 },
+        { key: 'L', chest: 44, waist: 38, hips: 44 },
+      ],
+    };
+    if (garmentEl) {
+      garmentEl.hidden = false;
+      garmentEl.textContent = 'Sizing for Oxford Shirt.';
+    }
+  }
   renderAnalysis({
     size: 'M',
     sizeBasis: 'male',
+    sizeSource: demoStore ? 'store' : 'reference',
+    sizeName: demoStore ? 'Oxford Shirt' : null,
     reconciled: true,
     frameCount: 6,
     gender: { guess: 'male', confidence: 1, chosen: true },

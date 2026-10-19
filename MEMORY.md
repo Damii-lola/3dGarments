@@ -182,6 +182,10 @@ body_profiles     id, user_id, settings jsonb (the full panel state per device),
 outfits           id, user_id, name, items jsonb
 
 garment_groups    id, user_id, name, status, photos jsonb, processed_at
+
+size_charts       id, user_id (default auth.uid()), code text unique (^[a-z0-9]{8,24}$),
+                  name, sex (male/female/unisex), unit (in/cm), rows jsonb, created_at, updated_at
+                  + chart_by_code(candidate text) → (name, sex, unit, rows)  (SECURITY DEFINER, anon may call it)
 ```
 
 Storage bucket: `garments` (private). Paths: `<user_id>/groups/<group_id>/<image_id>.<ext>`
@@ -209,9 +213,14 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   Dashboard, Pricing, then the account button, which opens a panel filled from the session — the
   username and email, Dashboard, Log out, or "Log in or sign up" when nobody is signed in. Log out
   reloads the page so a gated one notices. It is `sticky` on the marketing pages and `static` on
-  `/size` and `/auth` (`body.app`), where the room matters more than the chrome; on phones the four
-  sections fold into a menu and the bar is trimmed to a line, because at 189% they do not fit beside
-  the brand. Each page's own `<section data-reveal>` elements fade up as they are reached — the
+  `/size` and `/auth` (`body.app`), where the room matters more than the chrome. The four section
+  names fold behind one button on phones **and on the app pages at every size**: the app bar is
+  clamped to the app column (27.5 rem), and at a 16 px root the brand, four names, the account button
+  and the padding came to ≈463 px inside a 440 px bar — the brand would be the first thing to give,
+  which is the one thing that must not. `.app .nav-links { display: none }` plus one menu button fits
+  at any root size, and the dropdown itself (`.nav-links.open`) is defined once for both cases. Inside
+  a brand's popup (`body.embed`) the bar and the sky come off entirely. Each page's own
+  `<section data-reveal>` elements fade up as they are reached — the
   styles only hide them while `<html>` carries `js`, a flag set by a one-line script before the first
   paint and lifted by the page's own timer unless the observer reports first, so a page can never be
   left invisible. `aria-current` is set by comparing paths, not by hand in five files.
@@ -228,13 +237,28 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   says so and shows the login tab (`linkProblem()` in `src/auth.js`), and cleans the address bar.
   `supabase/emails/confirm-signup.html` is the paste-ready template for Authentication → Email
   Templates → Confirm signup.
-- **`/size` is behind the door**: `src/size.js` waits (4 s cap) for the cloud settings, then requires
-  a *non-anonymous* session, else `location.replace('../auth/')`. No cloud configured (or no answer)
-  → the scanner opens anyway; it measures on the device and needs no account. `main.js` is imported
-  only after the door is open.
-- **`/dashboard` is not gated**: signed out is a state there, not an error, so the page shows the way
-  in instead of redirecting. It shows the account row and, deliberately, nothing else — the scanner
-  stores nothing, so a dashboard full of numbers would be a dashboard full of lies.
+- **`/size` is behind the door — except for a brand's link.** `src/size.js` waits (4 s cap) for the
+  cloud settings, then requires a *non-anonymous* session, else `location.replace('../auth/')`. No
+  cloud configured (or no answer) → the scanner opens anyway; it measures on the device and needs no
+  account. Two addresses also open it with the door already open: `?g=CODE` (a shopper following a
+  product link — no account, ever) and `?embed=1` (the same page inside the popup). `main.js` is
+  imported only after the door is open.
+- **The merchant flow lives in `/dashboard`** (not gated: signed out is a state there, so it shows the
+  way in). Add a garment → type its size chart (own labels, own unit, columns follow who it is for:
+  chest for men/anyone, bust for women) → save → a code is generated client-side
+  (`crypto.getRandomValues`, 12 chars from an alphabet with no `l`/`0`/`1`) and the card appears with
+  the link, the popup snippet, a preview button, edit and delete. `src/services/charts.js` does the
+  CRUD and the shopper-side `chart_by_code` RPC; `notSetUp(error)` turns Postgres 42P01/42883 and
+  PostgREST PGRST202/PGRST205 into the one notice that matters ("run supabase/setup.sql, README step
+  4") instead of a raw error, and lets a real permission error show itself.
+- **The popup is `web/public/embed.js`** — plain JS, no build step, so Vite copies it verbatim to
+  `dist/embed.js` and `%BASE_URL%embed.js` is a stable address to paste into a shop. It reads
+  `data-chart`/`data-name`/`data-label`/`data-base` off its own `<script>` tag, derives the site root
+  from its own `src` (nothing is hard-coded), mounts a button, and on click injects a dimmed overlay
+  with `<iframe src="…/size/?g=CODE&embed=1">`. Escape, a backdrop click, the ✕, or a
+  `{source:'3dg', type:'close'}` postMessage from the frame (origin-checked) close it; the page
+  underneath is frozen and put back exactly as it was. It also publishes
+  `window.ThreeDG.open({code, name})`, which is how the dashboard's Preview runs the real thing.
 - **The password is never ours.** Supabase auth holds it, hashed. `profiles` has no password column
   and must never have one. The email lives in `auth.users` too; `profiles` holds only the username.
 - **The username rides in the signup metadata** (`options.data.username`), and the trigger writes the
@@ -396,6 +420,29 @@ Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applySha
 | `POST /api/groups` | create group |
 | `PATCH /api/groups/:id` | update group (name / photos) |
 | `DELETE /api/groups/:id` | delete group |
+| `POST /api/body-scan` | measure a clip (open route — no bearer): `source: 'pose'` + on-device landmarks, or multipart `frames` JPEGs for the vision fallback. Optional `gender` (the shopper's own answer) and `chart` (the brand's own size chart — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
+
+---
+
+## The size a brand's link comes back with (server/src/lib/sizing.js, routes/body-scan.js)
+
+- `bestSize(sex, girths, chart = CHARTS[sex])` scores every row by its **worst** disagreement with any
+  measured girth that the chart actually has a column for, and takes the smallest; an exact tie keeps
+  the smaller size (i.e. the row typed first). `chartKey(chart)` picks the column every row carries —
+  chest preferred, else bust — so a men's shirt chart the shop typed as "chest" is not read as a bust
+  chart. A chart with no chest/bust returns `null`: no size beats an invented one.
+- `chartFromInput(input)` normalises a shop's chart: cm → inches once (the chart carries its own unit),
+  label trimmed to 14 chars, first row wins on a duplicate label, girths outside 10–100 in dropped,
+  and a row with no chest/bust dropped rather than guessed at. `null` when nothing usable is left, so
+  the caller falls back to the reference chart rather than sizing against an empty table.
+- `readChart(body)` in the route takes the chart as an object (pose path) or a JSON string (multipart)
+  and never fails the scan for a bad chart — a chart is only ever used to CHOOSE a size.
+- The result carries `sizeSource` ('store' | 'reference') and `sizeName`, so the page can say whose
+  numbers these are; the size note reads `size.row[size.key]` instead of re-reading `CHARTS`. On a
+  store chart a successful size adds "This size is off <garment>'s own chart, not a standard one."
+- `/size` shows the size in a card above the measurements **only when a chart was read** (plain
+  scanning stays a tape measure), with an honest no-size state, and `?demo=1&store=1` renders that card
+  without a link or a cloud.
 
 ---
 
@@ -514,10 +561,15 @@ The previous session fixed these but the fixes were on the deleted branch. Re-ap
 - ✅ Cloudflare vision pipeline
 - ✅ AI garment grouping (zone/type/views/cut-outs)
 - ✅ ChatGarment Kaggle runner (generates GarmentCode patterns)
+- ✅ **Size finder for brands** (the product): `/size` scans a 360° turn and reads it on the device,
+  a brand types its chart in `/dashboard` and gets a link + a popup snippet (`embed.js`), and the
+  shopper's size is scored against that brand's own chart. Pricing is $30/month for unlimited
+  clothing size charts (text only — no checkout yet; `web/pricing/index.html`)
 - ⏳ Garment 3D builder (`web/src/garments/`) — files exist but NOT wired into the UI
 - ❌ Blender sewing pipeline — **deleted, needs to be rebuilt from scratch**
 - ❌ Try-on UI (wearing clothes on the model) — **commented out / not built yet**
-- ❌ Embeddable widget, Next.js merchant dashboard, billing/usage metering — **not built yet**
+- ❌ Billing / subscriptions — the price is on the page, the checkout is next
+- ❌ Packaged plugins for Shopify/WooCommerce — the snippet is what there is today
 
 ---
 

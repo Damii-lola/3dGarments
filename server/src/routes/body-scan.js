@@ -75,7 +75,7 @@ import {
   spanX,
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
-import { CHARTS, bestSize } from '../lib/sizing.js';
+import { bestSize, chartFromInput } from '../lib/sizing.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -485,6 +485,30 @@ function geometryFrames(body) {
   };
 }
 
+/**
+ * The store's own size chart, when the scan came from a link that carries one.
+ *
+ * It arrives as JSON — an object on the on-device path, a string on the multipart
+ * one — and it is only ever used to CHOOSE a size, never to measure anything: a
+ * body is measured from the clip, and the chart is the table that body is then
+ * laid against. So a chart that cannot be read is not an error and never fails
+ * the scan; it just means the built-in chart is used instead, and the result
+ * says which one answered.
+ */
+function readChart(body) {
+  const raw = body?.chart;
+  if (!raw) return null;
+  const input = typeof raw === 'string' ? parseJson(raw) : raw;
+  const chart = chartFromInput(input);
+  if (!chart) return null;
+  const sex = input?.sex;
+  return {
+    chart,
+    name: typeof input?.name === 'string' ? input.name.trim().slice(0, 60) : '',
+    sex: sex === 'female' || sex === 'male' ? sex : 'unisex',
+  };
+}
+
 /** Turn the browser's per-frame numbers into the frame objects the engine reads. */
 /**
  * A marked object belongs to the frame it was marked on, and nowhere else.
@@ -643,6 +667,8 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
 bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   const startedAt = Date.now();
   const geo = geometryFrames(req.body);
+  // A store's own chart, if the scan came in through a link that carries one.
+  const brand = readChart(req.body);
   const frames = [];
   const failures = [];
   const rejected = [];
@@ -653,6 +679,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   if (geo) {
     const aspect = clamp(Number(geo.aspect) || 0.75, [0.3, 3]);
     log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}, measuring for=${geo.gender}`);
+    if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart).length} size(s), for ${brand.sex})`);
     const refByFrame = assignReferences(geo.frames, geo.references);
     const withRefs = refByFrame.filter((r) => r.length).length;
     if (withRefs) log(`  ${withRefs} frame(s) carry a user-marked size reference`);
@@ -673,6 +700,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
       sourceModel: `on-device pose (${geo.model})`,
       poseNotes: [...new Set(geo.frames.flatMap((f) => (Array.isArray(f.notes) ? f.notes : [])))],
       gender: geo.gender,
+      chart: brand?.chart || null,
+      chartName: brand?.name || '',
       startedAt,
     });
   }
@@ -698,6 +727,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     : clamp(Number(req.body?.aspect) || 0.75, [0.3, 3]);
 
   log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
+  if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart).length} size(s), for ${brand.sex})`);
 
   await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
@@ -767,6 +797,8 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     sourceModel: config.cloudflare.visionModel,
     poseNotes: [],
     gender: chosenGender,
+    chart: brand?.chart || null,
+    chartName: brand?.name || '',
     startedAt,
   });
 }));
@@ -776,7 +808,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, startedAt }) {
+function finishScan(res, { frames, rejected, unreadable, failures, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, rejected, unreadable, failures } };
@@ -944,11 +976,35 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   };
 
   // 8. Size.
+  //
+  // Three tables can answer this, in order of who the size is actually for:
+  //
+  //   1. the store's own chart, when the scan came from a link that carries one.
+  //      The shopper is buying that garment, so the store's row for it is the
+  //      only answer that matters — and it is scored by exactly the same rule as
+  //      everything else, so a chart typed badly is a chart that fits badly.
+  //   2. the built-in men's or women's sheet, when the shopper said who the clip
+  //      is of. Who they are is their own answer, never the video's guess.
+  //   3. both built-in sheets, when nobody said — and then the one that disagrees
+  //      least with the body decides, which is the least we can honestly do.
   let size = null;
   let sizeBasis = null;
-  if (gender.guess === 'male' || gender.guess === 'female') {
+  let sizeSource = null;
+  if (chart) {
+    const sex = gender.guess === 'female' ? 'female' : 'male';
+    size = bestSize(sex, adjusted, chart);
+    if (size) {
+      sizeSource = 'store';
+      // The sheet basis is reported as the shopper's own answer, or not at all:
+      // the chart decided the column, not the sheet.
+      sizeBasis = sex === gender.guess ? sex : null;
+    }
+  } else if (gender.guess === 'male' || gender.guess === 'female') {
     size = bestSize(gender.guess, adjusted);
-    if (size) sizeBasis = gender.guess;
+    if (size) {
+      sizeBasis = gender.guess;
+      sizeSource = 'reference';
+    }
   } else if (adjusted.chest != null) {
     const m = bestSize('male', adjusted);
     const f = bestSize('female', adjusted);
@@ -959,6 +1015,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       size = m || f;
       sizeBasis = (m ? 'male' : 'female');
     }
+    if (size) sizeSource = 'reference';
   }
 
   // 9. Notes. Only ever about what WAS measured, or about the video itself.
@@ -1025,10 +1082,17 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   const turned = frames.filter((f) => frameTurn(f) >= 20 && frameTurn(f) < 70).length;
 
   if (size && adjusted.chest != null) {
-    const key = sizeBasis === 'female' ? 'bust' : 'chest';
-    const d = adjusted.chest - CHARTS[sizeBasis][size.sizeKey][key];
+    const d = adjusted.chest - size.row[size.key];
     if (d > 1.5) notes.push(`Size ${size.sizeKey} chest/bust may be snug.`);
     else if (d < -2) notes.push(`Size ${size.sizeKey} chest may be loose.`);
+    // Whose table the size came off. A shopper on a store's link is being handed
+    // that store's numbers and should be told so, rather than left to assume a
+    // standard chart answered.
+    if (sizeSource === 'store') {
+      notes.push(chartName
+        ? `This size is off ${chartName}\u2019s own chart, not a standard one.`
+        : 'This size is off the store\u2019s own chart, not a standard one.');
+    }
     // The size is picked off one girth. If that girth's front-to-back depth had
     // to be modelled rather than seen from the side, the size can honestly sit a
     // size either way — and saying so is better than sounding certain.
@@ -1040,7 +1104,9 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
       notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — ${why} — so it could sit one size either way.`);
     }
   } else {
-    notes.push('No size was given: this clip did not show a straight-on front view with the arms clear of the sides.');
+    notes.push(chartName
+      ? `No size is given for ${chartName}: this clip did not show a straight-on front view with the arms clear of the sides.`
+      : 'No size was given: this clip did not show a straight-on front view with the arms clear of the sides.');
   }
   if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} came out of the video.`);
   if (h && h.views > 1 && h.spread > 3) {
@@ -1078,6 +1144,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     size: size?.sizeKey || null,
     sizeChart: size?.row || null,
     sizeBasis: size ? sizeBasis : null,
+    // Whose chart answered: 'store' (the one carried in the link, which is the
+    // garment actually being bought) or 'reference' (ours). null = no size.
+    sizeSource,
+    // The garment the store named, so the shopper is told what the size is for.
+    sizeName: sizeSource === 'store' ? (chartName || null) : null,
     // The catalogue: every category the video actually showed, in the group for
     // the gender chosen. This is the list the user is shown, and it is the whole
     // list — nothing absent is listed, and nothing listed is an estimate.
@@ -1101,10 +1172,12 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     cmPerImageWidth: round2(cmPerWidth),
     anchors,
     reconciled: result.reconciled,
+    // How many sizes the store's chart offered, when one was in the request.
+    storeChartRows: chart ? Object.keys(chart).length : 0,
     diagnostics,
   };
 
-  log(`done in ${result.debug.elapsedMs}ms - gender=${gender.guess} basis=${sizeBasis} size=${result.size} scale=${round2(cmPerWidth)}cm/width anchors=[${anchors.join('; ')}]`);
+  log(`done in ${result.debug.elapsedMs}ms - gender=${gender.guess} basis=${sizeBasis} source=${sizeSource} size=${result.size} scale=${round2(cmPerWidth)}cm/width anchors=[${anchors.join('; ')}]`);
   log(`  seen=${JSON.stringify(seen)} adjusted=${JSON.stringify(adjusted)}`);
   log(`  methods=${JSON.stringify(methods)}`);
 

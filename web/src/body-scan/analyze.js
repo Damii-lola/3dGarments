@@ -63,6 +63,9 @@ export function analyzeBody(frames, opts = {}) {
   // The user's own answer about who the video is of. It decides the size chart
   // and which of the two measurement sheets is read, so it is never guessed.
   if (opts.gender) form.append('gender', opts.gender);
+  // The store's own chart, when the scan arrived through their link. It only
+  // ever CHOOSES a size: what is measured is measured from the video either way.
+  if (opts.chart) form.append('chart', JSON.stringify(opts.chart));
 
   return request(url, { method: 'POST', body: form }, { timeoutMs: 180000, ...opts });
 }
@@ -72,7 +75,7 @@ export function analyzeBody(frames, opts = {}) {
  * hundred bytes per frame instead of a JPEG, and no model runs server side.
  *
  * @param {{frames: object[], width: number, height: number, model?: string}} measured
- * @param {{timeoutMs?: number, onTick?: (s: number) => void}} [opts]
+ * @param {{timeoutMs?: number, onTick?: (s: number) => void, chart?: object}} [opts]
  */
 export function analyzeGeometry(measured, opts = {}) {
   const url = `${API_URL}/api/body-scan`;
@@ -81,6 +84,10 @@ export function analyzeGeometry(measured, opts = {}) {
     model: measured.model,
     gender: opts.gender || 'unsure',
     aspect: measured.width && measured.height ? measured.width / measured.height : undefined,
+    // The store's own size chart, when the scan came in through their link. It
+    // is the table this body is laid against; it is never used to measure
+    // anybody, so it cannot flatter a clip into a size.
+    chart: opts.chart || undefined,
     // A known-size object the user marked on one frame. It outweighs the head
     // ruler, and it belongs to that frame alone: the camera moves, so a scale
     // that was right one moment is not right the next.
@@ -109,6 +116,7 @@ export function analyzeGeometry(measured, opts = {}) {
   log('POST', url, '(on-device geometry)');
   log('frames', body.frames.length, 'aspect', body.aspect, 'measuring-for', body.gender, 'model', body.model,
     'references', body.references.length,
+    'store-chart', body.chart ? `${body.chart.name || 'unnamed'} (${body.chart.rows?.length || 0} sizes)` : 'none',
     body.frames.map((f) => `${f.view} conf=${Number(f.confidence).toFixed(2)} n=${Object.keys(f.landmarks).length}`));
 
   return request(url, {

@@ -7,7 +7,7 @@
     <title>3dGarments — Dashboard</title>
     <meta
       name="description"
-      content="Your 3dGarments account: a name, an email, and no body data at all. What is held, what is not, and where a store's numbers will live."
+      content="Add a garment, type in its size chart, and get a link that tells your shoppers which size of it to buy."
     />
     <link rel="stylesheet" href="/src/styles.css" />
     <script>
@@ -64,80 +64,150 @@
     <main class="page">
       <section class="section" data-reveal>
         <p class="eyebrow">Dashboard</p>
-        <h1 class="section-title">Your account</h1>
+        <h1 class="section-title">Your clothing</h1>
         <p class="section-lead">
-          A name, an email and a scanner that remembers nothing else. There is no
-          history on this page because there is no history to show &mdash; that is
-          the product working as intended.
+          Type in the size chart of a garment you sell and save it. You get a link
+          &mdash; and, if you want it, a small piece of code that opens the size
+          finder in a popup on your own product page, so nobody is sent away from
+          the thing they are about to buy.
         </p>
       </section>
 
-      <section class="section" data-reveal>
+      <!-- Signed out is a state, not an error: the way in sits beside it. How a
+           chart is typed is only shown to the account that can own one. -->
+      <section class="section" data-reveal id="dash-anon" hidden>
+        <div class="tile">
+          <p class="eyebrow eyebrow-faint">No account on this browser</p>
+          <p class="dash-name">Log in to add your clothing</p>
+          <p class="dash-mail">
+            A username, an email and a password. Your size charts belong to that
+            account; a shopper opening a link from your product page needs no
+            account of their own.
+          </p>
+          <div class="actions">
+            <a class="btn-primary" href="%BASE_URL%auth/">Log in or sign up</a>
+            <a class="btn-ghost" href="%BASE_URL%pricing/">See the price</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="dash-in" hidden>
+        <div class="tile">
+          <div class="dash-head">
+            <div>
+              <p class="eyebrow eyebrow-faint">Signed in</p>
+              <p class="dash-name" id="dash-name">&mdash;</p>
+              <p class="dash-mail" id="dash-mail">&mdash;</p>
+            </div>
+            <button class="btn-ghost" id="dash-out" type="button">Log out</button>
+          </div>
+        </div>
+
+        <!-- Shown only when the project has not had the SQL run on it yet. It
+             says which file and which step, because that is the whole fix. -->
+        <div class="tile tile-alert" id="dash-setup" hidden>
+          <h3>The size-chart table is not in this project yet</h3>
+          <p>
+            Open your Supabase project, go to SQL Editor, paste all of
+            <code>supabase/setup.sql</code> and run it (README, step 4), then
+            reload this page. Saving is off until then &mdash; nothing else here
+            needs it, and the scanner is unaffected.
+          </p>
+        </div>
+
+        <!-- The one thing this page is for: a garment, and the chart that goes
+             with it, typed in the shop's own words. -->
+        <form class="tile chart-form" id="chart-form" autocomplete="off" novalidate>
+          <h3 id="chart-form-title">Add a garment</h3>
+          <p class="chart-hint">
+            Copy the chart off your product page. The size names are yours
+            &mdash; <em>XS&hellip;XXL</em>, <em>38/40/42</em>, <em>Small</em> &mdash;
+            and the numbers are the finished garment's, in whichever unit you
+            already print. The order matters only for a tie: type them smallest
+            first.
+          </p>
+
+          <div class="chart-fields">
+            <label class="chart-field">
+              <span>Garment</span>
+              <input id="chart-name" type="text" maxlength="60" placeholder="Oxford Shirt" />
+            </label>
+            <label class="chart-field">
+              <span>Made for</span>
+              <select id="chart-sex">
+                <option value="male">Men</option>
+                <option value="female">Women</option>
+                <option value="unisex">Anyone</option>
+              </select>
+            </label>
+            <label class="chart-field">
+              <span>Numbers in</span>
+              <select id="chart-unit">
+                <option value="in">Inches</option>
+                <option value="cm">Centimetres</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="chart-table">
+            <div class="chart-row chart-head" id="chart-head"></div>
+            <div id="chart-rows"></div>
+          </div>
+
+          <div class="actions">
+            <button class="btn-ghost" id="chart-add" type="button">+ Add a size</button>
+            <button class="btn-primary" id="chart-save" type="submit">Save and get the link</button>
+            <button class="btn-ghost" id="chart-cancel" type="button" hidden>Cancel</button>
+          </div>
+          <p class="chart-status" id="chart-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="section" id="dash-list-section" hidden>
+        <h2 class="section-title">Your size charts</h2>
+        <p class="section-lead">
+          Each one has a link of its own. Follow it to check it yourself: it is
+          exactly what a shopper sees.
+        </p>
+        <div class="charts" id="dash-list"></div>
+        <p class="chart-honest">
+          A chart is the garment's numbers, never anybody's. A shopper's clip is
+          measured on their own phone, nothing from it is stored, and nothing
+          from it reaches you &mdash; the only thing that travels is the chart you
+          typed, going the other way.
+        </p>
+      </section>
+
+      <section class="section" id="dash-how" hidden>
+        <h2 class="section-title">How it reaches a shopper</h2>
         <div class="grid grid-wide">
-          <!-- Filled in by dashboard.js from the session. Which of the two is
-               shown is the only state on this page. -->
-          <div class="tile" id="dash-in" hidden>
-            <p class="eyebrow eyebrow-faint">Signed in</p>
-            <p class="dash-name" id="dash-name">&mdash;</p>
-            <p class="dash-mail" id="dash-mail">&mdash;</p>
-            <div class="actions">
-              <a class="btn-primary" href="%BASE_URL%size/">Open the scanner</a>
-              <button class="btn-ghost" id="dash-out" type="button">Log out</button>
-            </div>
-          </div>
-
-          <div class="tile" id="dash-anon">
-            <p class="eyebrow eyebrow-faint">No account on this browser</p>
-            <p class="dash-name">Sign in to open the scanner</p>
-            <p class="dash-mail">
-              The scanner asks who it is measuring before it opens the camera. A
-              username, an email and a password &mdash; no codes to read out, no app
-              to install.
-            </p>
-            <div class="actions">
-              <a class="btn-primary" href="%BASE_URL%auth/">Log in or sign up</a>
-            </div>
-          </div>
-
           <div class="tile">
-            <h3>What we hold</h3>
+            <p class="eyebrow eyebrow-faint">On your product page</p>
+            <h3>Paste the popup code</h3>
             <p>
-              A username and an email. That is the whole of it. No video, no
-              measurements, no body profile, no list of what you have scanned.
+              Every chart card has a snippet. Drop it once onto the product page
+              and a <b>Find my size</b> button appears there. Pressing it opens the
+              size finder in a popup over your page &mdash; no new tab, no basket
+              left behind.
             </p>
           </div>
-
           <div class="tile">
-            <h3>What a video does</h3>
+            <p class="eyebrow eyebrow-faint">Anywhere else</p>
+            <h3>Or just use the link</h3>
             <p>
-              It is measured on the phone it was recorded on, then forgotten. Close
-              the page and it is gone &mdash; there is nothing to delete later
-              because nothing was written down.
+              The link on its own works too: put it in a product description, an
+              Instagram bio, an order-confirmation email. It opens the same size
+              finder, and it still knows which garment it is for.
             </p>
           </div>
-
           <div class="tile">
-            <h3>Your store</h3>
+            <p class="eyebrow eyebrow-faint">What the shopper does</p>
+            <h3>One slow turn, one size</h3>
             <p>
-              Nothing here is connected to a storefront yet. When a product page is
-              wired up, this is where its recommendations and its return rate will
-              be shown &mdash; and the fit of the chart is what the scanner reads
-              today.
+              They record a 360&deg; video on their phone, say who it is of, and
+              are shown their measurements, their size in <em>your</em> chart, and
+              the numbers that size was read from.
             </p>
-            <div class="actions">
-              <a class="btn-ghost" href="%BASE_URL%#book">Book a Demo</a>
-            </div>
-          </div>
-
-          <div class="tile">
-            <h3>Somewhere to start</h3>
-            <p>
-              Measure yourself first: it takes one slow turn on the spot, and it is
-              the same scanner your customers would meet.
-            </p>
-            <div class="actions">
-              <a class="btn-ghost" href="%BASE_URL%size/">Try the scanner</a>
-            </div>
           </div>
         </div>
       </section>
@@ -158,11 +228,16 @@
       </div>
       <p class="foot-note">
         Nothing is saved. A video is measured on the phone it was recorded on and
-        is never uploaded. Your account holds a name and an email, and nothing
-        about your body.
+        is never uploaded. Your account holds a name and an email; your charts hold
+        the garments' numbers and nothing about a body.
       </p>
     </footer>
 
+    <!-- The popup script, loaded the same way a store loads it, so "Preview the
+         popup" runs the real thing rather than a mock-up of it. It is fetched
+         from src/dashboard.js, which also waits for it before previewing: a
+         preview button that might not be wired up yet is a preview button that
+         lies. With no data-chart on the URL it only publishes ThreeDG. -->
     <script type="module" src="/src/dashboard.js"></script>
   </body>
 </html>
