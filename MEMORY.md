@@ -268,9 +268,11 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **The sleeve length was blank on every vision-path scan, and it was not the frames.** `PATHS.
   shoulderToWrist` asked for `shoulderJ/elbowJ/wristJ`, which is what the pose model emits; the vision
   prompt never asked for an elbow or a wrist at all. So no amount of frames or video would have found
-  the arm. The prompt now asks for `elbowL/R` and `wristL/R`, `joint()` in `bodyGeometry.js` accepts
-  either naming scheme, and `measurePath` undoes the frame's turn by dividing the horizontal component
-  by cos(turn) (frames past 60° are skipped — too little left to undo).
+  the arm. The prompt now asks for `elbowJointL/R` and `wristJointL/R`, and `joint()` in
+  `bodyGeometry.js` accepts either naming scheme. It must never fall back to `elbowL`/`wristL` — in
+  `REGIONS` those are the two EDGES of one limb (a girth), so using them as left/right joints would
+  read the distance between the elbows as an arm. `measurePath` also undoes the frame's turn by
+  dividing the horizontal component by cos(turn); frames past 60° are skipped — too little left to undo.
 - **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
   accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
   current path), and the account screen picks the session up and opens the scanner. That is only half

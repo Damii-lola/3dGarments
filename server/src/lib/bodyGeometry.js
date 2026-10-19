@@ -367,12 +367,22 @@ export function point(frame, name) {
  * as shoulderJL; the vision model is asked for shoulderL, the same point in
  * plain words. Asking for both means a measure is not silently blank because
  * the frame came from the other side of the app.
+ *
+ * The fallback is deliberately NOT `${name}${side}` for every joint: in the
+ * region map elbowL/elbowR and wristL/wristR are the two EDGES OF ONE LIMB,
+ * not the left and right joints. Falling back to those would read the distance
+ * between a person's elbows as an arm and a wrist girth the width of a torso.
+ * The shoulder is the one place both mean the same thing — the bony corner.
  */
 export function joint(frame, name, side) {
-  return point(frame, `${name}J${side}`)
-    || point(frame, `${name}${side}`)
-    || point(frame, `${name}J`)
-    || point(frame, name);
+  const names = name === 'shoulder'
+    ? [`shoulder${side}`, `shoulderJ${side}`]
+    : [`${name}Joint${side}`, `${name}J${side}`];
+  for (const n of names) {
+    const p = point(frame, n);
+    if (p) return p;
+  }
+  return null;
 }
 
 /** Horizontal separation of two landmarks, in image widths. */

@@ -422,24 +422,38 @@ checkTrue('armscye depth is the shoulder-to-armpit drop', near(item(men, 'armhol
 checkTrue('sleeve length runs shoulder -> elbow -> wrist', near(item(men, 'sleeveLength')?.in, 21, 26), `sleeve ${item(men, 'sleeveLength')?.in} in`);
 
 console.log('\n== the arm survives both naming schemes and a turned frame ==');
-// The vision model is asked for shoulderL / elbowL / wristL, the pose model
-// reports shoulderJL / elbowJL / wristJL. The sleeve used to look only for the
-// J names, so every scan that went through the vision path came back with no
+// The vision model is asked for shoulderL / elbowJointL / wristJointL, the pose
+// model reports shoulderJL / elbowJL / wristJL. The sleeve used to look only for
+// the J names, so every scan that went through the vision path came back with no
 // arm length at all — the arm was in shot, nobody had asked where it ended.
 const armSpec = { points: ['shoulder', 'elbow', 'wrist'], range: [16, 33] };
-const noJ = (() => {
+/** The pose frame with its joints renamed the way the vision model reports them. */
+const asVision = (() => {
+  const f = catalogFrame();
+  const l = { ...f.landmarks };
+  const kept = { elbowL: l.elbowJL, elbowR: l.elbowJR, wristL: l.wristJL, wristR: l.wristJR };
+  for (const k of ['shoulderJL', 'shoulderJR', 'elbowJL', 'elbowJR', 'wristJL', 'wristJR']) delete l[k];
+  l.elbowJointL = kept.elbowL; l.elbowJointR = kept.elbowR;
+  l.wristJointL = kept.wristL; l.wristJointR = kept.wristR;
+  return { ...f, landmarks: l };
+})();
+const square = measurePath([scaled(asVision)], armSpec);
+checkTrue('a frame as the vision model names it still measures the arm', near(square?.in, 16, 33), `sleeve ${square?.in?.toFixed(2)} in`);
+// elbowL/elbowR and wristL/wristR are the two EDGES of one elbow and one wrist:
+// readable as a girth, nonsense as a pair of joints. They must never be borrowed
+// for the arm.
+const onlyEdges = (() => {
   const f = catalogFrame();
   const l = { ...f.landmarks };
   for (const k of ['shoulderJL', 'shoulderJR', 'elbowJL', 'elbowJR', 'wristJL', 'wristJR']) delete l[k];
   return { ...f, landmarks: l };
 })();
-const square = measurePath([scaled(noJ)], armSpec);
-checkTrue('a frame that names joints the vision way still measures the arm', near(square?.in, 16, 33), `sleeve ${square?.in?.toFixed(2)} in`);
+checkTrue('the elbow/wrist girth edges are never mistaken for joints', measurePath([scaled(onlyEdges)], armSpec) === null, 'no sleeve rather than a wrong one');
 // A three-quarter frame compresses only the horizontal part of the limb. Undoing
 // that by the frame's own turn has to give the square-on length back, not a
 // third less of it.
 const turnedArm = (() => {
-  const f = scaled(noJ);
+  const f = scaled(asVision);
   const c = Math.cos(Math.PI / 4);
   const l = {};
   for (const [k, p] of Object.entries(f.landmarks)) l[k] = { x: 0.5 + (p.x - 0.5) * c, y: p.y };
