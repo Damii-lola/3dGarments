@@ -220,6 +220,7 @@ function frameDigest(f, reason) {
   return {
     file: f.file,
     ...(reason ? { reason } : {}),
+    ms: f.ms,
     view: f.view,
     turn: round1(frameTurn(f)),
     camera: f.camera,
@@ -769,6 +770,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   // read, how many seeks landed. Returned in `diagnostics`, so a short or slow
   // scan can be explained without a log we cannot read from here.
   const clipInfo = {};
+  // Where the seconds went. Upload happens before this handler runs, extraction
+  // is ffmpeg, and everything else is the vision model - and on a free instance
+  // those are three very different numbers.
+  let decodeMs = 0;
 
   // Frames arrive three ways: taken out of the uploaded clip by ffmpeg, measured
   // on the device, or as JPEGs for the vision model. All three end in the same
@@ -821,6 +826,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     log(`> POST received - clip ${(clip.size / 1048576).toFixed(1)} MB, ${round2(Math.min(30, to - from))}s from ${round2(from)}s`);
     try {
       files = await framesFromVideo(clip.path, { from, to, info: clipInfo });
+      decodeMs = Date.now() - startedAt;
       log(`  ${files.length} still(s) taken out of the clip (${Date.now() - startedAt}ms)`);
     } catch (e) {
       throw new HttpError(422, `Could not read that video (${e.message})`);
@@ -882,6 +888,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
         }
 
         frame.scale = frameScale(frame);
+        frame.ms = ms;
 
         // A frame whose landmarks are not a human shape is thrown away whole.
         // Confident nonsense is worse than no measurement.
@@ -898,7 +905,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
         const keys = Object.keys(frame.landmarks);
         log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
       } else {
-        unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400), ...meta });
+        unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400), ms, ...meta });
         log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)} finish=${meta.finish} tokens=${meta.usage?.completion_tokens ?? '?'}`);
       }
     } catch (e) {
@@ -920,6 +927,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     sourceModel: config.cloudflare.visionModel,
     poseNotes: [],
     clip: clipInfo,
+    timing: { decodeMs, visionMs: Date.now() - startedAt - decodeMs, totalMs: Date.now() - startedAt },
     gender: chosenGender,
     chart: brand?.chart || null,
     chartName: brand?.name || '',
@@ -933,10 +941,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, clip = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, startedAt }) {
+function finishScan(res, { frames, rejected, unreadable, failures, clip = null, timing = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
-    const details = { diagnostics: { model: sourceModel, clip, rejected, unreadable, failures } };
+    const details = { diagnostics: { model: sourceModel, clip, timing, rejected, unreadable, failures } };
     if (failures.length === attempted) {
       // When every frame failed for the same shopper-facing reason — the daily
       // allowance is spent, the key was rejected — that reason is the answer.
@@ -953,7 +961,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   }
 
   /** Everything each frame reported, for a refusal we have to justify. */
-  const diagnostics = { model: sourceModel, clip, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
+  const diagnostics = { model: sourceModel, clip, timing, frames: frames.map((f) => frameDigest(f)), rejected, unreadable, failures };
 
   // 2. Scale. Without an anchor there are no centimetres, so say so rather than
   //    inventing numbers.
