@@ -149,7 +149,25 @@
             </label>
           </div>
 
-          <div class="chart-table">
+          <!-- The chart's columns, which are the store's to name. The first one
+               this app can measure is the one a size is decided on. -->
+          <div class="chart-cols">
+            <div class="chart-cols-head">
+              <span>Columns</span>
+              <button class="btn-ghost" id="chart-add-col" type="button">+ Add a column</button>
+            </div>
+            <p class="chart-hint">
+              One column for each thing your chart prints. The first column this
+              app can measure decides the size &mdash; chest or bust for a top,
+              waist for trousers &mdash; and the other measured columns are checked
+              against the shopper too. A column it cannot read off a body, such as
+              a body length, is shown to the shopper beside their size and never
+              changes the answer.
+            </p>
+            <div class="chart-columns" id="chart-columns"></div>
+          </div>
+
+          <div class="chart-table" id="chart-table">
             <div class="chart-row chart-head" id="chart-head"></div>
             <div id="chart-rows"></div>
           </div>

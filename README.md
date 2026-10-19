@@ -49,6 +49,34 @@ A brand's chart has an unguessable code. Two addresses open it:
   It also publishes `window.ThreeDG.open({ code, name })` for a button of the
   brand's own — which is how the dashboard previews a chart.
 
+### The chart a brand types
+
+A chart is whatever the brand already prints: its own size names, its own unit,
+and its own columns. The dashboard starts every chart with **Chest or bust /
+Waist / Hips** and the brand adds, renames, repoints or removes columns from
+there — a shoulder, an upper arm, a height for a shirt; just a waist for
+trousers; a body length that only gets printed.
+
+- A column is one of the measurements the scan can actually read (`chest`,
+  `waist`, `hips`, `shoulder`, `neck`, `arm`, `height` — one list, in
+  `server/src/shared/measures.js`, used by the form and the engine) or
+  **Other**, which is carried and shown to the shopper beside their size and
+  never scored.
+- The **first column with a measure decides the size**; every other measured
+  column joins the same worst-case comparison. That is why a trousers chart
+  can be a waist and an inseam with no chest anywhere, and why adding a
+  shoulder column can change the answer.
+- A column only counts when **every** size row carries it. A blank cell must not
+  become an advantage, so the dashboard asks for a column to be filled
+  everywhere or removed.
+- Rows are edited in the same table: as many sizes as the brand sells, in the
+  order it sells them (a tie keeps the row typed first).
+
+The chart travels with the scan as `{ name, sex, unit, columns, rows }`; the
+server converts it to inches once, picks the row, and returns it as `sizeChart`
+so the shopper's card can show that size's own numbers in the brand's words and
+unit.
+
 ## One-time setup (about 10 minutes)
 
 ### 1. Supabase
@@ -94,7 +122,7 @@ Rebuild the body models (only after changing `assets/` or `tools/body/`): start 
 |---|---|---|
 | GET | `/health`, `/health/deep` | liveness, integration check |
 | GET | `/api/garments` | list, with signed image URLs |
-| POST | `/api/body-scan` | measure a clip: on-device `pose` landmarks (JSON) or JPEG `frames` (multipart). Optional `gender` (the shopper's own answer) and `chart` (the brand's size chart, used only to pick a size — never to measure). Returns the measurements, the notes, and `size` / `sizeSource` |
+| POST | `/api/body-scan` | measure a clip: on-device `pose` landmarks (JSON) or JPEG `frames` (multipart). Optional `gender` (the shopper's own answer) and `chart` (the brand's size chart — `{ name, sex, unit, columns, rows }` — used only to pick a size, never to measure). Returns the measurements, the notes, and `size` / `sizeChart` / `sizeSource` |
 | POST | `/api/garments` | multipart `image` returns 202 and processes in the background |
 | GET / PATCH / DELETE | `/api/garments/:id` | read, rename / recategorise / fit, delete |
 | POST | `/api/garments/:id/reprocess` | re-run the pipeline |

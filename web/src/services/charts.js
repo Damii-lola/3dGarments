@@ -12,8 +12,12 @@
  *     up from.
  *
  * The numbers are stored exactly as they were typed, in the unit they were typed
- * in, and the sizing engine converts. This file does not do arithmetic on them:
- * it moves rows.
+ * in, and the sizing engine converts. A chart also carries the columns it was
+ * typed under — the store's own names, and which body measurement each one
+ * stands for — so that a chart with a shoulder column is scored on the shoulder,
+ * and a chart with a body-length column shows that length without pretending it
+ * can be read off a body. This file does not do arithmetic on any of it: it moves
+ * rows.
  */
 import { supabaseClient } from './auth.js';
 
@@ -34,15 +38,20 @@ export function newCode(length = 12) {
 const num = (v) => Number.isFinite(Number(v)) && String(v).trim() !== '';
 
 /**
- * The columns a chart actually has, in the order a person would measure them.
- * Decided the same way the server decides it — every row has to carry the column
- * — so the dashboard's "scored on…" line cannot disagree with the score.
+ * The columns a saved chart is scored on: the ones this app can measure, carried
+ * by every row. Decided the same way the server decides it — the first such
+ * column picks the size and the rest join the same comparison — so the
+ * dashboard's "scored on…" line cannot disagree with the score.
  */
 export function chartColumns(chart) {
   const rows = Array.isArray(chart?.rows) ? chart.rows : [];
-  if (!rows.length) return [];
-  return ['chest', 'bust', 'waist', 'hips'].filter((k) => rows.every((r) => num(r?.[k])));
+  const cols = Array.isArray(chart?.columns) ? chart.columns : [];
+  return cols
+    .filter((c) => c && typeof c.label === 'string' && c.measure)
+    .filter((c) => rows.every((r) => num(r?.[c.id])));
 }
+
+/* ---------- the store's side ---------- */
 
 /**
  * The table or function this needs is not in the project yet. Supabase answers a
@@ -62,7 +71,7 @@ export async function listCharts() {
   if (!client) return [];
   const { data, error } = await client
     .from('size_charts')
-    .select('id, code, name, sex, unit, rows, created_at, updated_at')
+    .select('id, code, name, sex, unit, columns, rows, created_at, updated_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data || [];
@@ -74,10 +83,10 @@ export async function listCharts() {
  * moment the row lands; a collision (essentially impossible, but a unique index
  * is a unique index) is answered by asking for another code once.
  */
-export async function saveChart({ id, name, sex, unit, rows }) {
+export async function saveChart({ id, name, sex, unit, columns, rows }) {
   const client = await supabaseClient();
   if (!client) throw new Error('cloud not configured');
-  const row = { name: name.trim().slice(0, 60), sex, unit, rows };
+  const row = { name: name.trim().slice(0, 60), sex, unit, columns, rows };
   if (id) {
     const { data, error } = await client.from('size_charts').update(row).eq('id', id).select().single();
     if (error) throw error;
@@ -118,6 +127,7 @@ export async function chartByCode(code) {
     name: typeof row.name === 'string' ? row.name : '',
     sex: row.sex === 'female' || row.sex === 'male' ? row.sex : 'unisex',
     unit: row.unit === 'cm' ? 'cm' : 'in',
+    columns: Array.isArray(row.columns) ? row.columns : [],
     rows: Array.isArray(row.rows) ? row.rows : [],
   };
 }

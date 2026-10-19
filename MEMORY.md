@@ -184,8 +184,13 @@ outfits           id, user_id, name, items jsonb
 garment_groups    id, user_id, name, status, photos jsonb, processed_at
 
 size_charts       id, user_id (default auth.uid()), code text unique (^[a-z0-9]{8,24}$),
-                  name, sex (male/female/unisex), unit (in/cm), rows jsonb, created_at, updated_at
-                  + chart_by_code(candidate text) → (name, sex, unit, rows)  (SECURITY DEFINER, anon may call it)
+                  name, sex (male/female/unisex), unit (in/cm),
+                  columns jsonb ([{ id, label, measure }] - the shop's own column names, in
+                    its order; measure is a body measurement or null for "printed only"),
+                  rows jsonb ([{ key: 'M', col1: 40, col2: 34 }]), created_at, updated_at
+                  + chart_by_code(candidate text) → (name, sex, unit, columns, rows)
+                    (SECURITY DEFINER, anon may call it; dropped + recreated because the
+                    return type cannot change in place)
 ```
 
 Storage bucket: `garments` (private). Paths: `<user_id>/groups/<group_id>/<image_id>.<ext>`
@@ -244,13 +249,20 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   product link — no account, ever) and `?embed=1` (the same page inside the popup). `main.js` is
   imported only after the door is open.
 - **The merchant flow lives in `/dashboard`** (not gated: signed out is a state there, so it shows the
-  way in). Add a garment → type its size chart (own labels, own unit, columns follow who it is for:
-  chest for men/anyone, bust for women) → save → a code is generated client-side
-  (`crypto.getRandomValues`, 12 chars from an alphabet with no `l`/`0`/`1`) and the card appears with
-  the link, the popup snippet, a preview button, edit and delete. `src/services/charts.js` does the
-  CRUD and the shopper-side `chart_by_code` RPC; `notSetUp(error)` turns Postgres 42P01/42883 and
-  PostgREST PGRST202/PGRST205 into the one notice that matters ("run supabase/setup.sql, README step
-  4") instead of a raw error, and lets a real permission error show itself.
+  way in). Add a garment → type its size chart (own labels, own unit) → save → a code is generated
+  client-side (`crypto.getRandomValues`, 12 chars from an alphabet with no `l`/`0`/`1`) and the card
+  appears with the link, the popup snippet, a preview button, edit and delete.
+  **Columns are the shop's too**: the form starts with Chest-or-bust / Waist / Hips and the shop adds,
+  renames, repoints or removes columns; the table under it grows with them. A column is one of the
+  seven measurements the scan can read (`server/src/shared/measures.js` — chest, waist, hips,
+  shoulder, neck, arm, height) or "Other", which is carried and shown to the shopper but never
+  scored. **The first measurable column decides the size**; every other measured column joins the
+  worst-case comparison. The form refuses a chart with no measurable column, a size missing that
+  column's number, and a column filled for only some sizes (a blank cell must not favour its row).
+  `src/services/charts.js` does the CRUD and the shopper-side `chart_by_code` RPC; `notSetUp(error)`
+  turns Postgres 42P01/42883 and PostgREST PGRST202/PGRST205 into the one notice that matters ("run
+  supabase/setup.sql, README step 4") instead of a raw error, and lets a real permission error show
+  itself.
 - **The popup is `web/public/embed.js`** — plain JS, no build step, so Vite copies it verbatim to
   `dist/embed.js` and `%BASE_URL%embed.js` is a stable address to paste into a shop. It reads
   `data-chart`/`data-name`/`data-label`/`data-base` off its own `<script>` tag, derives the site root
@@ -420,26 +432,33 @@ Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applySha
 | `POST /api/groups` | create group |
 | `PATCH /api/groups/:id` | update group (name / photos) |
 | `DELETE /api/groups/:id` | delete group |
-| `POST /api/body-scan` | measure a clip (open route — no bearer): `source: 'pose'` + on-device landmarks, or multipart `frames` JPEGs for the vision fallback. Optional `gender` (the shopper's own answer) and `chart` (the brand's own size chart — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
+| `POST /api/body-scan` | measure a clip (open route — no bearer): `source: 'pose'` + on-device landmarks, or multipart `frames` JPEGs for the vision fallback. Optional `gender` (the shopper's own answer) and `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
 
 ---
 
 ## The size a brand's link comes back with (server/src/lib/sizing.js, routes/body-scan.js)
 
-- `bestSize(sex, girths, chart = CHARTS[sex])` scores every row by its **worst** disagreement with any
-  measured girth that the chart actually has a column for, and takes the smallest; an exact tie keeps
-  the smaller size (i.e. the row typed first). `chartKey(chart)` picks the column every row carries —
-  chest preferred, else bust — so a men's shirt chart the shop typed as "chest" is not read as a bust
-  chart. A chart with no chest/bust returns `null`: no size beats an invented one.
-- `chartFromInput(input)` normalises a shop's chart: cm → inches once (the chart carries its own unit),
-  label trimmed to 14 chars, first row wins on a duplicate label, girths outside 10–100 in dropped,
-  and a row with no chest/bust dropped rather than guessed at. `null` when nothing usable is left, so
-  the caller falls back to the reference chart rather than sizing against an empty table.
+- `bestSize(sex, girths, chart = CHARTS[sex], columns = null)` scores every row by its **worst**
+  disagreement with any measured column the chart actually has, and takes the smallest; an exact tie
+  keeps the smaller size (i.e. the row typed first). Columns come from the chart (`{ id, label,
+  measure }`, the shop's order) or, when absent, from `columnsFromRows()` (chest/bust first, then
+  waist, hips) — which is how the built-in charts are read, so there is one scoring rule.
+  **The first column with a measure decides the size**; a column only counts when *every* row carries
+  it and the body has that measurement (a blank cell must not favour its row). `chartKey(chart)` still
+  picks the torso column chest-preferred, so a men's shirt chart the shop typed as "chest" is not read
+  as a bust chart. A chart with no measurable column returns `null`: no size beats an invented one.
+- `chartFromInput(input)` normalises a shop's chart: columns keep their order, a missing/duplicate id
+  gets `c1…`, a label is trimmed to 24 chars, an unknown `measure` becomes `null` (printed only); cm →
+  inches once (the chart carries its own unit), first row wins on a duplicate label, values outside
+  5–120 in dropped, a column no row uses dropped, and a row with no number in the deciding column
+  dropped rather than guessed at. Returns `{ rows, columns }` or `null`, so the caller falls back to
+  the reference chart rather than sizing against an empty table.
 - `readChart(body)` in the route takes the chart as an object (pose path) or a JSON string (multipart)
   and never fails the scan for a bad chart — a chart is only ever used to CHOOSE a size.
 - The result carries `sizeSource` ('store' | 'reference') and `sizeName`, so the page can say whose
-  numbers these are; the size note reads `size.row[size.key]` instead of re-reading `CHARTS`. On a
-  store chart a successful size adds "This size is off <garment>'s own chart, not a standard one."
+  numbers these are; the snug/loose note is written from `size.field` + `size.label` (whichever column
+  decided), and the depth hedge only fires when that column is the chest. On a store chart a
+  successful size adds "This size is off <garment>'s own chart, not a standard one."
 - `/size` shows the size in a card above the measurements **only when a chart was read** (plain
   scanning stays a tape measure), with an honest no-size state, and `?demo=1&store=1` renders that card
   without a link or a cloud.

@@ -144,6 +144,7 @@ const verdictEl = document.getElementById('verdict');
 const verdictEyebrow = document.getElementById('verdict-eyebrow');
 const verdictSize = document.getElementById('verdict-size');
 const verdictFor = document.getElementById('verdict-for');
+const verdictRow = document.getElementById('verdict-row');
 const verdictNote = document.getElementById('verdict-note');
 
 const statusEl = document.getElementById('status');
@@ -765,7 +766,7 @@ function renderVerdict(data) {
   const size = data.sizeSource === 'store' ? data.size : null;
   const name = data.sizeName || garment.name || '';
   const cols = chartColumns(garment);
-  const from = cols.length ? `your ${cols.join(', ')}` : 'your measurements';
+  const from = cols.length ? `your ${cols.map((c) => c.label.toLowerCase()).join(', ')}` : 'your measurements';
 
   verdictEl.hidden = false;
   verdictEl.classList.toggle('verdict-none', !size);
@@ -775,6 +776,25 @@ function renderVerdict(data) {
   verdictNote.textContent = size
     ? `Worked out from ${from} against this garment's own chart, not a standard one.`
     : `This clip did not show a straight-on front view with your arms clear of your sides, so there was nothing to work a size out from${name ? ` for ${name}` : ''}.`;
+
+  // The row that was handed to them, in the store's own numbers and words. The
+  // extra columns a store added are the reason this line exists: a shoulder or a
+  // body length it prints belongs beside the size, whether or not it was scored.
+  if (verdictRow) {
+    const typed = size && Array.isArray(garment.rows)
+      ? garment.rows.find((r) => String(r?.key) === String(size))
+      : null;
+    const stored = data.sizeChart || {};
+    const unit = typed ? (garment.unit === 'cm' ? 'cm' : 'in') : 'in';
+    const printed = (Array.isArray(garment.columns) ? garment.columns : [])
+      .map((column) => ({
+        label: column?.label || '',
+        value: typed && Number.isFinite(Number(typed[column.id])) ? typed[column.id] : stored[column?.id],
+      }))
+      .filter((c) => c.label && Number.isFinite(Number(c.value)) && String(c.value ?? '') !== '');
+    verdictRow.hidden = !printed.length;
+    verdictRow.textContent = printed.map((c) => `${c.label} ${Number(c.value)} ${unit}`).join(' \u00b7 ');
+  }
 }
 
 function renderAnalysis(data) {
@@ -961,10 +981,15 @@ if (new URLSearchParams(location.search).has('demo')) {
       name: 'Oxford Shirt',
       sex: 'male',
       unit: 'in',
+      columns: [
+        { id: 'col1', label: 'Chest', measure: 'chest' },
+        { id: 'col2', label: 'Waist', measure: 'waist' },
+        { id: 'col3', label: 'Hips', measure: 'hips' },
+      ],
       rows: [
-        { key: 'S', chest: 36, waist: 30, hips: 38 },
-        { key: 'M', chest: 40, waist: 34, hips: 40 },
-        { key: 'L', chest: 44, waist: 38, hips: 44 },
+        { key: 'S', col1: 36, col2: 30, col3: 38 },
+        { key: 'M', col1: 40, col2: 34, col3: 40 },
+        { key: 'L', col1: 44, col2: 38, col3: 44 },
       ],
     };
     if (garmentEl) {

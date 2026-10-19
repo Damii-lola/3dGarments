@@ -499,6 +499,8 @@ function readChart(body) {
   const raw = body?.chart;
   if (!raw) return null;
   const input = typeof raw === 'string' ? parseJson(raw) : raw;
+  // { rows, columns } — the store's numbers, and the columns they typed them
+  // under. Which of those columns decides the size is stated by their order.
   const chart = chartFromInput(input);
   if (!chart) return null;
   const sex = input?.sex;
@@ -679,7 +681,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
   if (geo) {
     const aspect = clamp(Number(geo.aspect) || 0.75, [0.3, 3]);
     log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}, measuring for=${geo.gender}`);
-    if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart).length} size(s), for ${brand.sex})`);
+    if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart.rows).length} size(s), for ${brand.sex})`);
     const refByFrame = assignReferences(geo.frames, geo.references);
     const withRefs = refByFrame.filter((r) => r.length).length;
     if (withRefs) log(`  ${withRefs} frame(s) carry a user-marked size reference`);
@@ -727,7 +729,7 @@ bodyScan.post('/', upload.array('frames', 8), ah(async (req, res) => {
     : clamp(Number(req.body?.aspect) || 0.75, [0.3, 3]);
 
   log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
-  if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart).length} size(s), for ${brand.sex})`);
+  if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart.rows).length} size(s), for ${brand.sex})`);
 
   await Promise.all(files.map(async (file, i) => {
     const frameStart = Date.now();
@@ -992,7 +994,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   let sizeSource = null;
   if (chart) {
     const sex = gender.guess === 'female' ? 'female' : 'male';
-    size = bestSize(sex, adjusted, chart);
+    size = bestSize(sex, adjusted, chart.rows, chart.columns);
     if (size) {
       sizeSource = 'store';
       // The sheet basis is reported as the shopper's own answer, or not at all:
@@ -1081,10 +1083,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
   const profiled = frames.filter((f) => frameTurn(f) >= 70).length;
   const turned = frames.filter((f) => frameTurn(f) >= 20 && frameTurn(f) < 70).length;
 
-  if (size && adjusted.chest != null) {
-    const d = adjusted.chest - size.row[size.key];
-    if (d > 1.5) notes.push(`Size ${size.sizeKey} chest/bust may be snug.`);
-    else if (d < -2) notes.push(`Size ${size.sizeKey} chest may be loose.`);
+  if (size && Number.isFinite(adjusted[size.field])) {
+    const d = adjusted[size.field] - size.row[size.key];
+    const at = String(size.label || 'chest').toLowerCase();
+    if (d > 1.5) notes.push(`Size ${size.sizeKey} may be snug at the ${at}.`);
+    else if (d < -2) notes.push(`Size ${size.sizeKey} may be loose at the ${at}.`);
     // Whose table the size came off. A shopper on a store's link is being handed
     // that store's numbers and should be told so, rather than left to assume a
     // standard chart answered.
@@ -1095,8 +1098,10 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     }
     // The size is picked off one girth. If that girth's front-to-back depth had
     // to be modelled rather than seen from the side, the size can honestly sit a
-    // size either way — and saying so is better than sounding certain.
-    if (measured.chest && !measured.chest.depthMeasured) {
+    // size either way — and saying so is better than sounding certain. Only the
+    // torso girth has a depth model; a chart decided on a waist or a shoulder is
+    // not hedged by something that never applied to it.
+    if (size.field === 'chest' && measured.chest && !measured.chest.depthMeasured) {
       const v = measured.chest.widthViews;
       const why = profiled || turned
         ? 'the frames that did turn were not clear enough to read it from'
@@ -1173,7 +1178,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     anchors,
     reconciled: result.reconciled,
     // How many sizes the store's chart offered, when one was in the request.
-    storeChartRows: chart ? Object.keys(chart).length : 0,
+    storeChartRows: chart ? Object.keys(chart.rows).length : 0,
+    storeChartColumns: chart ? chart.columns.map((c) => c.measure || c.label) : [],
     diagnostics,
   };
 

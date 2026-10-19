@@ -2,23 +2,33 @@
  * Size charts, and how one is chosen.
  *
  * US retail size charts in inches; men are sized on the chest and women on the
- * bust. But a chart is a table of three girths per size, and a body is under no
- * obligation to agree with all three at once: a 6'1" man with a 32" waist reads S
- * at the waist and M at the hips, because a chart like this assumes girth and
- * height rise together. Sizing off the chest alone throws away two of the three
- * things the clip actually measured - which is exactly what happened on a real
- * live clip, where a 38" chest sitting precisely on the 36/40 boundary resolved
- * to S while his hips were saying M.
+ * bust. But a chart is a table of girths per size, and a body is under no
+ * obligation to agree with all of them at once: a 6'1" man with a 32" waist reads
+ * S at the waist and M at the hips, because a chart like this assumes girth and
+ * height rise together. Sizing off the chest alone throws away the rest of what
+ * the clip actually measured - which is exactly what happened on a real live clip,
+ * where a 38" chest sitting precisely on the 36/40 boundary resolved to S while
+ * his hips were saying M.
  *
- * The chart's height column is deliberately not used to choose. Height and girth
- * do not move together in the direction the column implies, and the honest thing
- * for a tall slim man is to be told the girths, not to be handed an XXL.
+ * Which columns a chart is scored on is the chart's business, not ours. A store
+ * types its own table: chest and waist for a shirt, waist and inseam for trousers,
+ * plus whatever else it prints (a sleeve length, a body length) that this app can
+ * show but cannot read off a body. The FIRST column this app can measure is the
+ * one a size is decided on; every other measured column joins the same worst-case
+ * comparison; a column with no measurement behind it is never scored, because
+ * holding a number this app did not read against one it did would be an opinion,
+ * not a fit.
+ *
+ * The chart's height column is deliberately not what decides. Height and girth do
+ * not move together in the direction the column implies, and the honest thing for
+ * a tall slim man is to be told the girths, not to be handed an XXL.
  *
  * The charts below are the fallback. A store that has typed its own chart gets
  * sized against that instead (chartFromInput, below), and the same rules apply
- * either way: a chart is still a table of girths, and the size is still the row
+ * either way: a chart is still a table of numbers, and the size is still the row
  * with the smallest worst disagreement.
  */
+import { measureField } from '../shared/measures.js';
 
 export const CHARTS = {
   male: {
@@ -40,13 +50,12 @@ export const CHARTS = {
 };
 
 /**
- * Which column a chart is scored on: the one every row actually has.
+ * The chest-or-bust column of a chart: the one every row actually has.
  *
- * A store's chart may carry a chest column, a bust column, or nothing but a
- * waist and an inseam. It follows the table, not the sex, so a men's shirt chart
- * that the store typed as "chest" is not read as a bust chart just because the
- * shopper picked "a woman". Null means the chart has no girth column at all and
- * cannot size anybody.
+ * A store's chart may carry a chest column, a bust column, or neither. It follows
+ * the table, not the sex, so a men's shirt chart that the store typed as "chest"
+ * is not read as a bust chart just because the shopper picked "a woman". Null
+ * means the chart has no torso column at all and cannot size anybody.
  */
 export function chartKey(chart) {
   const rows = Object.values(chart || {});
@@ -58,7 +67,28 @@ export function chartKey(chart) {
 }
 
 /**
- * The size whose WORST disagreement with any measured girth is the smallest.
+ * The columns of a chart saved as rows only — before stores could name their own.
+ *
+ * Every column a row carries is a column the chart has; the torso one comes
+ * first, because that is what decides a size, and waist and hips follow in the
+ * order a tape would go round. This is what the built-in charts are read as too,
+ * which is why there is only ever one scoring rule in this file.
+ */
+export function columnsFromRows(chart) {
+  const rows = Object.values(chart || {});
+  if (!rows.length) return [];
+  const every = (k) => rows.every((row) => Number.isFinite(row?.[k]));
+  const torso = chartKey(chart);
+  const cols = [];
+  if (torso) cols.push({ id: torso, label: torso === 'bust' ? 'Bust' : 'Chest', measure: torso });
+  for (const k of ['waist', 'hips']) {
+    if (every(k)) cols.push({ id: k, label: k === 'hips' ? 'Hips' : 'Waist', measure: k });
+  }
+  return cols;
+}
+
+/**
+ * The size whose WORST disagreement with any measured column is the smallest.
  *
  * Worst case rather than average, because the garment that can be worn is the one
  * that is loose somewhere; the one that is snug somewhere is the one that does not
@@ -66,42 +96,65 @@ export function chartKey(chart) {
  * earlier row, so a chart typed smallest-first answers a tie with the smaller
  * size, exactly as the built-in ones do.
  *
- * `girths` is the adjusted measurement set: `chest` is required (for a woman it is
- * read against the chart's bust column), `waist` and `hips` are used when the clip
- * showed them AND the chart has that column. Fewer columns simply means a narrower
- * search, and with only the chest this is the nearest-nominal rule it replaces.
+ * A column only counts when EVERY row carries it and this body has that
+ * measurement. A blank cell must not become an advantage: without that rule, a
+ * row with its waist left out would be judged on its chest alone and could win
+ * against a row that was honest about both.
  *
- * `diff` stays the chest/bust difference: it is what the uncertain-gender path
- * compares between the two charts, and what the snug/loose note is written from.
+ * `diff` stays the difference on the deciding column: it is what the
+ * uncertain-gender path compares between the two charts, and what the snug/loose
+ * note is written from.
  */
-export function bestSize(sex, girths, chart = CHARTS[sex]) {
-  const chest = girths?.chest;
-  if (!Number.isFinite(chest)) return null;
+export function bestSize(sex, girths, chart = CHARTS[sex], columns = null) {
   const rows = chart || {};
-  const key = chartKey(rows) || (sex === 'female' ? 'bust' : 'chest');
-  const every = (k) => Object.values(rows).every((row) => Number.isFinite(row?.[k]));
-  const also = [['waist', girths?.waist], ['hips', girths?.hips]]
-    .filter(([k, v]) => Number.isFinite(v) && every(k));
+  const entries = Object.entries(rows);
+  if (!entries.length) return null;
+  const cols = (columns?.length ? columns : columnsFromRows(rows))
+    .map((c) => ({ ...c, field: measureField(c.measure) }));
+  const primary = cols.find((c) => c.field);
+  if (!primary) return null;
+  const usable = cols.filter((c) => c.field
+    && Number.isFinite(girths?.[c.field])
+    && entries.every(([, row]) => Number.isFinite(row?.[c.id])));
+  // The column a size is decided on has to be this body's own tape. Without it
+  // there is no anchor to lay the table against, and no size beats a guessed one.
+  if (!usable.includes(primary)) return null;
   let best = null;
-  for (const [sizeKey, row] of Object.entries(rows)) {
-    if (!Number.isFinite(row?.[key])) continue;
-    const chestDiff = Math.abs(chest - row[key]);
-    const worst = also.reduce((m, [k, v]) => Math.max(m, Math.abs(v - row[k])), chestDiff);
-    if (!best || worst < best.misfit) best = { sizeKey, row, key, diff: chestDiff, misfit: worst };
+  for (const [sizeKey, row] of entries) {
+    if (!Number.isFinite(row?.[primary.id])) continue;
+    const anchor = Math.abs(girths[primary.field] - row[primary.id]);
+    const worst = usable.reduce((m, c) => Math.max(m, Math.abs(girths[c.field] - row[c.id])), anchor);
+    if (!best || worst < best.misfit) {
+      best = { sizeKey, row, key: primary.id, field: primary.field, label: primary.label, diff: anchor, misfit: worst };
+    }
   }
   return best;
 }
 
+/** A column id a row can be keyed by, and a label a shopper can read. */
+function readColumns(raw, id) {
+  if (!raw || typeof raw !== 'object') return null;
+  const next = typeof raw.id === 'string' && /^[a-z][a-z0-9]{0,15}$/.test(raw.id) ? raw.id : id;
+  const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, 24) : '';
+  if (!label) return null;
+  return { id: next, label, measure: measureField(raw.measure) };
+}
+
 /**
  * A store's own chart, as it was typed, in the shape the sizing above wants:
- * inches, one entry per size, keyed by the label the store gave that size.
+ * inches, one entry per size keyed by the label the store gave that size, and the
+ * columns in the order the store put them.
  *
  * The unit belongs to the chart, not to the reader: a chart typed in centimetres
  * is converted here, once, rather than in every place that reads a chart. The
- * plausibility bounds are wide — a garment girth between 10" and 100" — and a row
- * that cannot be scored is dropped rather than guessed at, so one broken row does
- * not lose the other five. A row with no chest/bust cannot be scored at all and
- * is skipped for the same reason.
+ * plausibility bounds are wide — anything from a 5" cuff to a 120" length — and a
+ * row that cannot be scored is dropped rather than guessed at, so one broken row
+ * does not lose the other five.
+ *
+ * A column is dropped when no row carries a number for it, because a column with
+ * no numbers is not part of the table. A column carried by only SOME rows is kept
+ * (it is still the garment's number, and the shopper sees it beside their size)
+ * but bestSize will not score on it, since that would favour the rows missing it.
  *
  * Returns null when nothing usable is left, and the caller falls back to the
  * built-in chart rather than sizing a body against an empty table.
@@ -109,22 +162,40 @@ export function bestSize(sex, girths, chart = CHARTS[sex]) {
 export function chartFromInput(input) {
   if (!input || typeof input !== 'object') return null;
   const cm = input.unit === 'cm';
-  const rows = Array.isArray(input.rows) ? input.rows : [];
+  const rawCols = Array.isArray(input.columns) ? input.columns : [];
+  const rowsIn = Array.isArray(input.rows) ? input.rows : [];
+
+  const columns = [];
+  rawCols.forEach((raw, i) => {
+    const col = readColumns(raw, `c${i + 1}`);
+    if (!col || columns.some((c) => c.id === col.id)) return;
+    columns.push(col);
+  });
+  if (!columns.length) return null;
+
   const out = {};
-  for (const row of rows) {
+  for (const row of rowsIn) {
     const label = typeof row?.key === 'string' ? row.key.trim().slice(0, 14) : '';
     // Two rows with the same label are the same size; the first one wins, because
     // that is the order the store typed them in.
     if (!label || out[label]) continue;
     const r = {};
-    for (const k of ['chest', 'bust', 'waist', 'hips', 'height']) {
-      const n = Number(row?.[k]);
-      if (!Number.isFinite(n)) continue;
+    for (const c of columns) {
+      const n = Number(row?.[c.id]);
+      if (!Number.isFinite(n) || String(row?.[c.id]).trim() === '') continue;
       const inch = cm ? n / 2.54 : n;
-      if (inch >= 10 && inch <= 100) r[k] = Math.round(inch * 10) / 10;
+      if (inch >= 5 && inch <= 120) r[c.id] = Math.round(inch * 10) / 10;
     }
-    if (!Number.isFinite(r.chest) && !Number.isFinite(r.bust)) continue;
     out[label] = r;
   }
-  return Object.keys(out).length ? out : null;
+
+  const kept = columns.filter((c) => Object.values(out).some((r) => Number.isFinite(r?.[c.id])));
+  const anchor = kept.find((c) => c.measure);
+  if (!anchor) return null;
+  // A size with no number in the deciding column cannot be laid against anything.
+  for (const [label, r] of Object.entries(out)) {
+    if (!Number.isFinite(r[anchor.id])) delete out[label];
+  }
+  if (!Object.keys(out).length) return null;
+  return { rows: out, columns: kept };
 }

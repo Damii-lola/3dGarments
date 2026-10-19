@@ -8,11 +8,20 @@
  * is told which size of THAT garment to buy, scored against the chart that was
  * typed here.
  *
+ * The columns are the store's too. A chart is not always chest/waist/hips: a
+ * shirt may print a shoulder and a sleeve, trousers a waist and an inseam, a coat
+ * a body length. The form therefore holds a list of columns the store adds,
+ * renames and removes, and the table under it grows and shrinks with them. Which
+ * column decides the size is answered by order, not by a setting: the first
+ * column this app can measure is the one the size is picked on, and a column with
+ * no measurement behind it (a body length) is carried and shown, never scored.
+ *
  * Signed out is not an error state: it is a state, with the way in beside it.
  * That is why this page does not bounce anyone to the account screen the way the
  * scanner does.
  */
 import './nav.js';
+import { MEASURES } from '@shared/measures.js';
 import { getSession, isAccount, signOut } from './services/auth.js';
 import { chartColumns, listCharts, notSetUp, removeChart, saveChart } from './services/charts.js';
 
@@ -32,6 +41,9 @@ const formTitle = document.getElementById('chart-form-title');
 const nameInput = document.getElementById('chart-name');
 const sexInput = document.getElementById('chart-sex');
 const unitInput = document.getElementById('chart-unit');
+const colsEl = document.getElementById('chart-columns');
+const addColBtn = document.getElementById('chart-add-col');
+const tableEl = document.getElementById('chart-table');
 const headEl = document.getElementById('chart-head');
 const rowsEl = document.getElementById('chart-rows');
 const addBtn = document.getElementById('chart-add');
@@ -61,21 +73,23 @@ const embedReady = new Promise((resolve) => {
   document.head.append(script);
 });
 
-/**
- * The three girth columns this form offers, and what each is called for a
- * garment made for a woman. The first one is the column a size is decided on
- * (the server's rule, and the reason a chart with no chest/bust sizes nobody).
- */
-const COLUMNS = {
-  male: ['Chest', 'Waist', 'Hips'],
-  female: ['Bust', 'Waist', 'Hips'],
-  unisex: ['Chest', 'Waist', 'Hips'],
-};
 /** Bone-stock rows to start from. Empty on purpose: these are the store's numbers. */
 const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-/** The key the first number column is saved under, from who the garment is for. */
-const primaryKey = () => (sexInput.value === 'female' ? 'bust' : 'chest');
+/** A column's measurement, when this app can read it off a body. Null = printed only. */
+const fieldOf = (column) => (MEASURES.some((m) => m.id === column.measure) ? column.measure : null);
+
+/** The three columns a chart starts with: the torso, the waist, the seat. */
+function defaultColumns(sex) {
+  return [
+    { id: 'col1', label: sex === 'female' ? 'Bust' : 'Chest', measure: 'chest' },
+    { id: 'col2', label: 'Waist', measure: 'waist' },
+    { id: 'col3', label: 'Hips', measure: 'hips' },
+  ];
+}
+
+/** The columns on screen, in the order the store put them. */
+let columns = defaultColumns('male');
 
 /** Which chart the form is editing, or null when it is adding a new one. */
 let editingId = null;
@@ -95,79 +109,210 @@ function input(className, { value = '', placeholder = '', label, mode = 'decimal
   return el;
 }
 
-/** The column headings, which follow the two selects. */
+function deleteButton(what, onClick) {
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'chart-row-del';
+  del.setAttribute('aria-label', what);
+  del.textContent = '\u00d7';
+  del.addEventListener('click', onClick);
+  return del;
+}
+
+/** The heading over the table: the size, then each column in the store's words. */
 function paintHead() {
   const unit = unitInput.value === 'cm' ? 'cm' : 'in';
-  const names = COLUMNS[sexInput.value] || COLUMNS.unisex;
-  const labels = ['Size', `${names[0]} (${unit})`, `${names[1]} (${unit})`, `${names[2]} (${unit})`, ''];
+  const labels = ['Size', ...columns.map((c) => `${c.label.trim() || 'Column'} (${unit})`), ''];
   headEl.replaceChildren(...labels.map((label) => {
     const cell = document.createElement('span');
     cell.textContent = label;
     return cell;
   }));
+  // The table has as many number columns as the store added; the grid follows.
+  tableEl.style.setProperty('--cols', String(Math.max(1, columns.length)));
 }
 
-/** One row of the chart: the store's size name, then the three girths. */
-function addRow({ key = '', girths = ['', '', ''] } = {}) {
+/** One row of the column editor: its name, what it measures, and a way to drop it. */
+function columnRow(column) {
+  const row = document.createElement('div');
+  row.className = 'chart-column';
+
+  const label = input('col-label', {
+    value: column.label,
+    placeholder: column.measure ? 'Chest' : 'Body length',
+    label: 'Column name',
+    mode: null,
+  });
+  label.addEventListener('input', () => {
+    column.label = label.value;
+    paintHead();
+  });
+
+  const measure = document.createElement('select');
+  measure.className = 'col-measure';
+  measure.setAttribute('aria-label', 'What this column measures');
+  for (const m of MEASURES) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.label;
+    measure.append(opt);
+  }
+  const other = document.createElement('option');
+  other.value = '';
+  other.textContent = 'Other \u2014 shown only';
+  measure.append(other);
+  measure.value = fieldOf(column) || '';
+  measure.addEventListener('change', () => {
+    column.measure = measure.value;
+    // A column the store has not named takes the name of what it measures, so a
+    // fresh column is not left headless. A name the store typed is theirs to keep.
+    if (!label.value.trim()) {
+      label.value = MEASURES.find((m) => m.id === measure.value)?.label || 'Measurement';
+      column.label = label.value;
+      paintHead();
+    }
+  });
+
+  row.append(label, measure, deleteButton('Remove this column', () => removeColumn(column)));
+  return row;
+}
+
+function renderColumns() {
+  colsEl.replaceChildren(...columns.map(columnRow));
+}
+
+/** The numbers on screen right now, keyed by column, so a rebuild keeps them. */
+function snapshot() {
+  return [...rowsEl.children].map((row) => {
+    const values = {};
+    for (const cell of row.querySelectorAll('.chart-num')) values[cell.dataset.col] = cell.value;
+    return { key: row.querySelector('.chart-key').value, values };
+  });
+}
+
+/** One row of the chart: the store's size name, then one number per column. */
+function addRow({ key = '', values = {} } = {}) {
   const row = document.createElement('div');
   row.className = 'chart-row';
   row.append(input('chart-key', { value: key, placeholder: 'M', label: 'Size name', mode: null }));
-  const names = COLUMNS[sexInput.value] || COLUMNS.unisex;
-  girths.forEach((value, i) => {
-    row.append(input('chart-num', { value: value === 0 || value ? String(value) : '', placeholder: '—', label: `${names[i]} for this size` }));
-  });
-  const del = document.createElement('button');
-  del.type = 'button';
-  del.className = 'chart-row-del';
-  del.setAttribute('aria-label', 'Remove this size');
-  del.textContent = '\u00d7';
-  del.addEventListener('click', () => {
+  for (const column of columns) {
+    const cell = input('chart-num', {
+      value: values[column.id] === 0 || values[column.id] ? String(values[column.id]) : '',
+      placeholder: '\u2014',
+      label: `${column.label.trim() || 'Column'} for this size`,
+    });
+    cell.dataset.col = column.id;
+    row.append(cell);
+  }
+  row.append(deleteButton('Remove this size', () => {
     row.remove();
     if (!rowsEl.children.length) addRow();
-  });
-  row.append(del);
+  }));
   rowsEl.append(row);
   return row;
 }
 
+function rebuildRows(rows) {
+  rowsEl.replaceChildren();
+  for (const row of rows) addRow(row);
+  if (!rowsEl.children.length) addRow();
+}
+
 /**
- * What is in the form, as rows to save. Rows left entirely blank are ignored —
- * an empty row at the bottom of a chart is not an error — but a row with a name
- * and no chest/bust is, because that is the column a size is decided on and a
- * number nobody typed must not be invented to fill it.
+ * A column can be added, renamed, repointed or removed, and the table follows.
+ * Adding one is the point of the editor: a chart that prints a shoulder should be
+ * scored on the shoulder, and a chart that also prints a body length should show
+ * that length to the shopper without pretending it can read it off a body.
  */
-function readRows() {
-  const primary = primaryKey();
-  const rows = [];
+function addColumn() {
+  const rows = snapshot();
+  let n = columns.length + 1;
+  while (columns.some((c) => c.id === `col${n}`)) n += 1;
+  columns = [...columns, { id: `col${n}`, label: '', measure: '' }];
+  paintHead();
+  renderColumns();
+  rebuildRows(rows);
+  colsEl.lastElementChild?.querySelector('input')?.focus();
+}
+
+function removeColumn(column) {
+  if (columns.length === 1) {
+    setStatus('A chart needs one column at least \u2014 edit it rather than removing it.', 'error');
+    return;
+  }
+  const rows = snapshot();
+  columns = columns.filter((c) => c !== column);
+  paintHead();
+  renderColumns();
+  rebuildRows(rows);
+}
+
+/** What is in the form, as columns and rows to save, or the reasons it cannot be. */
+function readForm() {
+  const unit = unitInput.value === 'cm' ? 'cm' : 'in';
+  const lo = unit === 'cm' ? 13 : 5;
+  const hi = unit === 'cm' ? 305 : 120;
   const problems = [];
-  // Rows with a name but no chest/bust. Reported together, once, rather than one
-  // at a time: the fix is the same for all of them, and a shop with five
-  // half-typed rows should not have to press Save five times to hear about it.
-  const missing = [];
-  for (const row of rowsEl.children) {
-    const fields = [...row.querySelectorAll('input')];
-    const key = fields[0].value.trim();
-    const text = fields.slice(1).map((f) => f.value.trim());
-    if (!key && text.every((v) => !v)) continue;
+  const rows = [];
+  for (const rowEl of rowsEl.children) {
+    const key = rowEl.querySelector('.chart-key').value.trim();
+    const cells = [...rowEl.querySelectorAll('.chart-num')];
+    // A row nobody has typed in is not an error: an empty line at the bottom of a
+    // chart is how a chart gets longer.
+    if (!key && cells.every((c) => !c.value.trim())) continue;
     if (!key) { problems.push('Every row needs a size name.'); continue; }
-    if (rows.some((r) => r.key === key) || missing.includes(key)) { problems.push(`"${key}" is in the chart twice.`); continue; }
+    if (rows.some((r) => r.key === key)) { problems.push(`"${key}" is in the chart twice.`); continue; }
     const entry = { key };
-    const keys = [primary, 'waist', 'hips'];
-    text.forEach((raw, i) => {
-      if (raw === '') return;
+    for (const cell of cells) {
+      const raw = cell.value.trim();
+      if (raw === '') continue;
       const value = Number(raw);
-      if (!Number.isFinite(value) || value <= 0) { problems.push(`${key}: "${raw}" is not a measurement.`); return; }
-      entry[keys[i]] = value;
-    });
-    if (!Number.isFinite(entry[primary])) { missing.push(key); continue; }
+      const column = columns.find((c) => c.id === cell.dataset.col);
+      if (!Number.isFinite(value) || value < lo || value > hi) {
+        problems.push(`${key}: "${raw}" is not a measurement${column?.label ? ` for ${column.label}` : ''} in ${unit === 'cm' ? 'centimetres' : 'inches'}.`);
+        continue;
+      }
+      entry[cell.dataset.col] = value;
+    }
     rows.push(entry);
   }
-  if (missing.length) {
-    problems.push(missing.length === 1
-      ? `${missing[0]} needs a ${primary} \u2014 it is the one measurement a size is decided on.`
-      : `${missing.join(', ')} need a ${primary} \u2014 it is the one measurement a size is decided on.`);
+
+  // The first column this app can measure is the one a size is decided on, so a
+  // chart without one, or a size missing its number, cannot answer anybody.
+  const anchor = columns.find((c) => fieldOf(c));
+  if (!anchor) {
+    problems.push('Add a column this app can measure \u2014 it is the one a size is decided on.');
+  } else if (rows.length) {
+    const name = anchor.label.trim() || 'number';
+    const missing = rows.filter((r) => !Number.isFinite(r[anchor.id])).map((r) => r.key);
+    if (missing.length) {
+      // Reported together, once: the fix is the same for all of them, and a shop
+      // with five half-typed rows should not have to press Save five times.
+      problems.push(missing.length === 1
+        ? `${missing[0]} needs a ${name} \u2014 it is the one measurement a size is decided on.`
+        : `${missing.join(', ')} need a ${name} \u2014 it is the one measurement a size is decided on.`);
+    }
+    // A column with a blank cell would be scored on nobody (a blank must not
+    // favour the row it is missing from), so say so here rather than leave the
+    // store wondering why the column never moved the answer.
+    for (const c of columns) {
+      if (c === anchor) continue;
+      const have = rows.filter((r) => Number.isFinite(r[c.id])).length;
+      if (have && have < rows.length) {
+        problems.push(`${c.label.trim() || 'One column'} is filled for ${have} of ${rows.length} sizes \u2014 fill it for every size, or remove the column.`);
+      }
+    }
   }
-  return { rows, problems };
+
+  return {
+    rows,
+    problems,
+    columns: columns.map((c) => ({
+      id: c.id,
+      label: (c.label.trim() || 'Column').slice(0, 24),
+      measure: fieldOf(c),
+    })),
+  };
 }
 
 function setStatus(message, kind = '') {
@@ -187,12 +332,41 @@ function resetForm() {
   nameInput.value = '';
   sexInput.value = 'male';
   unitInput.value = 'in';
+  columns = defaultColumns('male');
+  paintHead();
+  renderColumns();
   rowsEl.replaceChildren();
   DEFAULT_SIZES.forEach((key) => addRow({ key }));
-  paintHead();
   cancelBtn.hidden = true;
   setBusy(false);
   setStatus('');
+}
+
+/**
+ * The columns a saved chart was typed under. A chart saved before columns had
+ * names is read from the keys its rows carry, so an older chart still opens with
+ * every number in the right place.
+ */
+function columnsFromSaved(chart) {
+  const saved = Array.isArray(chart.columns) ? chart.columns.filter((c) => c && typeof c.id === 'string' && typeof c.label === 'string') : [];
+  if (saved.length) {
+    return saved.map((c) => ({
+      id: c.id,
+      label: c.label,
+      measure: c.measure === 'bust' ? 'chest' : MEASURES.some((m) => m.id === c.measure) ? c.measure : '',
+    }));
+  }
+  const order = ['chest', 'bust', 'waist', 'hips', 'height'];
+  const keys = [];
+  for (const row of Array.isArray(chart.rows) ? chart.rows : []) {
+    for (const key of Object.keys(row || {})) if (key !== 'key' && !keys.includes(key)) keys.push(key);
+  }
+  keys.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  return keys.length ? keys.map((key) => ({
+    id: key,
+    label: key === 'chest' ? (chart.sex === 'female' ? 'Bust' : 'Chest') : key.charAt(0).toUpperCase() + key.slice(1),
+    measure: key === 'bust' ? 'chest' : MEASURES.some((m) => m.id === key) ? key : '',
+  })) : defaultColumns(chart.sex);
 }
 
 /** Put an existing chart into the form. */
@@ -202,14 +376,16 @@ function startEdit(chart) {
   nameInput.value = chart.name;
   sexInput.value = chart.sex;
   unitInput.value = chart.unit === 'cm' ? 'cm' : 'in';
+  columns = columnsFromSaved(chart);
+  paintHead();
+  renderColumns();
   rowsEl.replaceChildren();
-  const primary = chart.sex === 'female' ? 'bust' : 'chest';
-  const rows = Array.isArray(chart.rows) ? chart.rows : [];
-  for (const row of rows) {
-    addRow({ key: String(row?.key ?? ''), girths: [row?.[primary], row?.waist, row?.hips] });
+  for (const row of Array.isArray(chart.rows) ? chart.rows : []) {
+    const values = {};
+    for (const c of columns) values[c.id] = row?.[c.id];
+    addRow({ key: String(row?.key ?? ''), values });
   }
   if (!rowsEl.children.length) addRow();
-  paintHead();
   cancelBtn.hidden = false;
   setStatus('');
   saveBtn.textContent = 'Save changes';
@@ -234,6 +410,12 @@ function who(sex) {
   return sex === 'female' ? 'Women' : sex === 'male' ? 'Men' : 'Anyone';
 }
 
+/** True when every row carries a real number for this column. */
+function carriedEverywhere(chart, id) {
+  const rows = Array.isArray(chart.rows) ? chart.rows : [];
+  return rows.length > 0 && rows.every((r) => Number.isFinite(Number(r?.[id])) && String(r?.[id] ?? '') !== '');
+}
+
 /** One garment: its link, its snippet, and the few things you can do with them. */
 function card(chart) {
   const article = document.createElement('article');
@@ -246,14 +428,18 @@ function card(chart) {
   title.textContent = chart.name;
   const meta = document.createElement('p');
   meta.className = 'chart-meta';
-  const cols = chartColumns(chart);
+  const scored = chartColumns(chart).map((c) => c.label);
+  const printed = (Array.isArray(chart.columns) ? chart.columns : [])
+    .filter((c) => c && c.label && !c.measure && carriedEverywhere(chart, c.id))
+    .map((c) => c.label);
   const count = Array.isArray(chart.rows) ? chart.rows.length : 0;
   meta.textContent = [
     who(chart.sex),
     `${count} size${count === 1 ? '' : 's'}`,
     chart.unit === 'cm' ? 'centimetres' : 'inches',
-    cols.length ? `scored on ${cols.join(', ')}` : 'no girth column yet',
-  ].join(' · ');
+    scored.length ? `scored on ${scored.join(', ')}` : 'no column this app can measure',
+    printed.length ? `also shows ${printed.join(', ')}` : '',
+  ].filter(Boolean).join(' · ');
   head.append(title, meta);
 
   const linkField = document.createElement('label');
@@ -346,12 +532,25 @@ addBtn.addEventListener('click', () => {
   const row = addRow();
   row.querySelector('input').focus();
 });
-sexInput.addEventListener('change', () => {
-  // The first number column changes name (chest / bust) but not meaning: it is
-  // still the girth the size is decided on, so the numbers stay where they are.
-  paintHead();
-});
+addColBtn.addEventListener('click', addColumn);
 unitInput.addEventListener('change', paintHead);
+sexInput.addEventListener('change', () => {
+  // The torso column is the same tape whoever the garment is for; only the word
+  // over it changes, and only when the store has not chosen a word of its own.
+  const want = sexInput.value === 'female' ? 'Bust' : 'Chest';
+  const other = want === 'Bust' ? 'Chest' : 'Bust';
+  let changed = false;
+  for (const c of columns) {
+    if (fieldOf(c) === 'chest' && (!c.label || c.label === other)) {
+      c.label = want;
+      changed = true;
+    }
+  }
+  if (changed) {
+    paintHead();
+    renderColumns();
+  }
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -363,7 +562,7 @@ form.addEventListener('submit', async (event) => {
     nameInput.focus();
     return;
   }
-  const { rows, problems } = readRows();
+  const { rows, columns: savedColumns, problems } = readForm();
   // A row problem first, then the empty form: "XS needs a chest" says what to do,
   // where "type at least one size row" would be a lie about a form that is full
   // of rows and waiting for one number.
@@ -379,7 +578,14 @@ form.addEventListener('submit', async (event) => {
   setBusy(true);
   setStatus('Saving…');
   try {
-    const saved = await saveChart({ id: editingId, name, sex: sexInput.value, unit: unitInput.value, rows });
+    const saved = await saveChart({
+      id: editingId,
+      name,
+      sex: sexInput.value,
+      unit: unitInput.value,
+      columns: savedColumns,
+      rows,
+    });
     const wasEditing = Boolean(editingId);
     resetForm();
     await refresh();
