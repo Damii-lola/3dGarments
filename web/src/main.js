@@ -805,6 +805,10 @@ async function runAnalysis() {
           });
         } catch (e) {
           log('the clip could not be read — falling back to still frames:', e.message);
+          // A spent allowance or a rejected key is not a reason to try the same
+          // service twelve more times; it is the answer, and it is worth saying
+          // now rather than a minute later.
+          if (/^The measuring service/.test(e.message)) throw e;
           data = null;
         }
       }

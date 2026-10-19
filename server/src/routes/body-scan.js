@@ -922,7 +922,13 @@ function finishScan(res, { frames, rejected, unreadable, failures, aspect, attem
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, rejected, unreadable, failures } };
     if (failures.length === attempted) {
-      throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`, details);
+      // When every frame failed for the same shopper-facing reason — the daily
+      // allowance is spent, the key was rejected — that reason is the answer.
+      // "The vision service rejected every frame" is our plumbing, not theirs.
+      const reasons = [...new Set(failures.map((f) => f.error))];
+      const own = reasons.every((r) => /^The measuring service/.test(r));
+      if (own && reasons.length === 1) throw new HttpError(502, reasons[0], details, { expose: true });
+      throw new HttpError(502, `The vision service rejected every frame. First error: ${failures[0].error}`, details, { expose: own });
     }
     if (rejected.length) {
       throw new HttpError(422, `The landmarks we read did not describe a human body (${rejected[0].reason}). Film again with the whole person in shot, standing straight and facing the camera.`, details);

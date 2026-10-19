@@ -55,10 +55,11 @@ app.use((err, req, res, _next) => {
   let message = err.message || 'Internal error';
   if (err instanceof multer.MulterError) {
     status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-    message = err.code === 'LIMIT_FILE_SIZE' ? `Image too large (max ${config.limits.uploadBytes / 1048576} MB)` : err.message;
+    message = err.code === 'LIMIT_FILE_SIZE' ? 'That file is too large — trim the clip and try again.' : err.message;
   }
   if (status >= 500) console.error(`[error] ${req.method} ${req.originalUrl}:`, err);
-  res.status(status).json({ error: status >= 500 && config.env === 'production' ? 'Internal error' : message, ...(err.details ? { details: err.details } : {}) });
+  const hide = status >= 500 && config.env === 'production' && !err.expose;
+  res.status(status).json({ error: hide ? 'Internal error' : message, ...(err.details ? { details: err.details } : {}) });
 });
 
 const server = app.listen(config.port, () => {
