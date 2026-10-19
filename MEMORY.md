@@ -252,7 +252,9 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   pose model, numbers only) and is still **imported dynamically**, so a normal visit never parses it.
 - **`ffmpeg-static` in the API.** ~45 MB Windows / ~78 MB Linux binary fetched at `npm ci`; nothing to
   install on Render. Decoding on the free instance (0.1 CPU) is the slow part of a scan — a paid instance
-  is the fix, not more code.
+  is the fix, not more code. **Vision calls run six at a time, not sixteen**: a live 16-frame scan came
+  back with a 429 ("capacity temporarily exceeded"), which is a measurement thrown away, and
+  `callModelRaw` now retries a 429/5xx twice with a short backoff.
 - **The privacy copy now says the clip is sent and deleted**, not "your video never leaves your phone".
   That promise could not survive the decision to send the video; what survives is "Nothing is saved" and
   the deletion itself (`res.on('finish')` unlink, plus the frames temp dir removed in a `finally`). Every

@@ -241,25 +241,54 @@ function frameDigest(f, reason) {
 
 /* ---------------- Cloudflare helpers ---------------- */
 
+/**
+ * Run `fn` over `items`, at most `limit` at a time, keeping the order.
+ *
+ * Sixteen frames fired at Cloudflare at once is more than its shared GPUs will
+ * take — a live 16-frame scan came back with one 429 — and a 429 here is a
+ * measurement that never happened. Six at a time is three short waves instead of
+ * one queue, and it fits inside what the plan actually serves.
+ */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 async function callModelRaw(model, messages, opts = {}) {
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
   // Qwen 3.8 reasons at "xhigh" by default, which is wasted thinking for a task
   // that is meant to be pure observation of one frame.
   if (/qwen/i.test(model)) payload.reasoning_effort = 'low';
   if (opts.json) payload.response_format = { type: 'json_object' };
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.accountId}/ai/run/${model}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.cloudflare.apiToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.accountId}/ai/run/${model}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.cloudflare.apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) return res.json();
     const body = await res.text().catch(() => '');
+    // Cloudflare's GPUs are shared: a burst of frames can be told "capacity
+    // temporarily exceeded". One short wait and the same frame is read for
+    // real, which is much better than throwing a measurement away.
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
+      continue;
+    }
     throw new HttpError(502, `Cloudflare AI error: ${res.status} ${body.slice(0, 400)}`);
   }
-  return res.json();
 }
 
 /** Pull the assistant text out of Cloudflare's envelope, whatever shape it takes. */
@@ -795,7 +824,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
   if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart.rows).length} size(s), for ${brand.sex})`);
 
-  await Promise.all(files.map(async (file, i) => {
+  await mapLimit(files, 6, async (file, i) => {
     const frameStart = Date.now();
     try {
       const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1600, json: true });
@@ -848,7 +877,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
       failures.push({ file: file.originalname, error: e.message });
       log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) - ${e.message}`);
     }
-  }));
+  });
 
   log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${rejected.length} rejected as implausible, ${failures.length} failed)`);
 
