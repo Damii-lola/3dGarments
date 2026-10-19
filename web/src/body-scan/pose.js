@@ -115,7 +115,7 @@ export function loadPoseEngine({ onProgress } = {}) {
   if (enginePromise) return enginePromise;
 
   enginePromise = (async () => {
-    onProgress?.('Loading the measurement model…');
+    onProgress?.('Fetching the measurement model — 9 MB, first time only…');
     const vision = await FilesetResolver.forVisionTasks(WASM_URL);
     let landmarker = null;
     let model = '';
@@ -124,7 +124,7 @@ export function loadPoseEngine({ onProgress } = {}) {
     for (const url of MODELS) {
       for (const delegate of ['GPU', 'CPU']) {
         try {
-          onProgress?.(`Loading the measurement model… (${url.includes('full') ? 'full' : 'lite'} / ${delegate})`);
+          onProgress?.(`Starting the measurement model (${url.includes('full') ? 'full' : 'lite'} / ${delegate})…`);
           landmarker = await PoseLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: url, delegate },
             runningMode: 'IMAGE',

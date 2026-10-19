@@ -13,7 +13,7 @@
 
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
 import { analyzeBody, analyzeGeometry } from './body-scan/analyze.js';
-import { analyzePose } from './body-scan/pose.js';
+import { analyzePose, loadPoseEngine } from './body-scan/pose.js';
 import { createTrimmer } from './body-scan/trim.js';
 import { createCalibrator } from './body-scan/calibrate.js';
 import { showNote } from './body-scan/notes.js';
@@ -834,9 +834,29 @@ function renderAnalysis(data) {
   show('result');
 }
 
+/** Milliseconds on the clock, for the status line. */
+const since = (t0) => `${Math.max(0, Math.round((Date.now() - t0) / 1000))}s`;
+
+/**
+ * The measurement stack is ~9 MB of weights plus the wasm runtime, fetched from
+ * two CDNs, and starting it takes a few seconds even on a fast phone. None of
+ * that has to happen after Analyze is pressed: it can happen while the shopper
+ * is still recording. Warming it here is the difference between a wait that
+ * looks frozen and a wait that is already over.
+ */
+let warmPose = null;
+function warmMeasurement() {
+  if (warmPose) return warmPose;
+  warmPose = loadPoseEngine({ onProgress: (m) => log(m) })
+    .then((engine) => { log('measurement model ready:', engine.model); return engine; })
+    .catch((e) => { log('measurement model could not be warmed:', e.message); return null; });
+  return warmPose;
+}
+
 async function runAnalysis() {
   if (analyzing || !recordedBlob) return;
   setBusy(true);
+  setStatus('Starting the measurement…', 'busy');
   lastSeen = [];
   releaseSeen();
   const startedAt = Date.now();
@@ -868,7 +888,7 @@ async function runAnalysis() {
           to,
           maxWidth: 720,
           gender: chosenGender,
-          onProgress: (msg) => setStatus(msg),
+          onProgress: (msg) => setStatus(`${msg} · ${since(startedAt)}`, 'busy'),
         });
         log('on-device measurement', measured);
         if (measured.frames.length) {
@@ -891,7 +911,7 @@ async function runAnalysis() {
             setBusy(false);
             return;
           }
-          setStatus(`Sending ${measured.frames.length} measurements…`);
+          setStatus(`Sending ${measured.frames.length} measurements… · ${since(startedAt)}`, 'busy');
           data = await analyzeGeometry(measured, {
             gender: chosenGender,
             // The garment the shopper followed a link to, when there is one: the
@@ -902,7 +922,7 @@ async function runAnalysis() {
             references: markedReference ? [markedReference] : [],
             // Fabric does not leave the numbers unless it is named.
             clothing: readClothing(),
-            onTick: (s) => setStatus(`Working out your measurements… ${s}s`),
+            onTick: (s) => setStatus(`Working out your measurements… ${s}s`, 'busy'),
           });
         } else {
           log('on-device measurement found no usable frame — falling back to the vision model');
@@ -915,7 +935,7 @@ async function runAnalysis() {
     // 2. Fallback: JPEG frames for the vision model. Also the only path when the
     //    browser cannot run the pose model at all.
     if (!data) {
-      setStatus('Grabbing key frames from your clip…');
+      setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
       let frames;
       try {
         frames = await extractFrames(recordedBlob, { count: 6, from, to });
@@ -934,11 +954,11 @@ async function runAnalysis() {
       lastSeenOpen = false;
 
       // The tick keeps the status moving so it never looks frozen.
-      setStatus(`Analyzing ${frames.length} frames on the server… 0s`);
+      setStatus(`Analyzing ${frames.length} frames on the server… ${since(startedAt)}`, 'busy');
       data = await analyzeBody(frames, {
         gender: chosenGender,
         chart,
-        onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`),
+        onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`, 'busy'),
       });
     }
 
@@ -988,6 +1008,12 @@ retakeBtn.addEventListener('click', resetAll);
 startOverBtn.addEventListener('click', resetAll);
 
 window.addEventListener('pagehide', releaseMedia);
+
+// Fetch and start the measurement stack now, while the shopper is still reading
+// the screen and recording — not after they press Analyze.
+if (!forceLlm && !new URLSearchParams(location.search).has('demo')) {
+  setTimeout(warmMeasurement, 700);
+}
 
 /**
  * ?demo=1 — render a canned analysis so the results screen can be seen and

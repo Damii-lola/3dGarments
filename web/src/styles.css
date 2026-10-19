@@ -1087,6 +1087,25 @@ body {
 }
 .status.error { color: #ff5470; }
 .status.ok { color: var(--good); }
+/* The measurement runs on the main thread, so a JS-driven "still working" cue
+   would stop with it. This one is a transform animation, which the compositor
+   keeps running while the page's own thread is busy — so the screen still moves
+   during the slowest part. */
+.status.busy { display: flex; align-items: center; gap: 0.5rem; }
+.status.busy::before {
+  content: '';
+  flex: none;
+  width: 0.8em;
+  height: 0.8em;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: status-spin 0.9s linear infinite;
+}
+@keyframes status-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .status.busy::before { animation-duration: 2.4s; }
+}
 
 /* ---------- accounts ----------
    Two ways in on one screen: create an account, or log into one. The fields are

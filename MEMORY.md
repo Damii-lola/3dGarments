@@ -240,6 +240,13 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **Click the camera on `/`** → a session? `/size` : `/auth`. Wait capped at 2.5 s; if the cloud
   settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
   in time, the account screen is the default.
+- **The measurement model is warmed when the page opens, not when Analyze is pressed.** It is ~9 MB
+  of pose weights plus the wasm runtime, from two CDNs, and `createFromOptions` is a few more seconds;
+  `main.js` calls `loadPoseEngine()` 0.7 s after load (never on `?demo=1` or `?llm=1`) so the download
+  runs while the shopper is recording and reading. Every analysis status carries a running clock, and
+  `.status.busy::before` is a **transform** animation: inference blocks the main thread, so a JS-drawn
+  spinner would freeze exactly when it is needed most while a compositor one keeps turning. The first
+  scan is the slow one — the browser caches the files after it.
 - **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
   accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
   current path), and the account screen picks the session up and opens the scanner. That is only half
