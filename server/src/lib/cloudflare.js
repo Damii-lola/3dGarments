@@ -1,4 +1,5 @@
 import { TYPES as WARDROBE_TYPES, ZONES as WARDROBE_ZONES, VIEWS as WARDROBE_VIEWS } from '../shared/wardrobe.js';
+import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { HttpError } from './errors.js';
 
@@ -6,14 +7,19 @@ const API = 'https://api.cloudflare.com/client/v4';
 
 export const cloudflareConfigured = () => Boolean(config.cloudflare.accountId && config.cloudflare.apiToken);
 
-function modelUrl(model) {
-  const { accountId, gatewayId } = config.cloudflare;
+/**
+ * One place that knows where a model lives, so the body scan and the wardrobe
+ * reader cannot drift apart — and so `CLOUDFLARE_API_BASE` can point the whole
+ * pipeline at a local stub and exercise it without spending a neuron.
+ */
+export function modelUrl(model) {
+  const { accountId, gatewayId, apiBase } = config.cloudflare;
   return gatewayId
     ? `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/${model}`
-    : `${API}/accounts/${accountId}/ai/run/${model}`;
+    : `${apiBase}/accounts/${accountId}/ai/run/${model}`;
 }
 
-const authHeaders = () => ({
+export const authHeaders = () => ({
   Authorization: `Bearer ${config.cloudflare.apiToken}`,
   'Content-Type': 'application/json',
 });
@@ -76,6 +82,35 @@ export function recordVision(ok, info = {}) {
 
 export function visionStatus() {
   return { ...monitor };
+}
+
+/**
+ * What the SERVER is actually holding — not what a dashboard shows.
+ *
+ * A rejected token is the one failure that looks identical from the outside to
+ * three different causes: the token on the host was never updated, it was
+ * pasted with a leading space or a missing character, or it belongs to a
+ * different Cloudflare account than the account id beside it. None of those are
+ * secrets, and none of them can be told apart from a 401. So describe the shape
+ * of the value (length, charset, a short fingerprint) and the account id
+ * itself, which is not secret and is in every request URL anyway.
+ *
+ * The token itself is never returned, and the fingerprint is one-way.
+ */
+export function tokenDiagnostics() {
+  const token = config.cloudflare.apiToken || '';
+  const account = config.cloudflare.accountId || '';
+  return {
+    token_set: Boolean(token),
+    token_length: token.length,
+    // Cloudflare API tokens are 40 characters of [A-Za-z0-9_-].
+    token_shape: /^[A-Za-z0-9_-]{40}$/.test(token) ? 'looks like a Cloudflare token' : `unexpected (${token.length} chars)`,
+    token_whitespace: token !== token.trim(),
+    token_fingerprint: token ? createHash('sha256').update(token).digest('hex').slice(0, 8) : null,
+    account_id: account || null,
+    // Account ids are 32 hex characters.
+    account_looks_right: /^[0-9a-f]{32}$/i.test(account),
+  };
 }
 
 /**

@@ -81,7 +81,7 @@ import {
   spanX,
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
-import { aiErrorMessage, classifyAiError, recordVision } from '../lib/cloudflare.js';
+import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
 import { bestSize, chartFromInput } from '../lib/sizing.js';
 
 /**
@@ -273,12 +273,9 @@ async function callModelRaw(model, messages, opts = {}) {
   if (/qwen/i.test(model)) payload.reasoning_effort = 'low';
   if (opts.json) payload.response_format = { type: 'json_object' };
   for (let attempt = 0; ; attempt += 1) {
-    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.accountId}/ai/run/${model}`, {
+    const res = await fetch(modelUrl(model), {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.cloudflare.apiToken}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
       body: JSON.stringify(payload),
     });
     if (res.ok) {

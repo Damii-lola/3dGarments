@@ -18,6 +18,10 @@ export const config = Object.freeze({
     visionModel: process.env.CF_VISION_MODEL || '@cf/qwen/qwen3.8-27b',
     textModel: process.env.CF_TEXT_MODEL || '', // grouping step; defaults to the vision model
     gatewayId: process.env.CF_AI_GATEWAY_ID || '',
+    // Where the REST API lives. Only ever changed for a local stub: the point of
+    // a configurable base is that the whole scan can be checked end to end with
+    // no quota spent, not that production points somewhere else.
+    apiBase: process.env.CLOUDFLARE_API_BASE || 'https://api.cloudflare.com/client/v4',
   }),
   limits: Object.freeze({
     uploadBytes: Number(process.env.MAX_UPLOAD_MB || 15) * 1024 * 1024,
