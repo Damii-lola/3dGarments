@@ -39,11 +39,12 @@ const run = promisify(execFile);
 export const MAX_FRAMES = 8;
 
 /**
- * Seeks run side by side, but not all eight at once: the free Render instance
- * has a fraction of one CPU, and eight ffmpeg processes competing for it finish
- * no sooner than four do. Four is overlap without a stampede.
+ * Seeks run side by side, all of them at once. Each seek spends most of its life
+ * waiting on a decode step that another process could be doing, so on a
+ * burstable instance the whole set tends to land in about the time of the
+ * slowest one rather than the sum.
  */
-const SEEK_CONCURRENCY = 4;
+const SEEK_CONCURRENCY = 8;
 
 /**
  * The ffmpeg binary, resolved once and never allowed to take the API down with

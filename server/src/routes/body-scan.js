@@ -906,7 +906,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
         log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
       } else {
         unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400), ms, ...meta });
-        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)} finish=${meta.finish} tokens=${meta.usage?.completion_tokens ?? '?'}`);
+        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'} finish=${meta.finish} tokens=${meta.usage?.completion_tokens ?? '?'}`);
       }
     } catch (e) {
       failures.push({ file: file.originalname, error: e.message, debug: e.debug || null });
@@ -1057,7 +1057,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   // Nothing believable came out: refuse rather than print a made-up size.
   if (!catalogue.items.length) {
     log('x no measurement survived the sanity check');
-    log(`  diagnostics=${JSON.stringify(diagnostics)}`);
+    // Counts and reasons only. This line used to carry the whole diagnostics
+    // object, landmarks included, which put a person's body geometry into a
+    // retained server log — the one place it is not supposed to be. The same
+    // detail is in the response, where it belongs and where it is discarded.
+    log(`  ${frames.length} frames, ${rejected.length} rejected, ${failures.length} failed, ${unreadable.length} unreadable; reasons=${JSON.stringify([...new Set(rejected.map((r) => r.reason).filter(Boolean))])}`);
     throw new HttpError(422, 'We could read your video but the measurements did not add up to a human body. Stand straight, face the camera with your arms clear of your sides, and keep your whole body in frame.', { diagnostics });
   }
 
@@ -1334,9 +1338,10 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     diagnostics,
   };
 
-  log(`done in ${result.debug.elapsedMs}ms - gender=${gender.guess} basis=${sizeBasis} source=${sizeSource} size=${result.size} scale=${round2(cmPerWidth)}cm/width anchors=[${anchors.join('; ')}]`);
-  log(`  seen=${JSON.stringify(seen)} adjusted=${JSON.stringify(adjusted)}`);
-  log(`  methods=${JSON.stringify(methods)}`);
+  // No measurements in the log — not the girths, not the scale, not the anchors.
+  // A retained log is still a saved reading, and the promise is that there is
+  // nothing to keep. Timing and provenance are enough to debug the pipeline.
+  log(`done in ${result.debug.elapsedMs}ms - basis=${sizeBasis} source=${sizeSource} rows=${catalogue.items.length}`);
 
   res.json(result);
 }
