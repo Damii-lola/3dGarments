@@ -103,14 +103,34 @@ export function tokenDiagnostics() {
   return {
     token_set: Boolean(token),
     token_length: token.length,
-    // Cloudflare API tokens are 40 characters of [A-Za-z0-9_-].
-    token_shape: /^[A-Za-z0-9_-]{40}$/.test(token) ? 'looks like a Cloudflare token' : `unexpected (${token.length} chars)`,
+    // A token must NEVER be returned, but its TYPE is not a secret and it
+    // decides which verify endpoint can even answer: a user token verifies at
+    // /user/tokens/verify, an account-owned token only at /accounts/{id}/tokens/verify,
+    // where the account id we hold has to be the account that owns it.
+    token_kind: tokenKind(token),
     token_whitespace: token !== token.trim(),
     token_fingerprint: token ? createHash('sha256').update(token).digest('hex').slice(0, 8) : null,
     account_id: account || null,
     // Account ids are 32 hex characters.
     account_looks_right: /^[0-9a-f]{32}$/i.test(account),
   };
+}
+
+/**
+ * Cloudflare 2026 credentials are prefixed and scannable: `cfut_` (user token),
+ * `cfat_` (account token), `cfk_` (global key) followed by 40 characters and a
+ * checksum. Tokens made before that are plain 40-character strings. The length
+ * check that used to live here called a perfectly good 58-character prefixed
+ * token "unexpected", which is the sort of diagnostic that sends someone to
+ * re-create a credential that was never the problem.
+ */
+function tokenKind(token) {
+  if (!token) return 'missing';
+  if (token.startsWith('cfut_')) return 'user token (cfut_)';
+  if (token.startsWith('cfat_')) return 'account token (cfat_)';
+  if (token.startsWith('cfk_')) return 'global API key (cfk_)';
+  if (/^[A-Za-z0-9_-]{40}$/.test(token)) return 'legacy token (40 chars)';
+  return `unrecognized (${token.length} chars)`;
 }
 
 /**
@@ -166,14 +186,23 @@ async function runLicensed(model, input, opts) {
 export async function verifyCloudflare() {
   if (!cloudflareConfigured()) return { ok: false, error: 'not configured' };
   const { accountId } = config.cloudflare;
-  for (const url of [`${API}/user/tokens/verify`, `${API}/accounts/${accountId}/tokens/verify`]) {
+  // Both paths, with what each one actually said. An account-owned token can
+  // only answer the second, and the second is only meaningful if the account id
+  // we hold is the account that owns the token — so a bare "failed" hides the
+  // very distinction that matters.
+  const attempts = [];
+  for (const path of ['/user/tokens/verify', `/accounts/${accountId}/tokens/verify`]) {
     try {
-      const res = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`${API}${path}`, { headers: authHeaders(), signal: AbortSignal.timeout(10_000) });
       const json = await res.json().catch(() => null);
-      if (res.ok && json?.success) return { ok: true, status: json.result?.status || 'active' };
-    } catch { /* try next */ }
+      const err = json?.errors?.[0];
+      attempts.push({ path, status: res.status, code: err?.code ?? null, message: err?.message || (res.ok ? 'ok' : null) });
+      if (res.ok && json?.success) return { ok: true, status: json.result?.status || 'active', attempts };
+    } catch (e) {
+      attempts.push({ path, status: null, message: e.message });
+    }
   }
-  return { ok: false, error: 'token verification failed' };
+  return { ok: false, error: 'token verification failed', attempts };
 }
 
 /* ------------------------------------------------------------------ */
