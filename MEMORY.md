@@ -246,7 +246,10 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   runs while the shopper is recording and reading. Every analysis status carries a running clock, and
   `.status.busy::before` is a **transform** animation: inference blocks the main thread, so a JS-drawn
   spinner would freeze exactly when it is needed most while a compositor one keeps turning. The first
-  scan is the slow one — the browser caches the files after it.
+  scan is the slow one — the browser caches the files after it. **Which model** is decided by what the
+  device can do: full weights on a GPU, lite on a GPU-less device, and never full on a CPU — that one
+  combination is minutes rather than seconds. A CPU-bound engine also samples the turn in ten views
+  instead of twelve, and the pass logs per-frame detect times plus the total.
 - **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
   accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
   current path), and the account screen picks the session up and opens the scanner. That is only half

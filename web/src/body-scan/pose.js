@@ -18,10 +18,21 @@ import { withVideo, resolveDuration, seek } from './frames.js';
 const TASKS_VERSION = '0.10.21';
 const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VERSION}/wasm`;
 const MODEL_BASE = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker';
-/** Full first for accuracy, lite as the fallback when the bigger file will not load. */
-const MODELS = [
-  `${MODEL_BASE}/pose_landmarker_full/float16/1/pose_landmarker_full.task`,
-  `${MODEL_BASE}/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+const MODELS = {
+  full: `${MODEL_BASE}/pose_landmarker_full/float16/1/pose_landmarker_full.task`,
+  lite: `${MODEL_BASE}/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+};
+/**
+ * Which model to try, in order. The full model on a GPU is the good case; the
+ * full model on a CPU is the one that turns a scan into a two-minute wait — a
+ * phone's CPU runs it at seconds per frame. So a device without a usable GPU
+ * gets the lite weights (5.5 MB, several times faster, and its silhouette is
+ * within a pixel of the full one), never full-on-CPU.
+ */
+const CANDIDATES = [
+  ['full', 'GPU'],
+  ['lite', 'GPU'],
+  ['lite', 'CPU'],
 ];
 
 const log = (...args) => console.log('[3dg:pose]', ...args);
@@ -121,24 +132,21 @@ export function loadPoseEngine({ onProgress } = {}) {
     let model = '';
     let lastErr = null;
 
-    for (const url of MODELS) {
-      for (const delegate of ['GPU', 'CPU']) {
-        try {
-          onProgress?.(`Starting the measurement model (${url.includes('full') ? 'full' : 'lite'} / ${delegate})…`);
-          landmarker = await PoseLandmarker.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: url, delegate },
-            runningMode: 'IMAGE',
-            numPoses: 1,
-            outputSegmentationMasks: true,
-          });
-          model = `${url.split('/').slice(-3)[0]} on ${delegate}`;
-          break;
-        } catch (e) {
-          lastErr = e;
-          log('model failed', url, delegate, e.message);
-        }
+    for (const [name, delegate] of CANDIDATES) {
+      try {
+        onProgress?.(`Starting the measurement model (${name} / ${delegate})…`);
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODELS[name], delegate },
+          runningMode: 'IMAGE',
+          numPoses: 1,
+          outputSegmentationMasks: true,
+        });
+        model = `${name} on ${delegate}`;
+        break;
+      } catch (e) {
+        lastErr = e;
+        log('model failed', name, delegate, e.message);
       }
-      if (landmarker) break;
     }
     if (!landmarker) throw new Error(`Could not load the pose model (${lastErr?.message || 'unknown error'})`);
     log('ready', model);
@@ -173,8 +181,11 @@ export function loadPoseEngine({ onProgress } = {}) {
  * @returns {Promise<{frames: object[], seen: object[], width: number, height: number, model: string}>}
  */
 export async function analyzePose(file, opts = {}) {
-  const { count = 6, from = 0, to = 1, maxWidth = 720, gender = 'unsure', onProgress } = opts;
+  const { count: wanted = 6, from = 0, to = 1, maxWidth = 720, gender = 'unsure', onProgress } = opts;
   const engine = await loadPoseEngine({ onProgress });
+  // On a CPU a frame costs seconds, so ten views around the turn instead of
+  // twelve is most of a second each saved without losing a side of the body.
+  const count = engine.model.includes('CPU') ? Math.min(wanted, 10) : wanted;
 
   return withVideo(file, async (video) => {
     const duration = await resolveDuration(video);
@@ -195,6 +206,9 @@ export async function analyzePose(file, opts = {}) {
     const span = Math.max(0.1, t1 - t0);
 
     const frames = [];
+    const passStart = performance.now();
+    /** Frame times, so a slow device is visible in the log rather than felt. */
+    const frameMs = [];
     /**
      * Every sampled frame, with the picture behind it. This is what the results
      * screen shows under "What the app saw": a blank or an odd number is nearly
@@ -209,11 +223,14 @@ export async function analyzePose(file, opts = {}) {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       let det = null;
+      const tDetect = performance.now();
       try {
         det = engine.detect(canvas);
       } catch (e) {
         log('detect failed on frame', i, e.message);
       }
+      const detectMs = Math.round(performance.now() - tDetect);
+      frameMs.push(detectMs);
       if (!det || !det.mask) {
         log('frame', i, 'no pose');
         seen.push({
@@ -247,7 +264,7 @@ export async function analyzePose(file, opts = {}) {
       }
 
       frames.push({ index: i, t, ...measured, camera: readCameraQuality(ctx, canvas.width, canvas.height) });
-      log('frame', i, `t=${t.toFixed(1)}s`, `view=${measured.view}`, `conf=${measured.confidence.toFixed(2)}`,
+      log('frame', i, `t=${t.toFixed(1)}s`, `detect=${detectMs}ms`, `view=${measured.view}`, `conf=${measured.confidence.toFixed(2)}`,
         `head cm/width=${measured.debug.headCmPerWidth ? measured.debug.headCmPerWidth.toFixed(1) : 'none'}`,
         `pose cm/width=${measured.debug.poseCmPerWidth ? measured.debug.poseCmPerWidth.toFixed(1) : 'none'}`,
         JSON.stringify(measured.debug.widths));
@@ -292,6 +309,8 @@ export async function analyzePose(file, opts = {}) {
 
     log('frames measured', frames.length, 'of', count,
       '·', seen.filter((f) => f.person && f.usable > 0).length, 'readable');
+    log('pose pass', `${Math.round(performance.now() - passStart)}ms for ${count} frames`,
+      '· detect', frameMs.join('/'), 'ms · model', engine.model);
 
     return { frames, seen, width: canvas.width, height: canvas.height, model: engine.model, duration };
   });

@@ -878,15 +878,15 @@ async function runAnalysis() {
     let data = null;
     if (!forceLlm) {
       try {
-        // Sample the whole turn densely. Each measurement is then a robust mean
-        // over many views instead of a lucky frame, and the side-on part of the
-        // turn is more likely to be caught while it is actually clean — which is
-        // what stops the depth having to be modelled at all.
+        // A full turn in twelve views at 640 px: the widths that matter are
+        // still seen from every side, and the server checks the frames against
+        // each other, so this is a little coarser sampling for a much shorter
+        // wait than sixteen at 720.
         const measured = await analyzePose(recordedBlob, {
-          count: 16,
+          count: 12,
           from,
           to,
-          maxWidth: 720,
+          maxWidth: 640,
           gender: chosenGender,
           onProgress: (msg) => setStatus(`${msg} · ${since(startedAt)}`, 'busy'),
         });
