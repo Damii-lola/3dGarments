@@ -2,25 +2,31 @@
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
    2. Trim the clip's LENGTH to the part where you turn around.
-   3. Measure ON THE DEVICE: a pose model finds the joints and the person's own
-      silhouette gives every width, so nothing is recalled from an average body
-      and nothing is uploaded until it is a handful of numbers. The server does
-      all the arithmetic and only reports what was visible — a blank beats a
-      guess. The arithmetic is shown under "How these were worked out".
-      Browsers that cannot run the pose model fall back to sending JPEG frames
-      for the server's vision model (?llm=1 forces that path).
+   3. Measure ON THE SERVER. The phone does one cheap thing — it draws a handful
+      of still frames out of the clip — and sends those; the server's vision
+      model reads the joints and the grid, and every centimetre after that is
+      arithmetic done on the server. Nothing heavy runs on the shopper's phone:
+      no model to download, no megabytes of weights in memory, no GPU needed.
+      ?local=1 runs the measurement on the device instead, with the pose model
+      (one import away, so a normal visit never even parses that code).
    ========================================================= */
 
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
 import { analyzeBody, analyzeGeometry } from './body-scan/analyze.js';
-import { analyzePose, loadPoseEngine } from './body-scan/pose.js';
 import { createTrimmer } from './body-scan/trim.js';
 import { createCalibrator } from './body-scan/calibrate.js';
 import { showNote } from './body-scan/notes.js';
 import { chartByCode, chartColumns } from './services/charts.js';
 
-/** ?llm=1 — skip the on-device measurement and use the vision model instead. */
-const forceLlm = new URLSearchParams(location.search).get('llm') === '1';
+const params = new URLSearchParams(location.search);
+
+/**
+ * ?local=1 — measure with the pose model on the device instead of on the server.
+ * The server path is the default: a phone that has to fetch and run a 9 MB pose
+ * model is a phone that hangs, and a shopper on a mid-range Android should never
+ * be asked to do that. Only still frames travel, and only six of them.
+ */
+const local = params.get('local') === '1';
 
 /**
  * ?debug=1 — prints what the device is actually reporting. Handy when a layout
@@ -678,16 +684,19 @@ function renderAnalysis(data) {
 const since = (t0) => `${Math.max(0, Math.round((Date.now() - t0) / 1000))}s`;
 
 /**
- * The measurement stack is ~9 MB of weights plus the wasm runtime, fetched from
- * two CDNs, and starting it takes a few seconds even on a fast phone. None of
- * that has to happen after Analyze is pressed: it can happen while the shopper
- * is still recording. Warming it here is the difference between a wait that
- * looks frozen and a wait that is already over.
+ * ?local=1 only. The on-device stack is ~9 MB of weights plus the wasm runtime,
+ * fetched from two CDNs, and starting it takes seconds even on a fast phone —
+ * which is exactly why it is no longer the default. When it has been asked for,
+ * it is started while the shopper is still recording rather than at Analyze.
+ *
+ * The module is imported here, not at the top of the file, so a normal visit
+ * never downloads, parses or holds any of it.
  */
 let warmPose = null;
 function warmMeasurement() {
   if (warmPose) return warmPose;
-  warmPose = loadPoseEngine({ onProgress: (m) => log(m) })
+  warmPose = import('./body-scan/pose.js')
+    .then(({ loadPoseEngine }) => loadPoseEngine({ onProgress: (m) => log(m) }))
     .then((engine) => { log('measurement model ready:', engine.model); return engine; })
     .catch((e) => { log('measurement model could not be warmed:', e.message); return null; });
   return warmPose;
@@ -698,14 +707,8 @@ async function runAnalysis() {
   setBusy(true);
   setStatus('Starting the measurement…', 'busy');
   const startedAt = Date.now();
-  /**
-   * Where the numbers were actually read. The phone path is the fast one; the
-   * server path means the browser could not run the pose model at all, and the
-   * last line of the status says so plainly. It is one word on a results screen,
-   * and it is the difference between "the phone is slow" and "the phone could
-   * not do this at all" — two problems with two different fixes.
-   */
-  let measuredOn = 'this phone';
+  /** Where the numbers were read, said on the results line. */
+  let measuredOn = 'the server';
 
   try {
     const { from, to } = trimmer.getSpan();
@@ -717,13 +720,18 @@ async function runAnalysis() {
     const chart = garment || (await garmentPromise);
     if (chartCode) log('sizing against', chart ? `${chart.name} (${chart.rows.length} sizes)` : 'the reference chart — the link could not be read');
 
-    // 1. Measure ON THE DEVICE first. The pose model finds the joints and the
-    //    person's own silhouette gives every width, so nothing is recalled from
-    //    an average body and nothing is uploaded until it is a few numbers.
-    //    Anything that fails here falls through to the vision path below.
+    // 1. The default: still frames for the server's vision model, which reads
+    //    the joints off them and hands them to the same deterministic engine.
+    //    Nothing but a few JPEGs runs on the phone.
+    //
+    //    ?local=1 is the other way round — the pose model measures on the device
+    //    and only numbers travel. It is opt-in, because fetching and running a
+    //    9 MB model is a lot to ask of the phone a shopper is holding.
     let data = null;
-    if (!forceLlm) {
+    if (local) {
+      measuredOn = 'this phone';
       try {
+        const { analyzePose } = await import('./body-scan/pose.js');
         // A full turn in twelve views at 640 px: the widths that matter are
         // still seen from every side, and the server checks the frames against
         // each other, so this is a little coarser sampling for a much shorter
@@ -773,8 +781,8 @@ async function runAnalysis() {
       }
     }
 
-    // 2. Fallback: JPEG frames for the vision model. Also the only path when the
-    //    browser cannot run the pose model at all.
+    // 2. The default path, and the fallback for ?local=1: a handful of still
+    //    frames, drawn here (cheap) and read by the vision model on the server.
     if (!data) {
       measuredOn = 'the server';
       setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
@@ -832,9 +840,10 @@ startOverBtn.addEventListener('click', resetAll);
 
 window.addEventListener('pagehide', releaseMedia);
 
-// Fetch and start the measurement stack now, while the shopper is still reading
-// the screen and recording — not after they press Analyze.
-if (!forceLlm && !new URLSearchParams(location.search).has('demo')) {
+// ?local=1 only: fetch and start the on-device measurement stack while the
+// shopper is still reading the screen and recording, rather than at Analyze.
+// The default path runs no model here at all, so there is nothing to warm.
+if (local && !params.has('demo')) {
   setTimeout(warmMeasurement, 700);
 }
 

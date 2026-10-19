@@ -91,7 +91,7 @@ web/                      Vite + three.js SPA → GitHub Pages
   src/dashboard.js        paints the account row, and the log out beside it
   public/body/            BUILT rigged models: male.glb female.glb (from tools/body/prepare.py)
   src/main.js             the scanner: the body-scan flow (native camera hand-off, trim, measure, results)
-  src/body-scan/          frames, pose (on-device landmarks), silhouette, trim, notes
+  src/body-scan/          frames (still-frame extraction), pose (?local=1 only), silhouette, trim, notes
   src/human/
     human.js              Human class — loads GLBs, arm hang solver, armpit fix, pose engine
     body.js               ModelController, RANGES, BUILDS, SKIN_STOPS, ABDOMEN, LIMITS, measurements
@@ -241,16 +241,26 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **Click the camera on `/`** → a session? `/size` : `/auth`. Wait capped at 2.5 s; if the cloud
   settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
   in time, the account screen is the default.
-- **The measurement model is warmed when the page opens, not when Analyze is pressed.** It is ~9 MB
-  of pose weights plus the wasm runtime, from two CDNs, and `createFromOptions` is a few more seconds;
-  `main.js` calls `loadPoseEngine()` 0.7 s after load (never on `?demo=1` or `?llm=1`) so the download
-  runs while the shopper is recording and reading. Every analysis status carries a running clock, and
+- **The phone is not asked to do the measuring. The server is.** A shopper's phone draws a handful of
+  still frames out of the clip (`extractFrames`: six JPEGs at 900 px with the 10×10 grid, cheap) and
+  sends those; the vision model reads the joints on the server and every number after that is
+  arithmetic there. Nothing heavy runs on the device — no 9 MB download, no wasm heap, no GPU required.
+  That is the fix for a scan that hangs in a WebView: MediaPipe in an Android WebView was minutes.
+  `?local=1` puts the measurement back on the phone (pose model, silhouette), and the module is
+  **imported dynamically**, so a normal visit never even parses it. ?local=1 warms `loadPoseEngine()`
+  0.7 s after load (never on `?demo=1`) so the download runs while the shopper is recording. Every
+  analysis status carries a running clock, and
   `.status.busy::before` is a **transform** animation: inference blocks the main thread, so a JS-drawn
   spinner would freeze exactly when it is needed most while a compositor one keeps turning. The first
   scan is the slow one — the browser caches the files after it. **Which model** is decided by what the
   device can do: full weights on a GPU, lite on a GPU-less device, and never full on a CPU — that one
   combination is minutes rather than seconds. A CPU-bound engine also samples the turn in ten views
-  instead of twelve, and the pass logs per-frame detect times plus the total.
+  instead of twelve, and the pass logs per-frame detect times plus the total. (All of this only
+  happens under `?local=1` now.)
+- **The privacy copy says "a few still frames", not "nothing is uploaded".** The default path really
+  does send six JPEGs to the server, so every page that claims the video "is never uploaded" had to be
+  reworded — the *video* is still never uploaded or stored, which is what the copy now says. This is
+  the one place where the server-first architecture is visible to a shopper, and it must stay true.
 - **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
   accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
   current path), and the account screen picks the session up and opens the scanner. That is only half
@@ -451,7 +461,7 @@ Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applySha
 | `POST /api/groups` | create group |
 | `PATCH /api/groups/:id` | update group (name / photos) |
 | `DELETE /api/groups/:id` | delete group |
-| `POST /api/body-scan` | measure a clip (open route — no bearer): `source: 'pose'` + on-device landmarks, or multipart `frames` JPEGs for the vision fallback. Optional `gender` (the shopper's own answer) and `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
+| `POST /api/body-scan` | measure a clip (open route — no bearer): multipart `frames` JPEGs (the default path — the server's vision model reads them) or `source: 'pose'` + on-device landmarks (`?local=1`). Optional `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
 
 ---
 

@@ -127,7 +127,7 @@ Rebuild the body models (only after changing `assets/` or `tools/body/`): start 
 |---|---|---|
 | GET | `/health`, `/health/deep` | liveness, integration check |
 | GET | `/api/garments` | list, with signed image URLs |
-| POST | `/api/body-scan` | measure a clip: on-device `pose` landmarks (JSON) or JPEG `frames` (multipart). Optional `gender` (the shopper's own answer) and `chart` (the brand's size chart — `{ name, sex, unit, columns, rows }` — used only to pick a size, never to measure). Returns the measurements, the notes, and `size` / `sizeChart` / `sizeSource` |
+| POST | `/api/body-scan` | measure a clip: JPEG `frames` (multipart — the default path, and the server does all the work) or `pose` landmarks measured on the device (JSON, `?local=1` in the app). Optional `chart` (the brand's size chart — `{ name, sex, unit, columns, rows }` — used only to pick a size, never to measure). Returns the measurements, the notes, and `size` / `sizeChart` / `sizeSource` |
 | POST | `/api/garments` | multipart `image` returns 202 and processes in the background |
 | GET / PATCH / DELETE | `/api/garments/:id` | read, rename / recategorise / fit, delete |
 | POST | `/api/garments/:id/reprocess` | re-run the pipeline |
