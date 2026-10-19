@@ -297,8 +297,23 @@ async function callModelRaw(model, messages, opts = {}) {
       log('!! Workers AI daily allowance is spent — every scan will refuse until it resets (around 00:00 UTC)');
     }
     if (kind === 'auth') log('!! Workers AI rejected the API token (401/403) — a new token is needed');
-    throw new HttpError(502, aiErrorMessage(kind));
+    // The shopper gets a sentence; the scan's own diagnostics get the truth.
+    // Without this, five different upstream failures all read as "could not read
+    // this clip" and the only place to look is a log we cannot see.
+    const err = new HttpError(502, aiErrorMessage(kind));
+    err.debug = { upstreamStatus: res.status, kind, body: body.slice(0, 500) };
+    throw err;
   }
+}
+
+/** What the model said, and whether it stopped early or was cut off. */
+function extractMeta(data) {
+  const choice = data?.result?.choices?.[0];
+  return {
+    finish: choice?.finish_reason ?? null,
+    usage: data?.result?.usage ?? null,
+    hasResult: data?.result != null,
+  };
 }
 
 /** Pull the assistant text out of Cloudflare's envelope, whatever shape it takes. */
@@ -314,10 +329,6 @@ function extractText(data) {
   if (typeof r.response === 'string' && r.response.trim()) return r.response;
   if (r.response != null) return JSON.stringify(r.response);
   return '';
-}
-
-async function callModel(model, messages, opts) {
-  return extractText(await callModelRaw(model, messages, opts));
 }
 
 /**
@@ -374,12 +385,15 @@ async function callVision(b64, prompt, opts = {}) {
   for (const i of order) {
     const fmt = VISION_FORMATS[i];
     try {
-      const text = await callModel(config.cloudflare.visionModel, fmt.messages(b64, prompt), opts);
+      const data = await callModelRaw(config.cloudflare.visionModel, fmt.messages(b64, prompt), opts);
       if (visionFormat !== i) {
         visionFormat = i;
         log(`  vision message format locked -> "${fmt.name}"`);
       }
-      return text;
+      // Both halves: the words, and whether the model was cut off before it
+      // could finish them (a 27B reasoning model can spend the whole token
+      // budget thinking and answer with nothing at all).
+      return { text: extractText(data), meta: extractMeta(data) };
     } catch (e) {
       lastErr = e;
       log(`  vision format "${fmt.name}" rejected: ${(e?.message || e).slice(0, 200)}`);
@@ -837,7 +851,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   await mapLimit(files, 8, async (file, i) => {
     const frameStart = Date.now();
     try {
-      const raw = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1600, json: true });
+      const { text: raw, meta } = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 1600, json: true });
       const parsed = parseJson(raw);
       const ms = Date.now() - frameStart;
       if (parsed && parsed.personVisible !== false) {
@@ -880,12 +894,12 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
         const keys = Object.keys(frame.landmarks);
         log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
       } else {
-        unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400) });
-        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)}`);
+        unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400), ...meta });
+        log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'}: ${String(raw).slice(0, 200)} finish=${meta.finish} tokens=${meta.usage?.completion_tokens ?? '?'}`);
       }
     } catch (e) {
-      failures.push({ file: file.originalname, error: e.message });
-      log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) - ${e.message}`);
+      failures.push({ file: file.originalname, error: e.message, debug: e.debug || null });
+      log(`  frame ${i + 1}/${files.length} FAILED (${Date.now() - frameStart}ms) - ${e.message}${e.debug ? ` :: ${JSON.stringify(e.debug)}` : ''}`);
     }
   });
 
