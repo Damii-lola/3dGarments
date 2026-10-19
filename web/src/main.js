@@ -150,6 +150,9 @@ const verdictNote = document.getElementById('verdict-note');
 const statusEl = document.getElementById('status');
 
 const whoButtons = [...document.querySelectorAll('.who-btn')];
+/** The two questions the scanner asks. A store's chart answers both. */
+const whoField = document.getElementById('who');
+const wearField = document.getElementById('wear');
 
 const seenEl = document.getElementById('seen');
 const seenNote = document.getElementById('seen-note');
@@ -179,6 +182,7 @@ let garment = null;
 if (chartCode) {
   garmentPromise.then((chart) => {
     garment = chart;
+    applyChartSex(chart);
     if (!garmentEl) return;
     garmentEl.hidden = false;
     garmentEl.classList.toggle('garment-missing', !chart);
@@ -276,6 +280,24 @@ function setGender(value) {
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
   updateAnalyzeEnabled();
+}
+
+/**
+ * A store's chart already says who it is for, so a shopper who followed one is
+ * never quizzed: the sex on the chart picks the head constant, the sheet and the
+ * categories, and both questions come off the trim screen — a product page does
+ * not get to ask a shopper their sex and their outfit before it will help. The
+ * chart is the store's statement, not a guess; a chart with no sex (unisex) or
+ * no chart at all still asks, because then there is nothing else to go on.
+ */
+function applyChartSex(chart) {
+  if (!chart) return;
+  // The fabric question is precision, not identity: a shopper is never asked it.
+  if (wearField) wearField.hidden = true;
+  const sex = chart.sex;
+  if (sex !== 'male' && sex !== 'female') return;
+  setGender(sex);
+  if (whoField) whoField.hidden = true;
 }
 
 function setBusy(busy) {

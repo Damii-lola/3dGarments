@@ -227,7 +227,10 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   a brand's popup (`html.embed` + `body.embed`) the bar is the brand alone — centred, its link
   stripped, no menu or account — the sky comes off, and the phone UI runs at **48%** of its 189% root
   (90.72%), 52% down from the full page: the panel the store sized is untouched, only what is drawn
-  inside it. The same page opened as a plain link also gets that scale when the *screen* is a phone
+  inside it. A store's chart also answers the scanner's trim-screen questions: its `sex` preselects the
+  group and hides "Who is this video of?", and any chart flow hides "What are you wearing?" — a shopper
+  is not quizzed before they are helped. A unisex chart (or a link whose chart cannot be read) still
+  asks who, because nothing else says which sheet applies. The same page opened as a plain link also gets that scale when the *screen* is a phone
   (`html.scan`: a phone-width viewport, or a touch device held sideways) — a WebView in a brand's app
   has no `?embed=1` to ask with — while tablets and desktops keep the size they had. Each page's own
   `<section data-reveal>` elements fade up as they are reached — the
