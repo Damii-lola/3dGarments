@@ -1,7 +1,9 @@
 /**
  * Body scan API: video frames -> visible body geometry -> measurements -> size.
  *
- *   POST /api/body-scan   multipart: frames (image files, 1-8)   <- key frames from the video
+ *   POST /api/body-scan   multipart: video (1 clip, decoded here)        <- default
+ *                         or frames (JPEGs, 1-16)                        <- ?frames=1, fallback
+ *                         or JSON: { source: 'pose', frames: [...] }     <- ?local=1
  *     -> {
  *          id,
  *          gender:       { guess, confidence, scores },
@@ -49,8 +51,12 @@
 
 import { Router } from 'express';
 import multer from 'multer';
+import { readFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import { config } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
+import { framesFromVideo } from '../lib/videoFrames.js';
 import {
   CM_PER_IN,
   GIRTH_REGIONS,
@@ -77,10 +83,26 @@ import {
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 import { bestSize, chartFromInput } from '../lib/sizing.js';
 
+/**
+ * Uploads land on disk, not in memory: a phone clip can be tens of megabytes and
+ * Render's free instance has 512 MB to live in. The files are deleted in the
+ * route's `finally`, whatever happens.
+ */
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 8 },
-  fileFilter: (_req, file, cb) => (/^image\/(jpeg|png|webp)$/i.test(file.mimetype) ? cb(null, true) : cb(new HttpError(415, 'Unsupported image type'))),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, tmpdir()),
+    filename: (_req, file, cb) => {
+      const ext = extname(file.originalname || '') || (file.mimetype === 'video/quicktime' ? '.mov' : '');
+      cb(null, `3dg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 160 * 1024 * 1024, files: 17 },
+  fileFilter: (_req, file, cb) => {
+    const image = /^image\/(jpeg|png|webp)$/i.test(file.mimetype);
+    const video = /^video\//i.test(file.mimetype)
+      || (file.fieldname === 'video' && /^application\/octet-stream$/i.test(file.mimetype));
+    cb(image || video ? null : new HttpError(415, `Unsupported file type: ${file.mimetype || 'unknown'}`), image || video);
+  },
 });
 
 export const bodyScan = Router();
@@ -670,8 +692,19 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
   });
 }
 
-bodyScan.post('/', upload.array('frames', 16), ah(async (req, res) => {
+bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
   const startedAt = Date.now();
+
+  // Whatever the upload was — a clip, a dozen stills, or both — the files on
+  // this disk are deleted the moment the answer is on its way. Nobody's body
+  // stays on a server because a response was slow or a frame was discarded.
+  const uploaded = Object.values(req.files || {}).flat().filter(Boolean).map((f) => f.path).filter(Boolean);
+  if (uploaded.length) {
+    const clean = () => { for (const p of uploaded) unlink(p).catch(() => {}); };
+    res.on('finish', clean);
+    res.on('close', clean);
+  }
+
   const geo = geometryFrames(req.body);
   // A store's own chart, if the scan came in through a link that carries one.
   const brand = readChart(req.body);
@@ -680,8 +713,9 @@ bodyScan.post('/', upload.array('frames', 16), ah(async (req, res) => {
   const rejected = [];
   const unreadable = [];
 
-  // Frames arrive one of two ways: measured on the device, or as JPEGs for the
-  // vision model. Both end in the same deterministic measurement engine.
+  // Frames arrive three ways: taken out of the uploaded clip by ffmpeg, measured
+  // on the device, or as JPEGs for the vision model. All three end in the same
+  // deterministic measurement engine.
   if (geo) {
     const aspect = clamp(Number(geo.aspect) || 0.75, [0.3, 3]);
     log(`> POST received - ${geo.frames.length} on-device frame(s) from ${geo.model}, aspect=${round2(aspect)}, measuring for=${geo.gender}`);
@@ -717,8 +751,33 @@ bodyScan.post('/', upload.array('frames', 16), ah(async (req, res) => {
     throw new HttpError(503, 'Body scan is not configured (set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)');
   }
 
-  const files = req.files;
-  if (!files || files.length === 0) throw new HttpError(400, 'Upload at least one frame');
+  const received = req.files || {};
+  const clip = (received.video || [])[0] || null;
+  let files = received.frames || [];
+
+  // The clip itself: the server takes the stills out of it, so the phone did no
+  // decoding or seeking at all. This is the default path.
+  if (clip) {
+    const from = Math.max(0, Number(req.body?.from) || 0);
+    const wanted = Number(req.body?.to);
+    const to = Number.isFinite(wanted) && wanted > from ? wanted : from + 30;
+    log(`> POST received - clip ${(clip.size / 1048576).toFixed(1)} MB, ${round2(Math.min(30, to - from))}s from ${round2(from)}s`);
+    try {
+      files = await framesFromVideo(clip.path, { from, to, count: 16 });
+      log(`  ${files.length} still(s) taken out of the clip (${Date.now() - startedAt}ms)`);
+    } catch (e) {
+      throw new HttpError(422, `Could not read that video (${e.message})`);
+    }
+    if (!files.length) throw new HttpError(422, 'Could not read any picture out of that video');
+  }
+
+  if (!files || files.length === 0) throw new HttpError(400, 'Upload a clip or at least one frame');
+
+  // Uploads are on disk (a clip is tens of megabytes); the vision call wants the
+  // bytes. Read the stills in — they are small — and leave the clip to ffmpeg.
+  files = await Promise.all(files.map(async (f) => (f.buffer
+    ? f
+    : { buffer: await readFile(f.path), size: f.size, originalname: f.originalname, mimetype: f.mimetype })));
 
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
   // The form's gender field is the user's own choice and wins over the model's

@@ -2,17 +2,17 @@
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
    2. Trim the clip's LENGTH to the part where you turn around.
-   3. Measure ON THE SERVER. The phone does one cheap thing — it draws a handful
-      of still frames out of the clip — and sends those; the server's vision
-      model reads the joints and the grid, and every centimetre after that is
-      arithmetic done on the server. Nothing heavy runs on the shopper's phone:
-      no model to download, no megabytes of weights in memory, no GPU needed.
-      ?local=1 runs the measurement on the device instead, with the pose model
-      (one import away, so a normal visit never even parses that code).
+   3. Send it. The CLIP goes to the server, and the server takes the stills out
+      of it and reads them — the phone does no decoding, no seeking and no
+      canvas work. Every centimetre after that is arithmetic on the server too.
+      Nothing is stored: the clip is deleted the moment it has been measured.
+      ?local=1 is the other way round — the pose model measures on the device
+      and only numbers travel (imported dynamically, so a normal visit never
+      even parses that code). ?frames=1 sends 12 stills instead of the clip.
    ========================================================= */
 
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
-import { analyzeBody, analyzeGeometry } from './body-scan/analyze.js';
+import { analyzeBody, analyzeGeometry, analyzeVideo } from './body-scan/analyze.js';
 import { createTrimmer } from './body-scan/trim.js';
 import { createCalibrator } from './body-scan/calibrate.js';
 import { showNote } from './body-scan/notes.js';
@@ -781,34 +781,60 @@ async function runAnalysis() {
       }
     }
 
-    // 2. The default path, and the fallback for ?local=1: a handful of still
-    //    frames, drawn here (cheap) and read by the vision model on the server.
+    // 2. The default: the clip itself goes to the server, which takes the stills
+    //    out of it and reads them. The phone does nothing here — no decode, no
+    //    seek, no canvas — which is exactly what a WebView is worst at and a
+    //    server is best at. `?frames=1` forces the old still-frame path (and is
+    //    the automatic fallback if the clip cannot be uploaded or read).
     if (!data) {
       measuredOn = 'the server';
-      setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
-      let frames;
-      try {
-        // Twelve, not six, and the difference is geometric. A six-frame turn is
-        // sampled every 60 degrees, so unless the clip happens to start square
-        // on, the nearest thing to a front view can be 30 degrees off — and an
-        // arm read 30 degrees round the turn measures cos(30) of its length.
-        // Twelve frames put the worst case at 15 degrees, and give the server
-        // enough views to drop a blurred one without losing a measurement.
-        frames = await extractFrames(recordedBlob, { count: 12, from, to });
-      } catch (e) {
-        log('frame extraction failed — falling back to a single frame:', e.message);
-        const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });
-        frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
-      }
-      log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
 
-      // The tick keeps the status moving so it never looks frozen.
-      setStatus(`Analyzing ${frames.length} frames on the server… ${since(startedAt)}`, 'busy');
-      data = await analyzeBody(frames, {
-        gender: chosenGender,
-        chart,
-        onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`, 'busy'),
-      });
+      // A clip over this size would spend longer going up a phone connection
+      // than the whole scan is worth; stills are the better trade at that point.
+      const UPLOAD_LIMIT = 80 * 1024 * 1024;
+      if (!params.has('frames') && recordedBlob.size <= UPLOAD_LIMIT) {
+        try {
+          setStatus(`Sending your clip… · ${since(startedAt)}`, 'busy');
+          data = await analyzeVideo(recordedBlob, {
+            from,
+            to,
+            gender: chosenGender,
+            chart,
+            onProgress: (f) => setStatus(`Sending your clip… ${Math.round(f * 100)}%`, 'busy'),
+            onTick: (s) => setStatus(`Reading your clip on the server… ${s}s`, 'busy'),
+          });
+        } catch (e) {
+          log('the clip could not be read — falling back to still frames:', e.message);
+          data = null;
+        }
+      }
+
+      if (!data) {
+        setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
+        let frames;
+        try {
+          // Twelve, not six, and the difference is geometric. A six-frame turn is
+          // sampled every 60 degrees, so unless the clip happens to start square
+          // on, the nearest thing to a front view can be 30 degrees off — and an
+          // arm read 30 degrees round the turn measures cos(30) of its length.
+          // Twelve frames put the worst case at 15 degrees, and give the server
+          // enough views to drop a blurred one without losing a measurement.
+          frames = await extractFrames(recordedBlob, { count: 12, from, to });
+        } catch (e) {
+          log('frame extraction failed — falling back to a single frame:', e.message);
+          const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });
+          frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
+        }
+        log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
+
+        // The tick keeps the status moving so it never looks frozen.
+        setStatus(`Analyzing ${frames.length} frames on the server… ${since(startedAt)}`, 'busy');
+        data = await analyzeBody(frames, {
+          gender: chosenGender,
+          chart,
+          onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`, 'busy'),
+        });
+      }
     }
 
     log('analysis result', data);

@@ -91,7 +91,7 @@ web/                      Vite + three.js SPA → GitHub Pages
   src/dashboard.js        paints the account row, and the log out beside it
   public/body/            BUILT rigged models: male.glb female.glb (from tools/body/prepare.py)
   src/main.js             the scanner: the body-scan flow (native camera hand-off, trim, measure, results)
-  src/body-scan/          frames (still-frame extraction), pose (?local=1 only), silhouette, trim, notes
+  src/body-scan/          frames (fallback stills), pose (?local=1 only), silhouette, trim, notes
   src/human/
     human.js              Human class — loads GLBs, arm hang solver, armpit fix, pose engine
     body.js               ModelController, RANGES, BUILDS, SKIN_STOPS, ABDOMEN, LIMITS, measurements
@@ -241,30 +241,26 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **Click the camera on `/`** → a session? `/size` : `/auth`. Wait capped at 2.5 s; if the cloud
   settings (VITE_SUPABASE_* or Render's `/api/public-config`, cached in localStorage) do not answer
   in time, the account screen is the default.
-- **The phone is not asked to do the measuring. The server is.** A shopper's phone draws a handful of
-  still frames out of the clip (`extractFrames`: twelve JPEGs at 900 px with the 10×10 grid, cheap) and
-  sends those; the vision model reads the joints on the server and every number after that is
-  arithmetic there. Nothing heavy runs on the device — no 9 MB download, no wasm heap, no GPU required.
-  That is the fix for a scan that hangs in a WebView: MediaPipe in an Android WebView was minutes.
-  `?local=1` puts the measurement back on the phone (pose model, silhouette), and the module is
-  **imported dynamically**, so a normal visit never even parses it. ?local=1 warms `loadPoseEngine()`
-  0.7 s after load (never on `?demo=1`) so the download runs while the shopper is recording. Every
-  analysis status carries a running clock, and
-  `.status.busy::before` is a **transform** animation: inference blocks the main thread, so a JS-drawn
-  spinner would freeze exactly when it is needed most while a compositor one keeps turning. The first
-  scan is the slow one — the browser caches the files after it. **Which model** is decided by what the
-  device can do: full weights on a GPU, lite on a GPU-less device, and never full on a CPU — that one
-  combination is minutes rather than seconds. A CPU-bound engine also samples the turn in ten views
-  instead of twelve, and the pass logs per-frame detect times plus the total. (All of this only
-  happens under `?local=1` now.)
-- **The privacy copy says "a few still frames", not "nothing is uploaded".** The default path really
-  does send twelve JPEGs to the server, so every page that claims the video "is never uploaded" had to be
-  reworded — the *video* is still never uploaded or stored, which is what the copy now says. This is
-  the one place where the server-first architecture is visible to a shopper, and it must stay true.
-- **Twelve frames, because a six-frame turn can miss the front.** Six samples across a full rotation
-  are 60° apart: unless the clip happens to start square on, the closest thing to a front view is 30°
-  off, and a limb seen 30° round the turn projects to cos 30 of its length. Twelve puts the worst case
-  at 15° and leaves room to drop a blurred frame. With 12 the server's multer cap is `frames` 16.
+- **The CLIP goes to the server; the phone does no video work at all.** `analyzeVideo()` posts the
+  trimmed recording as multipart `video` with `from`/`to`; `server/src/lib/videoFrames.js` pulls up to 16
+  stills out of it with the bundled `ffmpeg-static` (keyframe pass first — an I-frame is sharp and skipping
+  the rest is ~10× cheaper — then an even `fps` pass if that found fewer than six), and the existing vision
+  loop reads them. Uploaded files land in `os.tmpdir()` and are unlinked on `res.finish`/`res.close`.
+  Why: a WebView's `video.currentTime` seek is slow and sometimes returns a frame that never arrived, and
+  the server can look at the whole clip. The trade is upload time — a clip over 80 MB (or `?frames=1`, or
+  an upload/decode failure) falls back to 12 device-drawn stills. `?local=1` is the third path (on-device
+  pose model, numbers only) and is still **imported dynamically**, so a normal visit never parses it.
+- **`ffmpeg-static` in the API.** ~45 MB Windows / ~78 MB Linux binary fetched at `npm ci`; nothing to
+  install on Render. Decoding on the free instance (0.1 CPU) is the slow part of a scan — a paid instance
+  is the fix, not more code.
+- **The privacy copy now says the clip is sent and deleted**, not "your video never leaves your phone".
+  That promise could not survive the decision to send the video; what survives is "Nothing is saved" and
+  the deletion itself (`res.on('finish')` unlink, plus the frames temp dir removed in a `finally`). Every
+  page carries the same sentence: *sent once, measured, then deleted.*
+- **Twelve frames in the still-frame fallback, because a six-frame turn can miss the front.** Six samples
+  across a full rotation are 60° apart: unless the clip happens to start square on, the closest thing to a
+  front view is 30° off, and a limb seen 30° round the turn projects to cos 30 of its length. Twelve puts
+  the worst case at 15° and leaves room to drop a blurred frame. Multer's `frames` cap is 16.
 - **The sleeve length was blank on every vision-path scan, and it was not the frames.** `PATHS.
   shoulderToWrist` asked for `shoulderJ/elbowJ/wristJ`, which is what the pose model emits; the vision
   prompt never asked for an elbow or a wrist at all. So no amount of frames or video would have found
@@ -473,7 +469,7 @@ Dev console: `window.__3dg` → `{ stage, human, model, state, profile, applySha
 | `POST /api/groups` | create group |
 | `PATCH /api/groups/:id` | update group (name / photos) |
 | `DELETE /api/groups/:id` | delete group |
-| `POST /api/body-scan` | measure a clip (open route — no bearer): multipart `frames` JPEGs (the default path — the server's vision model reads them) or `source: 'pose'` + on-device landmarks (`?local=1`). Optional `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
+| `POST /api/body-scan` | measure a clip (open route — no bearer): multipart `video` + `from`/`to` (the default path — the server decodes the clip with ffmpeg and reads up to 16 stills), multipart `frames` JPEGs (`?frames=1`, and the fallback), or `source: 'pose'` + on-device landmarks (`?local=1`). Optional `chart` (the brand's own size chart — `{ name, sex, unit, columns, rows }` — used only to choose a size, never to measure). Answers with measurements, notes, `size`/`sizeChart`/`sizeBasis`, and `sizeSource` (`store` or `reference`) + `sizeName` |
 
 ---
 

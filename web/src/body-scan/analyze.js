@@ -2,8 +2,9 @@
  * Talk to the body-scan API and get back the analysis (body measurements, size
  * + proportions).
  *
- * Two ways in, one engine out:
- *   analyzeBody()     — JPEG frames for the vision model (fallback path).
+ * Three ways in, one engine out:
+ *   analyzeVideo()    — the clip itself; the server takes the frames out of it.
+ *   analyzeBody()     — JPEG frames, for ?frames=1 and the automatic fallback.
  *   analyzeGeometry() — numbers measured on the device by the pose model.
  *
  * A free Render instance can take ~50s to wake, so allow a generous timeout.
@@ -49,6 +50,59 @@ async function request(url, init, { timeoutMs, onTick } = {}) {
     clearTimeout(timer);
     if (tick) clearInterval(tick);
   }
+}
+
+/**
+ * Send the clip itself, and let the server take the frames out of it.
+ *
+ * This is the default path. The phone uploads the video and does nothing else —
+ * no decoding, no seeking, no canvas: work that a WebView is bad at and a server
+ * is good at. `onProgress` reports the upload (0..1) so a big clip on a slow
+ * connection still looks alive.
+ *
+ * @param {Blob} clip the trimmed recording
+ * @param {{from?: number, to?: number, gender?: string, chart?: object, onProgress?: (f: number) => void, onTick?: (s: number) => void}} [opts]
+ */
+export function analyzeVideo(clip, opts = {}) {
+  const url = `${API_URL}/api/body-scan`;
+  const form = new FormData();
+  form.append('video', clip, clip.name || 'clip.mp4');
+  form.append('from', String(opts.from ?? 0));
+  form.append('to', String(opts.to ?? 0));
+  if (opts.gender) form.append('gender', opts.gender);
+  if (opts.chart) form.append('chart', JSON.stringify(opts.chart));
+
+  log('POST', url, '(clip)', clip.size, 'bytes', `${Number(opts.from || 0).toFixed(1)}s -> ${Number(opts.to || 0).toFixed(1)}s`);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const started = Date.now();
+    xhr.open('POST', url);
+    // A sleeping Render instance takes the better part of a minute to answer, and
+    // the upload itself can be slow on mobile data. One generous ceiling beats a
+    // timeout that fires while the clip is still going up.
+    xhr.timeout = 300000;
+    xhr.responseType = 'text';
+
+    const tick = opts.onTick ? setInterval(() => opts.onTick(Math.round((Date.now() - started) / 1000)), 1000) : null;
+    const settle = (fn) => () => { if (tick) clearInterval(tick); fn(); };
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && opts.onProgress) opts.onProgress(e.loaded / e.total);
+    };
+    xhr.onload = settle(() => {
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = null; }
+      log('response', xhr.status, `${Date.now() - started}ms`);
+      if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
+      const msg = (data && data.error) || `Analysis failed (${xhr.status})`;
+      return reject(new Error(xhr.status === 503 ? `${msg} — the service may not be fully set up yet.` : msg));
+    });
+    xhr.onerror = settle(() => reject(new TypeError('Could not reach the analysis service')));
+    xhr.ontimeout = settle(() => reject(new Error(`The analysis service took too long (${Math.round((Date.now() - started) / 1000)}s)`)));
+    xhr.onabort = settle(() => reject(new Error('The upload was cancelled')));
+    xhr.send(form);
+  });
 }
 
 /** Send extracted JPEG frames for the vision model to read. */
