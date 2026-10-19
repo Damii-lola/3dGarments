@@ -243,16 +243,21 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   in time, the account screen is the default.
 - **The CLIP goes to the server; the phone does no video work at all.** `analyzeVideo()` posts the
   trimmed recording as multipart `video` with `from`/`to`; `server/src/lib/videoFrames.js` pulls eight
-  stills out of it with the bundled `ffmpeg-static` (keyframe pass first — an I-frame is sharp and skipping
-  the rest is ~10× cheaper — then an even `fps` pass if that found fewer than six), and the existing vision
-  loop reads them. Uploaded files land in `os.tmpdir()` and are unlinked on `res.finish`/`res.close`.
+  stills out of it with the bundled `ffmpeg-static` (one seek per frame, evenly spread — see below), and the
+  existing vision loop reads them. Uploaded files land in `os.tmpdir()` and are unlinked on
+  `res.finish`/`res.close`.
   Why: a WebView's `video.currentTime` seek is slow and sometimes returns a frame that never arrived, and
   the server can look at the whole clip. The trade is upload time — a clip over 80 MB (or `?frames=1`, or
   an upload/decode failure) falls back to 12 device-drawn stills. `?local=1` is the third path (on-device
   pose model, numbers only) and is still **imported dynamically**, so a normal visit never parses it.
 - **`ffmpeg-static` in the API.** ~45 MB Windows / ~78 MB Linux binary fetched at `npm ci`; nothing to
-  install on Render. Decode is ~1–2 s locally and perhaps 15 s on the free instance's 0.1 CPU — real,
-  but not what makes a scan long.
+  install on Render. Measured on the free instance: **22 s** for eight seeks on a 30 s 478×850 clip,
+  **11 s** for four. Grouped with the model wait, extraction is now only a quarter of a scan.
+- **Measured end to end on a real phone clip (2026-10-19, after the truncation fix):** 8 frames **89.5 s**
+  (decode 22 s, vision 63 s) with **8/8 frames usable**; 4 frames **59.5 s** (decode 11 s, vision 42 s).
+  Per frame: 13–63 s, 643–853 completion tokens, **292–353 neurons**. The tail is Cloudflare's own queue —
+  six of eight calls came back in 13–31 s and two took 63 s — so the wall clock is roughly the slowest
+  call, not the number of frames. Upload of a 4.7 MB clip is a couple of seconds and is not the problem.
 - **Eight frames, eight in flight, one wave.** Eight samples over one turn are 45° apart (worst case
   22.5° off square-on) and `measurePath` divides that out by cos(turn). Sixteen fired at once drew a 429
   ("capacity temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a
