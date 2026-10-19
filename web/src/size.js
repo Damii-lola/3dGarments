@@ -36,7 +36,17 @@ const params = new URLSearchParams(location.search);
 const chartCode = (params.get('g') || '').trim();
 /** The popup on the store's own page. No bar, no footer, no account — just the tool. */
 const embedded = params.get('embed') === '1';
-if (embedded) document.body.classList.add('embed');
+if (embedded) {
+  // The class goes on the root as well as the body: the popup's 20% size
+  // reduction is a root font-size, and CSS cannot reach an ancestor from a
+  // descendant. Everything inside is in rem, so one number scales it all.
+  document.documentElement.classList.add('embed');
+  document.body.classList.add('embed');
+  // The brand is the one piece of the bar the popup keeps, and it is there to be
+  // read, not pressed: following it would open our site inside the store's popup.
+  // Without an href it is a mark, not a link.
+  document.querySelector('.nav-brand')?.removeAttribute('href');
+}
 
 const config = await within(cloudConfig().catch(() => null), CONFIG_WAIT, null);
 

@@ -1291,12 +1291,27 @@ body {
 .nav-account-out { color: #ff8f8f; }
 
 /* ---------- inside a store's popup (?embed=1) ----------
-   The store's own page is the frame around us, so our bar, the sky, and the room
-   a standalone page needs all come off: the shopper pressed a button on a product
-   page to find out a size, not to visit a site. What is left is the tool. */
+   The store's own page is the frame around us, so the bar comes off. What is
+   left at the top is the brand — centred, because there is nowhere to navigate
+   to — and then the tool's own heading, centred under it. */
 body.embed { padding: 0.9rem 0.75rem 1.4rem; }
-.embed .nav { display: none; }
-.embed .sky { display: none; }
+body.embed .nav { display: block; position: static; max-width: 100%; margin: 0 0 0.35rem; }
+body.embed .nav-inner {
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+body.embed .nav-brand { margin: 0; }
+body.embed .nav-links,
+body.embed .nav-menu,
+body.embed .nav-user,
+body.embed .nav-account { display: none; }
+body.embed .sky { display: none; }
 
 /* ---------- the pages under the bar ---------- */
 .page {
@@ -1824,6 +1839,11 @@ a.btn-ghost {
    there — which looks exactly like the change "not working" on the device. */
 @media (max-width: 768px), (hover: none) and (pointer: coarse) {
   html { font-size: 189%; }
+  /* The popup inside a store's page runs the same UI a fifth smaller (189% x
+     0.8). The frame around it is the store's and does not change; the type,
+     cards and spacing inside it do, so the whole tool fits the panel instead of
+     reading like a phone page in a box. */
+  html.embed { font-size: calc(189% * 0.8); }
   /* As the text grows, trim the side margins so the video and result cards
      keep as much width as possible instead of being squeezed. */
   body { padding-left: 0.9rem; padding-right: 0.9rem; }

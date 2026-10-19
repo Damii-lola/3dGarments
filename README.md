@@ -35,10 +35,11 @@ A brand's chart has an unguessable code. Two addresses open it:
   shopper following a product link is not a brand signing in. The size the scan
   comes back with is scored against that chart, and a size card sits above the
   measurements.
-- `/size/?g=CODE&embed=1` — the same page inside a popup, with the bar and the
-  sky taken out. This is what `web/public/embed.js` opens in an overlay on the
-  brand's own product page, so the shopper never leaves the page they are buying
-  from. The script is plain JavaScript with no build step, so a brand needs one
+- `/size/?g=CODE&embed=1` — the same page inside a popup: the bar is reduced to
+  the centred logo, the sky comes off, and the whole tool is drawn 20% smaller
+  than on a phone (the panel's own size is the store's and does not change).
+  This is what `web/public/embed.js` opens in an overlay on the brand's own
+  product page, so the shopper never leaves the page they are buying from. The script is plain JavaScript with no build step, so a brand needs one
   tag:
 
   ```html
