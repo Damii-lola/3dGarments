@@ -25,6 +25,7 @@ health.get('/', (_req, res) => {
         configured: visionConfigured(),
         concurrency: config.vision.concurrency,
         reads: config.vision.reads,
+        reconcile: config.vision.reconcile,
         fallback: config.vision.fallback,
       },
     },

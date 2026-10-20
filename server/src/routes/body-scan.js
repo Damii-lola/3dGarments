@@ -284,7 +284,7 @@ async function callModelRaw(model, messages, opts = {}) {
   // same choices/usage envelope â€” its client wraps that as { result } so every
   // caller above this line keeps reading one shape. A 429 there is a rate limit,
   // not a queue: one short wait is worth it, more is not.
-  if (config.vision.provider === 'mistral') {
+  if (config.vision.provider === 'mistral' && !opts.viaCloudflare) {
     for (let attempt = 0; ; attempt += 1) {
       try {
         const out = await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json, temperature: opts.temperature ?? 0.1 });
@@ -316,7 +316,7 @@ async function callModelRaw(model, messages, opts = {}) {
   // When we arrived here by falling back from Mistral, the model argument is
   // Mistral's name — Workers AI would not know it. The net always uses the
   // Workers AI model.
-  const cfModel = config.vision.provider === 'mistral' ? config.cloudflare.visionModel : model;
+  const cfModel = config.vision.provider === 'mistral' && !opts.viaCloudflare ? config.cloudflare.visionModel : model;
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
   if (Number.isFinite(Number(opts.temperature))) payload.temperature = Number(opts.temperature);
   if (/qwen/i.test(cfModel)) {
@@ -482,6 +482,90 @@ async function callVision(b64, prompt, opts = {}) {
   if (visionFormat != null) visionFormat = null; // rediscover on the next request
   throw lastErr;
 }
+
+/* ---------------- Mistral collects, Cloudflare calculates ---------------- */
+
+/**
+ * The second half of the scan: the numbers, not the pixels.
+ *
+ * The vision pass is deliberately dumb. It says where things are on each
+ * photograph — points, a view, a turn — and nothing else. Those raw readings are
+ * not yet a body: the same person cannot be narrower at the shoulders than at
+ * the hips in a square-on frame, a profile frame cannot be as wide as a front
+ * one, and one head cannot change length between frames. This step hands the
+ * readings to Workers AI and asks it to do the calculation: line the frames up
+ * as one body, correct the points that contradict the body they describe, and
+ * state the measurements. The corrected points then go through the same exact
+ * geometry as always, and where geometry still cannot produce a reading,
+ * Cloudflare's own number is used if it is humanly possible.
+ */
+const RECONCILE_PROMPT = `You are the calculation step of a body-measuring tool. A cheaper vision model looked at frames of ONE person slowly turning through 360 degrees and reported, per frame, landmark positions on a 0-100 grid (x: 0 left edge to 100 right edge; y: 0 top edge to 100 bottom edge), what parts were visible, which way they were facing and how far they were turned. It is good at seeing and bad at consistency.
+
+Turn those raw readings into ONE consistent human body and state its measurements.
+
+WHAT MUST HOLD, in every frame you correct and across the set:
+- A person is widest square-on and narrowest in profile. The frame with the widest shoulder span is the front or back frame; the narrowest is the profile.
+- Shoulders are at least as wide as the hips in a front or back view; the waist is narrower than both.
+- The wrist bone hangs below the hip point, never level with the waist.
+- The chin is below the mouth, the headTop above it; the head is about one seventh of a standing body.
+- The same head, in metres, in every frame: if one frame's headTop-to-chin span is wildly different from the others, it is the outlier and its points are scaled wrongly.
+- Never invent a part that is out of shot. If the feet were not visible in any frame there is no floor contact and no height.
+- Move a point only when the evidence requires it, and keep it inside 0-100.
+
+MEASUREMENTS, in INCHES, for a standing adult, and humanly possible:
+chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86. Use null for anything the frames cannot support.
+
+Reply with ONLY this JSON, no prose:
+{"frames":[{"i":0,"view":"front|back|side|three-quarter","turn":0,"landmarks":{"shoulderL":{"x":0,"y":0}}}],
+ "measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":0},
+ "notes":["what you corrected, in a few words"]}`;
+
+async function reconcileWithCloudflare(frames) {
+  const raw = frames.map((f, i) => ({
+    i,
+    view: f.view,
+    turn: Number.isFinite(f.turn) ? f.turn : null,
+    visible: f.visible,
+    clothing: f.clothing?.topFit || undefined,
+    landmarks: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
+  }));
+
+  const model = config.cloudflare.textModel || config.cloudflare.visionModel;
+  const data = await callModelRaw(model, [
+    { role: 'system', content: RECONCILE_PROMPT },
+    { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
+  ], { viaCloudflare: true, maxTokens: 2400, json: true, temperature: 0.1 });
+
+  const out = parseJson(extractText(data));
+  if (!out || !Array.isArray(out.frames)) return null;
+
+  let moved = 0;
+  for (const fix of out.frames) {
+    const frame = frames[Number(fix?.i)];
+    if (!frame) continue;
+    if (fix.view) frame.view = normView(fix.view);
+    if (Number.isFinite(Number(fix.turn))) frame.turn = clamp(Number(fix.turn), [0, 90]);
+    if (fix.landmarks && typeof fix.landmarks === 'object') {
+      const corrected = normalizeLandmarks(fix.landmarks);
+      for (const [k, p] of Object.entries(corrected)) {
+        const was = frame.landmarks[k];
+        if (was && Math.abs(was.x - p.x) + Math.abs(was.y - p.y) < 0.005) continue;
+        frame.landmarks[k] = p;
+        moved += 1;
+      }
+      frame.scale = frameScale(frame);
+    }
+  }
+
+  const calc = {};
+  for (const [k, v] of Object.entries(out.measurements || {})) {
+    const n = Number(v);
+    const range = RANGES[k];
+    if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
+  }
+  return { calc, moved, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [] };
+}
+
 
 /** The middle value. With three readings it is the one that agreed. */
 function median(nums) {
@@ -1098,6 +1182,27 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
 
   log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${rejected.length} rejected as implausible, ${failures.length} failed)`);
 
+  // The calculation step. Mistral saw the frames; Cloudflare now turns those
+  // readings into one consistent body. If Workers AI is unreachable the scan
+  // still measures — from the points as they came in.
+  let calc = null;
+  if (config.vision.provider === 'mistral' && config.vision.reconcile
+      && frames.length && config.cloudflare.accountId && config.cloudflare.apiToken) {
+    const t0 = Date.now();
+    try {
+      const reck = await reconcileWithCloudflare(frames);
+      if (reck) {
+        calc = reck.calc;
+        log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms - ${reck.moved} point(s) corrected; said ${JSON.stringify(reck.calc)}`);
+        if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
+      } else {
+        log(`  Cloudflare returned no usable reconciliation (${Date.now() - t0}ms) - measuring from the raw points`);
+      }
+    } catch (e) {
+      log(`!! Cloudflare could not reconcile (${Date.now() - t0}ms): ${e.message} - measuring from the raw points`);
+    }
+  }
+
   return finishScan(res, {
     frames,
     rejected,
@@ -1116,6 +1221,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     chart: brand?.chart || null,
     chartName: brand?.name || '',
     chartSex: brand?.chart?.sex || null,
+    calc,
     startedAt,
   });
 }));
@@ -1125,7 +1231,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, clip = null, timing = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, startedAt }) {
+function finishScan(res, { frames, rejected, unreadable, failures, clip = null, timing = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, calc = null, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, clip, timing, rejected, unreadable, failures } };
@@ -1238,6 +1344,27 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     };
   }
 
+  // Cloudflare's calculation stands where geometry could not produce a reading.
+  // It is not allowed to overrule a number that was actually measured from the
+  // corrected points — only to fill the gap where a region was dropped.
+  const fromCalc = [];
+  if (calc) {
+    for (const [k, v] of Object.entries(calc)) {
+      if (measured[k] || !REGIONS[k]) continue;
+      measured[k] = {
+        label: REGIONS[k].label,
+        valueIn: v,
+        widthIn: null,
+        depthIn: null,
+        girth: Boolean(REGIONS[k].girth),
+        confidence: 0.6,
+        source: 'cloudflare',
+      };
+      fromCalc.push(k);
+    }
+  }
+  if (calc) diagnostics.calc = { filledByCloudflare: fromCalc, cloudflareSaid: calc };
+
   // 5. The catalogue: every category a tailor's sheet asks for that this video
   //    actually shows, in the group for the gender chosen. Anything the clip
   //    never showed simply is not in here â€” nothing is estimated, and nothing
@@ -1257,13 +1384,13 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
 
   // 6. Height: head to floor, only from frames where the feet were actually visible.
   const h = measureHeight(frames);
-  const heightIn = h ? clamp(h.in, RANGES.height) : null;
+  const heightIn = h ? clamp(h.in, RANGES.height) : (calc?.height ?? null);
   const headUnitsToHeight = h
     ? round1(h.in * CM_PER_IN / (HEAD_HEIGHT_CM[scaled[0].gender] || HEAD_HEIGHT_CM.unsure))
     : null;
 
   // 7. Proportions, computed from the same geometry.
-  const shoulderToHip = measured.shoulder && measured.hips ? round2(measured.shoulder.widthIn / measured.hips.widthIn) : null;
+  const shoulderToHip = measured.shoulder?.widthIn && measured.hips?.widthIn ? round2(measured.shoulder.widthIn / measured.hips.widthIn) : null;
   let legToTorso = null;
   for (const f of frames) {
     if (f.heightBad) continue;

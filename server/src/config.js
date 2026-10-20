@@ -39,6 +39,10 @@ export const config = Object.freeze({
     // outvote a wrong reading; two would only tie it. VISION_READS=1 returns to
     // one pass per frame.
     reads: Math.max(1, Math.round(Number(process.env.VISION_READS) || 3)),
+    // After the frames are read, hand the readings to Workers AI to be turned
+    // into one consistent body (the calculation step). VISION_RECONCILE=0 keeps
+    // the raw points as they came in.
+    reconcile: process.env.VISION_RECONCILE !== '0',
     // If the chosen provider refuses, may Workers AI read the frame instead?
     // On by default: a key that cannot answer should not switch the shop off.
     // VISION_FALLBACK=0 makes the choice strict.
