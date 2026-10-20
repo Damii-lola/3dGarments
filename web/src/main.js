@@ -2,13 +2,14 @@
    3dGarments — Find your size
    1. Tap the camera icon -> the phone's NATIVE camera app records a video.
    2. Trim the clip's LENGTH to the part where you turn around.
-   3. Send it. The CLIP goes to the server, and the server takes the stills out
-      of it and reads them — the phone does no decoding, no seeking and no
-      canvas work. Every centimetre after that is arithmetic on the server too.
-      Nothing is stored: the clip is deleted the moment it has been measured.
+   3. Measure. The phone takes eight still frames and sends THOSE — about
+      450 KB — and the server reads them. The video itself never leaves the
+      phone, so there is nothing to store and nothing to delete.
+      Every centimetre after that is arithmetic on the server.
       ?local=1 is the other way round — the pose model measures on the device
       and only numbers travel (imported dynamically, so a normal visit never
-      even parses that code). ?frames=1 sends 12 stills instead of the clip.
+      even parses that code). ?clip=1 uploads the whole clip instead and lets
+      the server take the stills (the fallback for a WebView that cannot seek).
    ========================================================= */
 
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
@@ -790,56 +791,26 @@ async function runAnalysis() {
     if (!data) {
       measuredOn = 'the server';
 
-      // A phone's own camera writes 30-40 MB for half a minute — ten times what
-      // the same clip becomes on WhatsApp — and on a shopper's uplink that is
-      // minutes, not seconds. One real scan spent 215 s with the bar still
-      // climbing, so the clip is now only offered when it can plausibly be up
-      // in a few seconds. `analyzeVideo` measures the upload as it goes and
-      // abandons it when it cannot finish inside UPLOAD_BUDGET_MS; a dozen key
-      // frames (about 600 KB) then go instead: the same turn, the same
-      // measurement, a fraction of the wire.
+      // EIGHT STILLS FIRST, and the clip only if they cannot be taken.
+      //
+      // The server never reads the clip as a clip: it takes eight still frames
+      // out of it and measures those. So uploading the video meant sending
+      // 30-40 MB — half a minute of a phone camera, which is minutes on a
+      // shopper's uplink — so that the server could do the one job the phone can
+      // do in two seconds, and then delete it. Eight JPEGs are about 450 KB, and
+      // the video never leaves the phone at all.
+      //
+      // The clip path survives for the WebViews that cannot seek or draw a
+      // frame, and is asked for explicitly with ?clip=1. ?frames=1 means stills
+      // and nothing else.
       const UPLOAD_LIMIT = 80 * 1024 * 1024;
       const UPLOAD_BUDGET_MS = 10000;
-      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-      const slowLink = Boolean(conn) && (conn.saveData === true || /(^|-)(2g|3g)$/.test(String(conn.effectiveType || '')));
-      const worthSending = recordedBlob.size <= UPLOAD_LIMIT && !(slowLink && recordedBlob.size > 3 * 1024 * 1024);
       const mb = (recordedBlob.size / 1048576).toFixed(1);
-      if (!params.has('frames') && worthSending) {
-        try {
-          setStatus(`Sending your clip (${mb} MB)… · ${since(startedAt)}`, 'busy');
-          data = await analyzeVideo(recordedBlob, {
-            from: fromSec,
-            to: toSec,
-            gender: chosenGender,
-            chart,
-            uploadBudgetMs: UPLOAD_BUDGET_MS,
-            onProgress: (f) => setStatus(`Sending your clip (${mb} MB)… ${Math.round(f * 100)}% · ${since(startedAt)}`, 'busy'),
-            onUploaded: () => setStatus(`Clip sent — reading it on the server… · ${since(startedAt)}`, 'busy'),
-            onTick: (s) => setStatus(`Reading your clip on the server… ${s}s`, 'busy'),
-          });
-        } catch (e) {
-          if (e.slowUpload) {
-            log(`the clip is too big for this connection (${(e.bps / 1024).toFixed(0)} KB/s) — sending key frames instead`);
-            setStatus('This connection cannot take the whole clip quickly, so key frames are going instead — the same turn, the same measurement.', 'busy');
-          } else {
-            log('the clip could not be read — falling back to still frames:', e.message);
-            // A spent allowance or a rejected key is not a reason to try the
-            // same service twelve more times; it is the answer, and it is worth
-            // saying now rather than a minute later.
-            if (/^The measuring service/.test(e.message)) throw e;
-          }
-          data = null;
-        }
-      }
-      if (!data) {
-        setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
+
+      const sendStills = async () => {
+        setStatus(`Taking eight frames from your clip… · ${since(startedAt)}`, 'busy');
         let frames;
         try {
-          // Eight, and not twelve, because the server reads eight at a time:
-          // a twelfth frame is a SECOND wave of vision calls, which doubles the
-          // wait to buy 7° of angle the cos-correction already handles. Eight
-          // samples over a turn are 45° apart, worst case 22.5° off square-on,
-          // and the frame carries its own turn angle for the geometry to undo.
           frames = await extractFrames(recordedBlob, { count: 8, from, to });
         } catch (e) {
           log('frame extraction failed — falling back to a single frame:', e.message);
@@ -847,15 +818,51 @@ async function runAnalysis() {
           frames = [new File([poster.blob], 'frame-0.jpg', { type: 'image/jpeg' })];
         }
         log('frames ready', frames.length, frames.reduce((s, f) => s + f.size, 0), 'bytes');
-
         // The tick keeps the status moving so it never looks frozen.
         setStatus(`Analyzing ${frames.length} frames on the server… ${since(startedAt)}`, 'busy');
-        data = await analyzeBody(frames, {
+        return analyzeBody(frames, {
           gender: chosenGender,
           chart,
           onTick: (s) => setStatus(`Analyzing ${frames.length} frames on the server… ${s}s`, 'busy'),
         });
+      };
+
+      const sendClip = async () => {
+        if (recordedBlob.size > UPLOAD_LIMIT) throw new Error('That clip is too large to upload');
+        setStatus(`Sending your clip (${mb} MB)… · ${since(startedAt)}`, 'busy');
+        return analyzeVideo(recordedBlob, {
+          from: fromSec,
+          to: toSec,
+          gender: chosenGender,
+          chart,
+          uploadBudgetMs: UPLOAD_BUDGET_MS,
+          onProgress: (f) => setStatus(`Sending your clip (${mb} MB)… ${Math.round(f * 100)}% · ${since(startedAt)}`, 'busy'),
+          onUploaded: () => setStatus(`Clip sent — reading it on the server… · ${since(startedAt)}`, 'busy'),
+          onTick: (s) => setStatus(`Reading your clip on the server… ${s}s`, 'busy'),
+        });
+      };
+
+      const order = params.has('frames') ? [sendStills]
+        : params.has('clip') ? [sendClip, sendStills]
+        : [sendStills, sendClip];
+
+      for (const step of order) {
+        try {
+          data = await step();
+          break;
+        } catch (e) {
+          data = null;
+          // A spent allowance or a rejected key is not a reason to try the same
+          // service again; it is the answer, and it is worth saying now.
+          if (/^The measuring service/.test(e.message)) throw e;
+          if (e.slowUpload) {
+            log(`the clip is too big for this connection (${(e.bps / 1024).toFixed(0)} KB/s) — the phone will take stills instead`);
+          } else {
+            log(`that way in failed (${e.message}) — trying the other`);
+          }
+        }
       }
+      if (!data) throw new Error('We could not read that clip. Try recording it again.');
     }
 
     log('analysis result', data);

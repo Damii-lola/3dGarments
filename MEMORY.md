@@ -336,10 +336,14 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   key). `recordVision` keeps `callsToday` + `lastError` in memory and `/health/deep` exposes them under
   `cloudflare_ai.vision`, so "are we out?" is a request, not a guess. The shopper-facing message comes
   from `aiErrorMessage`, so a spent allowance does not read as "we could not find a person".
-- **The privacy copy now says the clip is sent and deleted**, not "your video never leaves your phone".
-  That promise could not survive the decision to send the video; what survives is "Nothing is saved" and
-  the deletion itself (`res.on('finish')` unlink, plus the frames temp dir removed in a `finally`). Every
-  page carries the same sentence: *sent once, measured, then deleted.*
+- **The video never leaves the phone.** The server never reads a clip *as a clip* — it takes eight stills
+  out of it and measures those — so uploading it meant sending 30–40 MB (a phone camera's half-minute on
+  a mobile uplink: minutes) for the server to do the one job the phone can do in two seconds, and then
+  delete it. `analyzeVideo` is now the **fallback** (`?clip=1`), and the default is `extractFrames` on the
+  phone: eight JPEGs, about 450 KB, and nothing on the wire that is a video. The privacy line is therefore
+  stronger and still true: *"Your video never leaves your phone. Eight still frames are sent, measured,
+  then deleted."* — which is why every page carries it. `res.on('finish')` unlink and the frames temp dir
+  are still there for the `?clip=1` path.
 - **Twelve frames in the still-frame fallback, because a six-frame turn can miss the front.** Six samples
   across a full rotation are 60° apart: unless the clip happens to start square on, the closest thing to a
   front view is 30° off, and a limb seen 30° round the turn projects to cos 30 of its length. Twelve puts
