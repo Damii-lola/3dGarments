@@ -309,6 +309,21 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
       spans[key].fromCalc = true;
     }
   }
+  // A shoulder narrower than two fifths of the chest girth is not a shoulder. The
+  // landmark pass puts its two points inside the deltoid, and on a body whose arms
+  // hang close to the ribs that reads 13" against a 19" truth - a third of the
+  // body's width, printed beside a chest of 40. The calculation step gives the real
+  // breadth when it is sure of it; when it is not, the span is dropped instead of
+  // shown, so a chart that scores on shoulder is left unscored rather than answered
+  // from a number nobody measured.
+  const shoulderSpan = spans.shoulder;
+  const chestGirth = spans.bust?.valueIn;
+  if (shoulderSpan && !shoulderSpan.fromCalc && Number.isFinite(chestGirth)) {
+    if (shoulderSpan.widthIn < chestGirth / 2.4 || shoulderSpan.widthIn > chestGirth / 1.75) {
+      shoulderSpan.widthIn = null;
+    }
+  }
+
   const verticals = {};
   for (const [key, spec] of Object.entries(VERTICALS)) verticals[key] = measureVertical(frames, spec);
   const paths = {};
