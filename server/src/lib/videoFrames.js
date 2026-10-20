@@ -83,7 +83,7 @@ export async function framesFromVideo(filePath, opts = {}) {
     info = null,
   } = opts;
 
-  const duration = await probeDuration(filePath);
+  const { duration, fps } = await probeDuration(filePath);
 
   // The trim is a LENGTH, and it is the shopper's own: never read more than half
   // a minute of a clip, and never read past its end — a 21 s clip asked for
@@ -106,15 +106,17 @@ export async function framesFromVideo(filePath, opts = {}) {
       });
     }
 
-    // One decode pass for the whole span. Eight separate seeks each pay for
-    // their own process start and their own decode from the nearest keyframe;
-    // a single `fps` pass reads the clip once and writes the same eight moments
-    // (measured: 4.4 s -> 0.9 s on a 30 s clip). The `fps` filter always
-    // decodes real frames — it is not `-skip_frame nokey`, the pairing that
-    // used to clone one black picture — and the seek path is still here for any
-    // slot the pass could not fill.
-    let mode = 'span';
-    let results = await takeSpan(filePath, root, { from, span, count, maxWidth, timeoutMs });
+    // A single pass decodes EVERY frame in the span. At 30 fps that is cheap;
+    // a 60 fps clip is twice the decode, and on a small instance the eight
+    // seeks — which each decode only from their own keyframe — are the better
+    // trade again. Above about 1,100 frames, and whenever the frame rate could
+    // not be read at all, the seeks are the safe side of that line.
+    const framesInSpan = Number.isFinite(fps) && fps > 0 ? span * fps : 0;
+    const onePass = framesInSpan > 0 && framesInSpan <= 1100;
+    let mode = onePass ? 'span' : 'seek';
+    let results = onePass
+      ? await takeSpan(filePath, root, { from, span, count, maxWidth, timeoutMs })
+      : null;
 
     // Anything the single pass could not produce: a blank instant, a slot past
     // the end of a short clip, or a decoder that refused the rate. One cheap
@@ -270,10 +272,19 @@ async function probeDuration(filePath) {
       timeout: 20_000, maxBuffer: 1024 * 1024,
     });
   } catch (e) {
-    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(String(e?.stderr || ''));
-    if (m) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+    const stderr = String(e?.stderr || '');
+    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr);
+    const r = /,\s*([\d.]+)\s*fps/.exec(stderr);
+    if (m) {
+      return {
+        duration: Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]),
+        // The frame rate decides whether reading the span in one pass is cheap
+        // or ruinous: a 60 fps clip is twice the decode of a 30 fps one.
+        fps: r ? Number(r[1]) : null,
+      };
+    }
   }
-  return null;
+  return { duration: null, fps: null };
 }
 
 /**
