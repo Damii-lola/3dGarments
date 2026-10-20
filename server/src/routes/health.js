@@ -49,7 +49,7 @@ health.get('/deep', async (_req, res) => {
   // The provider in use, and only that one, so an unused leftover key cannot
   // make a broken path look healthy.
   out.vision = config.vision.provider === 'mistral'
-    ? { provider: 'mistral', ...(await verifyMistral()) }
+    ? { provider: 'mistral', ...(await verifyMistral({ probe: req.query.probe === '1' })) }
     : { provider: 'cloudflare', ...(await verifyCloudflare()), model: config.cloudflare.visionModel };
   out.vision.last_calls = visionStatus();
   // What the client learned about the key's rate limit, so a slow scan has a

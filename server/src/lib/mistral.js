@@ -96,7 +96,7 @@ export async function mistralChat(messages, { maxTokens = 2600, json = false, ti
  * key — is it accepted, and does it carry the model we are configured to use —
  * without sending a shopper's frame anywhere.
  */
-export async function verifyMistral() {
+export async function verifyMistral({ probe = false } = {}) {
   if (!mistralConfigured()) return { ok: false, error: 'not configured' };
   try {
     const res = await fetch(`${config.vision.mistral.apiBase}/models`, {
@@ -110,13 +110,35 @@ export async function verifyMistral() {
     const json = await res.json().catch(() => null);
     const ids = Array.isArray(json?.data) ? json.data.map((m) => m.id) : [];
     const model = config.vision.mistral.model;
-    return {
+    const out = {
       ok: true,
       model,
       model_listed: ids.length ? ids.includes(model) : null,
       models: ids.slice(0, 40),
       key_length: config.vision.mistral.apiKey.length,
     };
+
+    // `?probe=1`: one five-token completion, because a key that can list models
+    // cannot necessarily answer — and because the rate-limit headers on that
+    // reply are the only honest description of how fast this key may go. Ten
+    // tokens spent to stop guessing at a pace.
+    if (probe) {
+      const t0 = Date.now();
+      const r2 = await fetch(`${config.vision.mistral.apiBase}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.vision.mistral.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with one word: ok' }], max_tokens: 5, temperature: 0 }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      const text = await r2.text().catch(() => '');
+      out.probe = {
+        status: r2.status,
+        ms: Date.now() - t0,
+        body: text.slice(0, 400),
+        rate_headers: Object.fromEntries([...r2.headers].filter(([k]) => /rate|limit|retry|quota/i.test(k))),
+      };
+    }
+    return out;
   } catch (e) {
     return { ok: false, error: e.message };
   }
