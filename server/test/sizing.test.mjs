@@ -53,12 +53,21 @@ test('a garment measured flat is compared with half the body, not the whole', ()
   assert.equal(size.flat, true);
 });
 
+test('a tie between two sizes goes to the larger one', () => {
+  // 38" is two inches from a 36" row and two from a 40" one. The 40" garment is
+  // the one that closes.
+  const chart = chartFromInput(GIRTH);
+  assert.ok(chart);
+  const size = bestSize('male', { chest: 38 }, chart.rows, chart.columns);
+  assert.equal(size.sizeKey, 'M');
+});
+
 test('a chart of real girths is left alone', () => {
   const chart = chartFromInput(GIRTH);
   assert.ok(chart);
   assert.ok(!chart.columns[0].flat, 'a chest column reaching 48" is a body chart');
-  const size = bestSize('male', { chest: 38 }, chart.rows, chart.columns);
-  assert.equal(size.sizeKey, 'S'); // 38 is nearer 36 than 40
+  const size = bestSize('male', { chest: 37.5 }, chart.rows, chart.columns);
+  assert.equal(size.sizeKey, 'S'); // 37.5 is nearer 36 than 40
   assert.equal(size.flat, false);
 });
 

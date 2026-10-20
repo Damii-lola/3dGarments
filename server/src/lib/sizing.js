@@ -92,9 +92,9 @@ export function columnsFromRows(chart) {
  *
  * Worst case rather than average, because the garment that can be worn is the one
  * that is loose somewhere; the one that is snug somewhere is the one that does not
- * close. An exact tie keeps the smaller size — which for a store's chart means the
- * earlier row, so a chart typed smallest-first answers a tie with the smaller
- * size, exactly as the built-in ones do.
+ * close. An exact tie therefore goes to the LARGER size - 38" of chest is as far
+ * from a 36" row as from a 40" one, and the 40" garment is the one that closes.
+ * (It used to keep the smaller, which read as "size down when unsure".)
  *
  * A column only counts when EVERY row carries it and this body has that
  * measurement. A blank cell must not become an advantage: without that rule, a
@@ -129,7 +129,8 @@ export function bestSize(sex, girths, chart = CHARTS[sex], columns = null) {
     if (!Number.isFinite(row?.[primary.id])) continue;
     const anchor = Math.abs(onChart(primary) - row[primary.id]);
     const worst = usable.reduce((m, c) => Math.max(m, Math.abs(onChart(c) - row[c.id])), anchor);
-    if (!best || worst < best.misfit) {
+    if (!best || worst < best.misfit
+      || (worst === best.misfit && Number(row[primary.id]) > Number(best.row[primary.id]))) {
       best = { sizeKey, row, key: primary.id, field: primary.field, label: primary.label, diff: anchor, misfit: worst, flat: Boolean(primary.flat) };
     }
   }
