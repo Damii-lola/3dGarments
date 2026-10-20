@@ -570,6 +570,23 @@ async function reconcileWithCloudflare(frames) {
 }
 
 
+/**
+ * A foot placed on the very bottom edge of the frame is the crop, not the floor.
+ * Trusting it turns "the video ends at your ankles" into a height, which is a
+ * number nobody measured. Within 1.5% of the edge is close enough to be the edge.
+ */
+function dropEdgeFeet(frame) {
+  let dropped = false;
+  for (const k of ['footL', 'footR']) {
+    const p = frame.landmarks[k];
+    if (p && p.y > 0.985) {
+      delete frame.landmarks[k];
+      dropped = true;
+    }
+  }
+  if (dropped) frame.floorInvented = true;
+}
+
 /** The middle value. With three readings it is the one that agreed. */
 function median(nums) {
   const s = [...nums].sort((a, b) => a - b);
@@ -968,6 +985,7 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
       for (const k of ['footL', 'footR', 'crotch']) delete frame.landmarks[k];
       frame.floorInvented = true;
     }
+    dropEdgeFeet(frame);
     frame.scale = frameScale(frame);
     const check = checkFrame(frame);
     if (check.fatal) {
@@ -1154,6 +1172,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
           for (const k of ['footL', 'footR', 'crotch']) delete frame.landmarks[k];
           frame.floorInvented = true;
         }
+        dropEdgeFeet(frame);
 
         frame.scale = frameScale(frame);
         frame.ms = ms;
@@ -1389,7 +1408,9 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
 
   // 6. Height: head to floor, only from frames where the feet were actually visible.
   const h = measureHeight(frames);
-  const heightIn = h ? clamp(h.in, RANGES.height) : (calc?.height ?? null);
+  // No floor contact, no height — even if the calculation step offered one. The
+  // clip ending at the shins is not a person 65 inches tall.
+  const heightIn = h ? clamp(h.in, RANGES.height) : null;
   const headUnitsToHeight = h
     ? round1(h.in * CM_PER_IN / (HEAD_HEIGHT_CM[scaled[0].gender] || HEAD_HEIGHT_CM.unsure))
     : null;
