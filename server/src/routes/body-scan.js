@@ -591,6 +591,14 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
       else lastError = 'unreadable reply';
     } catch (e) {
       lastError = String(e?.message || e).slice(0, 160);
+      // A used-up allowance or a rejected key will read exactly the same in two
+      // seconds. Only a queue hiccup is worth asking again.
+      const kind = e?.debug?.kind || e?.upstream?.kind;
+      if (kind && kind !== 'capacity' && kind !== 'upstream') {
+        waited += Date.now() - t0;
+        log(`  calculation unavailable (${kind}: ${lastError}) - not asking again`);
+        break;
+      }
     }
     waited += Date.now() - t0;
     if (!out && attempts < plan.length) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - asking again`);
