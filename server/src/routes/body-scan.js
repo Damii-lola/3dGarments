@@ -272,6 +272,13 @@ async function mapLimit(items, limit, fn) {
   return out;
 }
 
+/** Which provider actually read the last frame: 'mistral' or 'cloudflare'. */
+let servedBy = null;
+
+const canFallBack = () => config.vision.provider === 'mistral'
+  && config.vision.fallback
+  && Boolean(config.cloudflare.accountId && config.cloudflare.apiToken);
+
 async function callModelRaw(model, messages, opts = {}) {
   // Mistral speaks the same message shape we already build, and answers with the
   // same choices/usage envelope â€” its client wraps that as { result } so every
@@ -280,7 +287,9 @@ async function callModelRaw(model, messages, opts = {}) {
   if (config.vision.provider === 'mistral') {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json });
+        const out = await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json });
+        servedBy = 'mistral';
+        return out;
       } catch (e) {
         // A rate limit is the service describing its own pace, and the pacer in
         // mistral.js has already taken the note. Give it room and try again —
@@ -289,13 +298,27 @@ async function callModelRaw(model, messages, opts = {}) {
           await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
           continue;
         }
+        // A key that cannot answer must not take the shop down with it. When a
+        // Workers AI key is also present this frame is read there instead —
+        // logged, counted, and visible in the scan's own diagnostics, never
+        // silent. VISION_FALLBACK=0 turns the net off.
+        if (canFallBack()) {
+          log(`!! Mistral refused this frame (${e?.upstream?.status || e?.message}) — reading it with Workers AI instead`);
+          recordVision(false, { status: e?.upstream?.status, kind: 'fallback', message: String(e?.upstream?.message || e?.message).slice(0, 200) });
+          break;
+        }
         throw e;
       }
     }
   }
+  servedBy = 'cloudflare';
 
+  // When we arrived here by falling back from Mistral, the model argument is
+  // Mistral's name — Workers AI would not know it. The net always uses the
+  // Workers AI model.
+  const cfModel = config.vision.provider === 'mistral' ? config.cloudflare.visionModel : model;
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
-  if (/qwen/i.test(model)) {
+  if (/qwen/i.test(cfModel)) {
     // Qwen 3 reasons before it answers, and that reasoning is billed as output
     // AND counted against max_tokens. At 1600 the JSON was being cut off
     // mid-landmark on six frames out of eight, which surfaced as "unreadable
@@ -307,7 +330,7 @@ async function callModelRaw(model, messages, opts = {}) {
   }
   if (opts.json) payload.response_format = { type: 'json_object' };
   for (let attempt = 0; ; attempt += 1) {
-    const res = await fetch(modelUrl(model), {
+    const res = await fetch(modelUrl(cfModel), {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(payload),
@@ -980,7 +1003,9 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     aspect,
     attempted: files.length,
     totalBytes,
-    sourceModel: visionModelName(),
+    sourceModel: servedBy === 'cloudflare' && config.vision.provider === 'mistral'
+      ? `${config.cloudflare.visionModel} (fallback)`
+      : visionModelName(),
     poseNotes: [],
     clip: clipInfo,
     timing: { decodeMs, visionMs: Date.now() - startedAt - decodeMs, totalMs: Date.now() - startedAt },

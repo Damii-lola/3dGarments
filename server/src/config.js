@@ -35,6 +35,10 @@ export const config = Object.freeze({
     provider: (process.env.VISION_PROVIDER
       || (process.env.MISTRAL_API_KEY ? 'mistral' : 'cloudflare')).toLowerCase(),
     concurrency: Number(process.env.VISION_CONCURRENCY || 4),
+    // If the chosen provider refuses, may Workers AI read the frame instead?
+    // On by default: a key that cannot answer should not switch the shop off.
+    // VISION_FALLBACK=0 makes the choice strict.
+    fallback: process.env.VISION_FALLBACK !== '0',
     mistral: Object.freeze({
       apiKey: process.env.MISTRAL_API_KEY || '',
       model: process.env.MISTRAL_MODEL || 'mistral-small-latest',

@@ -24,6 +24,7 @@ health.get('/', (_req, res) => {
         model: visionModelName(),
         configured: visionConfigured(),
         concurrency: config.vision.concurrency,
+        fallback: config.vision.fallback,
       },
     },
     missing_env: missing,
