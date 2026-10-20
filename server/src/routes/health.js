@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { config, missingConfig, visionConfigured, visionModelName } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
@@ -31,7 +31,7 @@ health.get('/', (_req, res) => {
 });
 
 /** Live connectivity check for every integration. */
-health.get('/deep', async (_req, res) => {
+health.get('/deep', async (req, res) => {
   const out = { supabase: { ok: false }, storage: { ok: false }, vision: { ok: false } };
   if (supabaseConfigured()) {
     try {
@@ -60,3 +60,4 @@ health.get('/deep', async (_req, res) => {
   const ok = Object.values(out).every((v) => v.ok);
   res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
 });
+
