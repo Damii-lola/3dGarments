@@ -503,18 +503,11 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `Calculation step of a body-measuring tool. A vision model read 4 frames of ONE adult turning 360 degrees: view, turn in degrees, missing parts, and p - x,y pairs on a 0-100 grid (x left to right, y top to bottom) in the order of keys; 0,0 means absent.
+const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. Per frame: view, turn, missing parts, p = x,y pairs on a 0-100 grid in keys order (0,0 = absent).
 
-Turn the readings into ONE consistent body and give its measurements in INCHES.
+Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height.
 
-- Widest shoulder span is the front or back frame; narrowest is the profile.
-- Shoulders are at least as wide as the hips; the waist is narrower than both.
-- The head is the same length in every frame; one wildly longer or shorter is mis-scaled - correct it and its frame.
-- The wrist hangs below the hip point, never level with the waist.
-- Never invent a part listed as missing. No feet in any frame means no height: null.
-- Adult and humanly possible: chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist), height 54-86.
-
-Reply ONLY with this JSON, no prose:
+Reply ONLY with JSON, adult inches:
 {"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
 
 /**
@@ -551,8 +544,8 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // point per frame. The calculation needs the points that decide its seven numbers
   // (head, shoulders, armpits, waist, hips, wrists, feet, crotch); knees and elbows
   // are read by the geometry pass and are not worth their tokens here.
-  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR',
-    'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'];
+  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR',
+    'hipL', 'hipR', 'footL', 'footR'];
   const raw = {
     keys: WANTED,
     frames: frames.map((f, i) => {
