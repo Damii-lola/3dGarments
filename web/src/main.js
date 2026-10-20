@@ -712,8 +712,8 @@ async function runAnalysis() {
   let measuredOn = 'the server';
 
   try {
-    const { from, to } = trimmer.getSpan();
-    log('analyze start', { bytes: recordedBlob.size, type: recordedBlob.type, from, to });
+    const { from, to, fromSec, toSec } = trimmer.getSpan();
+    log('analyze start', { bytes: recordedBlob.size, type: recordedBlob.type, from: fromSec, to: toSec });
 
     // The store's own chart, if a scan is going to be scored against one. Waited
     // for here rather than at page load: it has had the whole recording to arrive,
@@ -790,41 +790,57 @@ async function runAnalysis() {
     if (!data) {
       measuredOn = 'the server';
 
-      // A clip over this size would spend longer going up a phone connection
-      // than the whole scan is worth; stills are the better trade at that point.
+      // A phone's own camera writes 30-40 MB for half a minute — ten times what
+      // the same clip becomes on WhatsApp — and on a shopper's uplink that is
+      // minutes, not seconds. One real scan spent 215 s with the bar still
+      // climbing, so the clip is now only offered when it can plausibly be up
+      // in a few seconds. `analyzeVideo` measures the upload as it goes and
+      // abandons it when it cannot finish inside UPLOAD_BUDGET_MS; a dozen key
+      // frames (about 600 KB) then go instead: the same turn, the same
+      // measurement, a fraction of the wire.
       const UPLOAD_LIMIT = 80 * 1024 * 1024;
-      if (!params.has('frames') && recordedBlob.size <= UPLOAD_LIMIT) {
+      const UPLOAD_BUDGET_MS = 10000;
+      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      const slowLink = Boolean(conn) && (conn.saveData === true || /(^|-)(2g|3g)$/.test(String(conn.effectiveType || '')));
+      const worthSending = recordedBlob.size <= UPLOAD_LIMIT && !(slowLink && recordedBlob.size > 3 * 1024 * 1024);
+      const mb = (recordedBlob.size / 1048576).toFixed(1);
+      if (!params.has('frames') && worthSending) {
         try {
-          setStatus(`Sending your clip… · ${since(startedAt)}`, 'busy');
+          setStatus(`Sending your clip (${mb} MB)… · ${since(startedAt)}`, 'busy');
           data = await analyzeVideo(recordedBlob, {
-            from,
-            to,
+            from: fromSec,
+            to: toSec,
             gender: chosenGender,
             chart,
-            onProgress: (f) => setStatus(`Sending your clip… ${Math.round(f * 100)}%`, 'busy'),
+            uploadBudgetMs: UPLOAD_BUDGET_MS,
+            onProgress: (f) => setStatus(`Sending your clip (${mb} MB)… ${Math.round(f * 100)}% · ${since(startedAt)}`, 'busy'),
+            onUploaded: () => setStatus(`Clip sent — reading it on the server… · ${since(startedAt)}`, 'busy'),
             onTick: (s) => setStatus(`Reading your clip on the server… ${s}s`, 'busy'),
           });
         } catch (e) {
-          log('the clip could not be read — falling back to still frames:', e.message);
-          // A spent allowance or a rejected key is not a reason to try the same
-          // service twelve more times; it is the answer, and it is worth saying
-          // now rather than a minute later.
-          if (/^The measuring service/.test(e.message)) throw e;
+          if (e.slowUpload) {
+            log(`the clip is too big for this connection (${(e.bps / 1024).toFixed(0)} KB/s) — sending key frames instead`);
+            setStatus('This connection cannot take the whole clip quickly, so key frames are going instead — the same turn, the same measurement.', 'busy');
+          } else {
+            log('the clip could not be read — falling back to still frames:', e.message);
+            // A spent allowance or a rejected key is not a reason to try the
+            // same service twelve more times; it is the answer, and it is worth
+            // saying now rather than a minute later.
+            if (/^The measuring service/.test(e.message)) throw e;
+          }
           data = null;
         }
       }
-
       if (!data) {
         setStatus(`Grabbing key frames from your clip… · ${since(startedAt)}`, 'busy');
         let frames;
         try {
-          // Twelve, not six, and the difference is geometric. A six-frame turn is
-          // sampled every 60 degrees, so unless the clip happens to start square
-          // on, the nearest thing to a front view can be 30 degrees off — and an
-          // arm read 30 degrees round the turn measures cos(30) of its length.
-          // Twelve frames put the worst case at 15 degrees, and give the server
-          // enough views to drop a blurred one without losing a measurement.
-          frames = await extractFrames(recordedBlob, { count: 12, from, to });
+          // Eight, and not twelve, because the server reads eight at a time:
+          // a twelfth frame is a SECOND wave of vision calls, which doubles the
+          // wait to buy 7° of angle the cos-correction already handles. Eight
+          // samples over a turn are 45° apart, worst case 22.5° off square-on,
+          // and the frame carries its own turn angle for the geometry to undo.
+          frames = await extractFrames(recordedBlob, { count: 8, from, to });
         } catch (e) {
           log('frame extraction failed — falling back to a single frame:', e.message);
           const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });

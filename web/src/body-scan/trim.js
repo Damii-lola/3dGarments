@@ -56,10 +56,16 @@ export function createTrimmer({ video, startInput, endInput, fill, onChange }) {
       syncInputs();
       paint();
     },
-    /** The kept span as fractions of the whole clip. */
+    /**
+     * The kept span, as fractions of the whole clip (what the canvas paths
+     * want) and as seconds (what the server wants). Handing the fractions to
+     * the server read "0.0s to 1.0s" for every clip, so eight frames were taken
+     * out of the first second of the turn instead of across it — one angle,
+     * eight times.
+     */
     getSpan() {
-      if (!duration) return { from: 0, to: 1 };
-      return { from: start / duration, to: end / duration };
+      if (!duration) return { from: 0, to: 1, fromSec: 0, toSec: 0, duration: 0 };
+      return { from: start / duration, to: end / duration, fromSec: start, toSec: end, duration };
     },
   };
 }

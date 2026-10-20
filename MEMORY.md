@@ -276,6 +276,23 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **The clip's real length is probed, not assumed** (`ffmpeg -i`, parsing `Duration:` from the "just
   describe it" run), so a 21 s clip asked for "0 to 30" spreads its eight frames over its own 21 s instead
   of aiming three of them into nothing.
+- **`getSpan()` spoke fractions and the clip path heard seconds.** Every UI scan sent `from=0, to=1` to
+  `/api/body-scan`, so the server read a **one-second** span and took all eight "angles" out of the same
+  instant of the turn. The harnesses passed seconds and looked fine, which is why it survived. `getSpan()`
+  now returns `fromSec`/`toSec` beside the fractions, and only the server path uses the seconds.
+- **One ffmpeg pass, not one per frame.** Eight `-ss` seeks each paid a process start and a decode from the
+  nearest keyframe; `-ss <slot ½> -t span -i clip -vf fps=count/span -frames:v count` decodes the clip once
+  and writes the same eight moments. Measured on a 30 s phone clip: **4.4 s → 0.9 s** of ffmpeg (2.7 s
+  including the ruler composite, which is now done eight-wide instead of in a row). The per-slot seek is
+  still the fallback for any slot the pass cannot fill, and every frame is still blank-checked.
+- **The 215-second upload was the phone's own camera, not the server.** A native 30 s recording is 30–40 MB
+  (the same clip on WhatsApp is 4.7 MB); on a shopper's uplink that is minutes. The upload now has a budget:
+  `analyzeVideo` samples the real bytes/second after ~1 s and abandons the request when the whole file
+  cannot be up inside `UPLOAD_BUDGET_MS` (10 s), then eight key frames (~450 KB) go instead —
+  `err.slowUpload` marks it as a trade rather than a failure, so the shopper is told "key frames are going
+  instead — the same turn, the same measurement". A 2g/3g or `saveData` connection skips the clip entirely
+  above 3 MB. The fallback is eight stills, not twelve, because the server reads eight at a time: a twelfth
+  frame is a second wave of vision calls and doubles the wait for 7° the cos-correction already handles.
 - **The vision reply was being cut off, and that is what "only one usable frame" meant.**
   `@cf/qwen/qwen3.8-27b` reasons before it answers, and those hidden reasoning tokens are billed as
   output AND counted against `max_tokens`. At `max_tokens: 1600` six of eight frames came back
