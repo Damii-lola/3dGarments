@@ -5,41 +5,61 @@ import { aiErrorMessage, classifyAiError, recordVision } from './cloudflare.js';
 export const mistralConfigured = () => Boolean(config.vision.mistral.apiKey);
 
 /**
- * Pacing, learned rather than assumed.
+ * Pacing, measured from the key rather than assumed.
  *
- * Every Mistral key has a requests-per-second limit, and it is not the same on a
- * free key as on a paid one — measured on this account: four frames fired at
- * once came back as four `429 Rate limit exceeded`. So the gap between request
- * STARTS begins at the measured floor and only ever grows when the service says
- * "rate limit". Calls still overlap in flight — the limit is on how often one may
- * start, not on how many may run.
+ * Every Mistral key has a request limit, and it is not the same on a free key as
+ * on a paid one. This one states its own: `x-ratelimit-limit-req-minute: 30`, so a
+ * scan's twelve reads fit inside a minute with room for another scan, but not
+ * three. The pacer therefore keeps a rolling minute of request starts and lets
+ * them go at once while there is budget - bursting is what makes a scan fast -
+ * and waits out the oldest start when the budget is gone. A 429 still leaves its
+ * mark: the burst is cut for the next minute and one start is held back.
  *
- * The floor is 1.1 s because a burst of twelve is what a scan sends, and bursting
- * them is how a 12 s scan became a 40 s one: eleven 429s, then a paced retry for
- * each. A paid key sets MISTRAL_MIN_GAP_MS=0 and starts unhindered.
+ * MISTRAL_REQ_PER_MINUTE overrides the measured limit (a paid key may state a
+ * larger one); leaving 20% unused is what keeps a second scan from colliding with
+ * the first.
  */
-const FLOOR_GAP_MS = Number(process.env.MISTRAL_MIN_GAP_MS ?? 1100);
-let gapMs = FLOOR_GAP_MS;
-let nextStart = 0;
+const WINDOW_MS = 60_000;
+const REQ_PER_MINUTE = Number(process.env.MISTRAL_REQ_PER_MINUTE || 30);
+const BURST = Math.max(1, Math.ceil(REQ_PER_MINUTE * 0.8));
+let burstCap = BURST;
+let heldUntil = 0;
 let lastLimitAt = 0;
+const starts = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function pacedStart() {
-  // A limit met a minute ago says nothing about now, but the floor is not zero:
-  // returning to it (rather than to no pacing at all) means the next scan starts
-  // at the pace this key was measured at instead of bursting into 429s again.
-  if (gapMs > FLOOR_GAP_MS && Date.now() - lastLimitAt > 60_000) {
-    gapMs = FLOOR_GAP_MS;
-    nextStart = Math.min(nextStart, Date.now());
+  // A refusal is a fact about the last minute, not about this one. Give the cap
+  // back after a quiet minute instead of carrying a slow key forever.
+  if (burstCap < BURST && Date.now() - lastLimitAt > WINDOW_MS) burstCap = BURST;
+  for (;;) {
+    const now = Date.now();
+    while (starts.length && now - starts[0] > WINDOW_MS) starts.shift();
+    const waitHeld = heldUntil - now;
+    const room = burstCap - starts.length;
+    if (room > 0 && waitHeld <= 0) {
+      starts.push(now);
+      return;
+    }
+    const waitWindow = room <= 0 ? WINDOW_MS - (now - starts[0]) + 50 : 0;
+    await sleep(Math.max(50, waitHeld, waitWindow));
   }
-  const now = Date.now();
-  const at = Math.max(now, nextStart);
-  nextStart = at + gapMs;
-  if (at > now) await sleep(at - now);
 }
 
 /** What the pacer has settled on — shown by /health so the pace is not a mystery. */
-export const mistralPace = () => ({ gap_ms: gapMs, next_start_in_ms: Math.max(0, nextStart - Date.now()) });
+export const mistralPace = () => {
+  const now = Date.now();
+  const used = starts.filter((t) => now - t <= WINDOW_MS).length;
+  return { used_last_minute: used, cap: burstCap, limit_per_minute: REQ_PER_MINUTE, held_for_ms: Math.max(0, heldUntil - now) };
+};
+
+/** A 429: hold the next start back, and stop bursting into the same wall. */
+function noteLimit(retryAfterSec) {
+  lastLimitAt = Date.now();
+  burstCap = Math.max(2, Math.floor(BURST * 0.6));
+  const suggested = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? Math.min(5000, retryAfterSec * 1000) : 1200;
+  heldUntil = Math.max(heldUntil, Date.now() + suggested);
+}
 
 /**
  * Mistral, spoken to directly.
@@ -88,14 +108,7 @@ export async function mistralChat(messages, { maxTokens = 2600, json = false, ti
     const kind = classifyAiError(res.status, msg);
     if (res.status === 429) {
       // The service just told us the pace. Take it, and let the retry wait.
-      lastLimitAt = Date.now();
-      const retryAfter = Number(res.headers.get('retry-after'));
-      // A Retry-After in minutes would turn one refusal into a minute of waiting
-      // on every later call. Take the number, but no further than three seconds:
-      // beyond that, spacing the starts is the better tool.
-      const suggested = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(3000, retryAfter * 1000) : 1150;
-      gapMs = Math.max(gapMs, suggested);
-      nextStart = Math.max(nextStart, Date.now() + gapMs);
+      noteLimit(Number(res.headers.get('retry-after')));
     }
     recordVision(false, { status: res.status, kind, message: String(msg).slice(0, 300) });
     const err = new HttpError(502, aiErrorMessage(kind));
