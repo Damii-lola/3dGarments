@@ -503,25 +503,20 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `You are the calculation step of a body-measuring tool. A cheaper vision model looked at frames of ONE person slowly turning through 360 degrees and reported, per frame, points on a 0-100 grid (x: 0 left edge to 100 right edge; y: 0 top edge to 100 bottom edge), which parts were missing from the shot, which way they were facing and how far they were turned. It is good at seeing and bad at consistency.
+const RECONCILE_PROMPT = `You are the calculation step of a body-measuring tool. A vision model read 4 frames of ONE adult turning 360 degrees. Each frame gives view, turn in degrees, missing (parts not in shot) and p: x,y pairs on a 0-100 grid (x left to right, y top to bottom) in the order of keys. A point of 0,0 is absent.
 
-Turn those raw readings into ONE consistent human body and state its measurements.
+Turn the readings into ONE consistent body and state its measurements in INCHES.
 
-WHAT MUST HOLD, in every frame you correct and across the set:
-- A person is widest square-on and narrowest in profile. The frame with the widest shoulder span is the front or back frame; the narrowest is the profile.
-- Shoulders are at least as wide as the hips in a front or back view; the waist is narrower than both.
-- The wrist bone hangs below the hip point, never level with the waist.
-- The head is about one seventh of a standing body.
-- The same head, in metres, in every frame: if one frame's headTop-to-chin span is wildly different from the others, it is the outlier and its points are scaled wrongly.
-- Never invent a part that is out of shot. If the feet were not visible in any frame there is no floor contact and no height.
-- Move a point only when the evidence requires it, and keep it inside 0-100.
+RULES - these decide the readings:
+- The widest shoulder span is the front or back frame; the narrowest is the profile.
+- Shoulders are at least as wide as the hips; the waist is narrower than both.
+- The head is the same length in every frame; one wildly longer or shorter is mis-scaled, so correct it and its frame.
+- The wrist hangs below the hip point, never level with the waist.
+- Never invent a part listed as missing. If no frame shows the feet there is no floor contact and height is null.
+- Plausible: chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86.
 
-MEASUREMENTS, in INCHES, for a standing adult, and humanly possible:
-chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86. Use null for anything the frames cannot support.
-
-Reply with ONLY this JSON, no prose:
-{"frames":[{"i":0,"view":"front|back|side|three-quarter","turn":0}],
- "measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":0}}`;
+Reply ONLY with this JSON, no prose:
+{"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
@@ -552,16 +547,27 @@ const READ_TIMEOUT_MS = Number(process.env.VISION_READ_TIMEOUT_MS || 25_000);
 const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function reconcileWithCloudflare(frames, modelOverride = '') {
-  const raw = frames.map((f, i) => {
-    const missing = Object.entries(f.visible || {}).filter(([, v]) => v === false).map(([k]) => k);
-    return {
-      i,
-      view: f.view,
-      turn: Number.isFinite(f.turn) ? f.turn : null,
-      ...(missing.length ? { missing } : {}),
-      points: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
-    };
-  });
+  // The point table is the measurement itself, so it cannot be dropped - but it can
+  // be written as numbers under one shared list of names instead of an object per
+  // point per frame. The calculation needs the points that decide its seven numbers
+  // (head, shoulders, armpits, waist, hips, wrists, feet, crotch); knees and elbows
+  // are read by the geometry pass and are not worth their tokens here.
+  const WANTED = ['headTop', 'chin', 'neckBase', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR',
+    'waistL', 'waistR', 'hipL', 'hipR', 'crotch', 'wristL', 'wristR', 'ankleL', 'ankleR', 'footL', 'footR'];
+  const raw = {
+    keys: WANTED,
+    frames: frames.map((f, i) => {
+      const missing = Object.entries(f.visible || {}).filter(([, v]) => v === false).map(([k]) => k);
+      return {
+        i,
+        view: f.view,
+        turn: Number.isFinite(f.turn) ? Math.round(f.turn) : null,
+        ...(missing.length ? { missing } : {}),
+        // x,y in one flat list, in the order of `keys`; 0,0 means the point is absent.
+        p: WANTED.flatMap((k) => (f.landmarks[k] ? [Math.round(f.landmarks[k].x * 100), Math.round(f.landmarks[k].y * 100)] : [0, 0])),
+      };
+    }),
+  };
 
   const primary = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
   // The first miss is usually a queue hiccup on one worker, so the same model is
@@ -605,9 +611,16 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
       const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 320, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) {
-        usedModel = step.model;
-        const u = data?.result?.usage || data?.usage || null;
-        if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
+        // A reply with no number in it is not an answer, whatever shape it has.
+        const numbers = Object.values(out.measurements || {}).filter((v) => Number.isFinite(Number(v)) && v !== null).length;
+        if (!numbers) {
+          out = null;
+          lastError = 'no measurements in the reply';
+        } else {
+          usedModel = step.model;
+          const u = data?.result?.usage || data?.usage || null;
+          if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
+        }
       } else lastError = 'unreadable reply';
     } catch (e) {
       lastError = String(e?.message || e).slice(0, 160);
