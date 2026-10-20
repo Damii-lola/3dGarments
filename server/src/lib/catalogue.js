@@ -317,7 +317,10 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
   // shown, so a chart that scores on shoulder is left unscored rather than answered
   // from a number nobody measured.
   const shoulderSpan = spans.shoulder;
-  const chestGirth = spans.bust?.valueIn;
+  // The chest the guard compares against is whichever chest the scan will print:
+  // the calculated one when there is one, because the geometry span is often
+  // dropped on a frame where the arms hide the ribs.
+  const chestGirth = Number.isFinite(Number(calc?.chest)) ? Number(calc.chest) : spans.bust?.valueIn;
   if (shoulderSpan && !shoulderSpan.fromCalc && Number.isFinite(chestGirth)) {
     if (shoulderSpan.widthIn < chestGirth / 2.4 || shoulderSpan.widthIn > chestGirth / 1.75) {
       shoulderSpan.widthIn = null;
