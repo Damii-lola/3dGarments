@@ -536,7 +536,6 @@ Reply with ONLY this JSON, no prose:
  * the diagnostics rather than hidden.
  */
 const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 8_000);
-const RECONCILE_ATTEMPTS = 2;
 /**
  * The model that takes over when the first one misses. The default calculator
  * reads this body best (waist within half an inch) but shares a queue and
@@ -556,7 +555,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   }));
 
   const primary = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
+  // The first miss is usually a queue hiccup on one worker, so the same model is
+  // asked again before the backup takes over. The backup answers fast but reads
+  // waist and hips less truly, so it is the last resort, not the spare.
   const plan = [
+    { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: RECONCILE_BACKUP_MODEL, timeoutMs: RECONCILE_TIMEOUT_MS },
   ];
@@ -576,7 +579,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   let waited = 0;
   let lastError = null;
   let usedModel = null;
-  while (!out && attempts < RECONCILE_ATTEMPTS) {
+  while (!out && attempts < plan.length) {
     const step = plan[attempts];
     const msgs = attempts === 0 ? messages : retryMessages;
     attempts += 1;
@@ -590,7 +593,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
       lastError = String(e?.message || e).slice(0, 160);
     }
     waited += Date.now() - t0;
-    if (!out && attempts < RECONCILE_ATTEMPTS) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - trying the backup`);
+    if (!out && attempts < plan.length) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - asking again`);
   }
 
   if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError, model: null };
