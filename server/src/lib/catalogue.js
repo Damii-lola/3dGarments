@@ -288,7 +288,7 @@ function howFor(spec, ev, value) {
  * @param {{frames: object[], gender: string, clothing?: object}} opts
  * @returns {{group: string, items: object[], evidence: object}}
  */
-export function buildCatalogue({ frames, gender, clothing = {} }) {
+export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
   const group = gender === 'female' ? 'female' : 'male';
 
   const spans = {};
@@ -298,6 +298,13 @@ export function buildCatalogue({ frames, gender, clothing = {} }) {
     // The bust depth prior follows the group: a bust projects, a ribcage does not.
     if (bustDepth) opts.depthRatio = depthRatioFor('chest', group);
     spans[key] = measureRegion(region, frames, opts);
+    // The calculation step's number stands for this span when it gave one: it
+    // looked at every frame at once, which no single frame can.
+    const fixed = calc ? Number(calc[region]) : NaN;
+    if (spans[key] && Number.isFinite(fixed)) {
+      if (region === 'shoulder') spans[key].widthIn = fixed;
+      else spans[key].valueIn = fixed;
+    }
   }
   const verticals = {};
   for (const [key, spec] of Object.entries(VERTICALS)) verticals[key] = measureVertical(frames, spec);
@@ -337,11 +344,19 @@ export function buildCatalogue({ frames, gender, clothing = {} }) {
     : (clothing.lower || 'your trousers'));
 
   const items = [];
+  // A span the sanity check dropped can still be answered by the calculation
+  // step, which saw every frame together. Map span → region so 'bust' finds
+  // 'chest'.
+  const spanRegion = Object.fromEntries(SPAN_SETS.map(([k, r]) => [k, r]));
+  const calcValue = (span) => {
+    const n = calc ? Number(calc[spanRegion[span]]) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
   for (const spec of CATALOGUE[group]) {
     let value = null;
     let how = null;
-    if (spec.kind === 'girth') value = spans[spec.span]?.valueIn ?? null;
-    else if (spec.kind === 'width') value = spans[spec.span]?.widthIn ?? null;
+    if (spec.kind === 'girth') value = spans[spec.span]?.valueIn ?? calcValue(spec.span);
+    else if (spec.kind === 'width') value = spans[spec.span]?.widthIn ?? calcValue(spec.span);
     else if (spec.kind === 'vertical') value = verticals[spec.vertical]?.in ?? null;
     else if (spec.kind === 'path') value = paths[spec.path]?.in ?? null;
     else if (spec.kind === 'derived') {

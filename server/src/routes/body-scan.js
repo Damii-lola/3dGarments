@@ -1374,7 +1374,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   //    actually shows, in the group for the gender chosen. Anything the clip
   //    never showed simply is not in here â€” nothing is estimated, and nothing
   //    absent is mentioned.
-  const catalogue = buildCatalogue({ frames, gender: gender.guess, clothing });
+  const catalogue = buildCatalogue({ frames, gender: gender.guess, clothing, calc });
 
   // Nothing believable came out: refuse rather than print a made-up size.
   if (!catalogue.items.length) {
