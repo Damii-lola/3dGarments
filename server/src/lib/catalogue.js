@@ -321,7 +321,7 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
   // the calculated one when there is one, because the geometry span is often
   // dropped on a frame where the arms hide the ribs.
   const chestGirth = Number.isFinite(Number(calc?.chest)) ? Number(calc.chest) : spans.bust?.valueIn;
-  if (shoulderSpan && !shoulderSpan.fromCalc && Number.isFinite(chestGirth)) {
+  if (shoulderSpan && Number.isFinite(chestGirth)) {
     if (shoulderSpan.widthIn < chestGirth / 2.4 || shoulderSpan.widthIn > chestGirth / 1.75) {
       shoulderSpan.widthIn = null;
     }
