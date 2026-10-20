@@ -544,8 +544,8 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // point per frame. The calculation needs the points that decide its seven numbers
   // (head, shoulders, armpits, waist, hips, wrists, feet, crotch); knees and elbows
   // are read by the geometry pass and are not worth their tokens here.
-  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR',
-    'hipL', 'hipR', 'footL', 'footR'];
+  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR',
+    'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'];
   const raw = {
     keys: WANTED,
     frames: frames.map((f, i) => {
