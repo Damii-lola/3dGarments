@@ -1179,7 +1179,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
       // with it; three reads agree on most points and let the median throw out
       // the one that wandered. The first read is the careful one; the repeats run
       // warmer so the model looks afresh instead of echoing itself.
-      const wanted = Math.max(1, config.vision.reads);
+      // Each extra read is another request against Mistral's rate limit, so the
+      // count can be named on a single scan while it is being weighed.
+      const asked = Number(req.query.reads);
+      const wanted = Number.isFinite(asked) ? Math.min(3, Math.max(1, Math.round(asked))) : Math.max(1, config.vision.reads);
       const answers = await Promise.all(Array.from({ length: wanted }, (_, r) => callVision(
         file.buffer.toString('base64'),
         FRAME_PROMPT,
