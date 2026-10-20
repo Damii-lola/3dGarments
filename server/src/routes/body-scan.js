@@ -564,6 +564,12 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
   ];
+  // The backup answered once with the frame list and no measurements at all. If
+  // the first attempt missed, say plainly that the last reply was unusable.
+  const retryMessages = [
+    messages[0],
+    { role: 'user', content: `${messages[1].content}\n\nYour previous reply could not be used. Reply with ONLY the JSON object, and give every measurement a number in inches or null.` },
+  ];
 
   let out = null;
   let attempts = 0;
@@ -572,10 +578,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   let usedModel = null;
   while (!out && attempts < RECONCILE_ATTEMPTS) {
     const step = plan[attempts];
+    const msgs = attempts === 0 ? messages : retryMessages;
     attempts += 1;
     const t0 = Date.now();
     try {
-      const data = await callModelRaw(step.model, messages, { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: step.timeoutMs });
+      const data = await callModelRaw(step.model, msgs, { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) usedModel = step.model;
       else lastError = 'unreadable reply';
@@ -607,6 +614,10 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     const range = RANGES[k];
     if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
   }
+  // A reply with no usable numbers is not a calculation. Saying so keeps the rest
+  // of the scan from treating an empty object as an answer.
+  const mm = Object.keys(calc).length;
+  if (!mm) return { calc: null, relabelled, notes: [], attempts, waited, error: 'no measurements in the reply', model: usedModel };
   return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null, model: usedModel };
 }
 
