@@ -507,8 +507,8 @@ const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into on
 
 Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height. Give every number; null only when unsupported.
 
-Reply ONLY with JSON, adult inches:
-{"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
+Reply ONLY with JSON, adult inches, one view per frame in order:
+{"views":["front","front","profile","back"],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
@@ -639,9 +639,13 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError, model: null, usage };
 
   // Which frame is square-on decides every width's correction, and the raw pass
-  // labels all four "three-quarter". That is the one label worth fixing.
+  // labels all four "three-quarter". That is the one label worth fixing. The reply
+  // names the views in frame order; an older reply that echoed whole frame objects
+  // is still read, because a calculation is too expensive to throw away on shape.
   let relabelled = 0;
-  for (const fix of Array.isArray(out.frames) ? out.frames : []) {
+  const fixes = Array.isArray(out.frames) ? out.frames
+    : Array.isArray(out.views) ? out.views.map((v, i) => ({ i, view: v })) : [];
+  for (const fix of fixes) {
     const frame = frames[Number(fix?.i)];
     if (!frame) continue;
     const view = fix.view ? normView(fix.view) : frame.view;
