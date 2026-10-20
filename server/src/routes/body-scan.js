@@ -250,12 +250,12 @@ function frameDigest(f, reason) {
 /**
  * Run `fn` over `items`, at most `limit` at a time, keeping the order.
  *
- * The count and the limit are the same number on purpose: eight frames, eight
- * in flight, one wave. A vision call costs roughly 30 seconds, so a second wave
- * is another 30 seconds the shopper spends watching a spinner — and sixteen
- * fired at once is more than Cloudflare's shared GPUs will take (a live scan
- * came back with a 429, which is a measurement that never happened). Eight is
- * enough angles to measure a body and small enough to leave the GPUs alone.
+ * Four, not eight. Measured on the live API: eight calls at once come back as
+ * six in about 15 s and two in about 86 s — the extra two spend seventy seconds
+ * waiting for a GPU slot, and the whole scan waits with them. Two waves of four
+ * cost about 30 s and keep all eight angles, which is the trade the shopper
+ * actually wants. Sixteen at once is worse still: it draws a 429, which is a
+ * measurement that never happened.
  */
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
@@ -874,7 +874,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
   if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart.rows).length} size(s), for ${brand.sex})`);
 
-  await mapLimit(files, 8, async (file, i) => {
+  await mapLimit(files, 4, async (file, i) => {
     const frameStart = Date.now();
     try {
       const { text: raw, meta } = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 2600, json: true });
