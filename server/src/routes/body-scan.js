@@ -282,8 +282,11 @@ async function callModelRaw(model, messages, opts = {}) {
       try {
         return await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json });
       } catch (e) {
-        if (e?.upstream?.kind === 'capacity' && attempt < 1) {
-          await new Promise((r) => setTimeout(r, 900));
+        // A rate limit is the service describing its own pace, and the pacer in
+        // mistral.js has already taken the note. Give it room and try again —
+        // four frames on a one-a-second key need three waits between them.
+        if (e?.upstream?.kind === 'capacity' && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
           continue;
         }
         throw e;

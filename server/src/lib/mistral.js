@@ -5,6 +5,33 @@ import { aiErrorMessage, classifyAiError, recordVision } from './cloudflare.js';
 export const mistralConfigured = () => Boolean(config.vision.mistral.apiKey);
 
 /**
+ * Pacing, learned rather than assumed.
+ *
+ * Every Mistral key has a requests-per-second limit, and it is not the same on a
+ * free key as on a paid one — measured on this account: four frames fired at
+ * once came back as four `429 Rate limit exceeded`. So the gap between request
+ * STARTS begins at zero (a paid key should not be slowed for nothing) and only
+ * ever grows when the service says "rate limit". Calls still overlap in flight —
+ * the limit is on how often one may start, not on how many may run.
+ *
+ * One second and a bit, because the limit is one a second and a retry that lands
+ * 5 ms early is another 429.
+ */
+let gapMs = Number(process.env.MISTRAL_MIN_GAP_MS || 0);
+let nextStart = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function pacedStart() {
+  const now = Date.now();
+  const at = Math.max(now, nextStart);
+  nextStart = at + gapMs;
+  if (at > now) await sleep(at - now);
+}
+
+/** What the pacer has settled on — shown by /health so the pace is not a mystery. */
+export const mistralPace = () => ({ gap_ms: gapMs, next_start_in_ms: Math.max(0, nextStart - Date.now()) });
+
+/**
  * Mistral, spoken to directly.
  *
  * The shape is OpenAI's, which is the same shape `VISION_FORMATS[0]` in the body
@@ -28,6 +55,8 @@ export async function mistralChat(messages, { maxTokens = 2600, json = false, ti
   };
   if (json) payload.response_format = { type: 'json_object' };
 
+  await pacedStart();
+
   const res = await fetch(`${config.vision.mistral.apiBase}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -45,6 +74,12 @@ export async function mistralChat(messages, { maxTokens = 2600, json = false, ti
   if (!res.ok) {
     const msg = json2?.message || json2?.error?.message || text.slice(0, 300) || res.statusText;
     const kind = classifyAiError(res.status, msg);
+    if (res.status === 429) {
+      // The service just told us the pace. Take it, and let the retry wait.
+      const retryAfter = Number(res.headers.get('retry-after'));
+      gapMs = Math.max(gapMs, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1150);
+      nextStart = Math.max(nextStart, Date.now() + gapMs);
+    }
     recordVision(false, { status: res.status, kind, message: String(msg).slice(0, 300) });
     const err = new HttpError(502, aiErrorMessage(kind));
     err.upstream = { status: res.status, kind, message: String(msg).slice(0, 500) };

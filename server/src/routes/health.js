@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { config, missingConfig, visionConfigured, visionModelName } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
-import { mistralConfigured, verifyMistral } from '../lib/mistral.js';
+import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 
 const started = Date.now();
 export const health = Router();
@@ -52,6 +52,9 @@ health.get('/deep', async (_req, res) => {
     ? { provider: 'mistral', ...(await verifyMistral()) }
     : { provider: 'cloudflare', ...(await verifyCloudflare()), model: config.cloudflare.visionModel };
   out.vision.last_calls = visionStatus();
+  // What the client learned about the key's rate limit, so a slow scan has a
+  // visible reason instead of a mystery.
+  if (config.vision.provider === 'mistral') out.vision.pace = mistralPace();
   if (mistralConfigured()) out.vision.mistral_key_present = true;
 
   const ok = Object.values(out).every((v) => v.ok);
