@@ -119,13 +119,18 @@ export function bestSize(sex, girths, chart = CHARTS[sex], columns = null) {
   // The column a size is decided on has to be this body's own tape. Without it
   // there is no anchor to lay the table against, and no size beats a guessed one.
   if (!usable.includes(primary)) return null;
+  // A chart measured with the garment laid flat ("pit to pit") states half a
+  // circumference. The tape went round the body, so it is the body's half that
+  // gets compared with a flat column, never the full girth - which otherwise sits
+  // above every row and pins the answer to the largest size.
+  const onChart = (c) => (c.flat ? girths[c.field] / 2 : girths[c.field]);
   let best = null;
   for (const [sizeKey, row] of entries) {
     if (!Number.isFinite(row?.[primary.id])) continue;
-    const anchor = Math.abs(girths[primary.field] - row[primary.id]);
-    const worst = usable.reduce((m, c) => Math.max(m, Math.abs(girths[c.field] - row[c.id])), anchor);
+    const anchor = Math.abs(onChart(primary) - row[primary.id]);
+    const worst = usable.reduce((m, c) => Math.max(m, Math.abs(onChart(c) - row[c.id])), anchor);
     if (!best || worst < best.misfit) {
-      best = { sizeKey, row, key: primary.id, field: primary.field, label: primary.label, diff: anchor, misfit: worst };
+      best = { sizeKey, row, key: primary.id, field: primary.field, label: primary.label, diff: anchor, misfit: worst, flat: Boolean(primary.flat) };
     }
   }
   return best;
@@ -197,5 +202,31 @@ export function chartFromInput(input) {
     if (!Number.isFinite(r[anchor.id])) delete out[label];
   }
   if (!Object.keys(out).length) return null;
+  markFlatColumns(kept, out);
   return { rows: out, columns: kept };
+}
+
+/**
+ * Garment charts are printed two ways: girths taken round a body, and widths taken
+ * across a garment lying flat ("chest width", "pit to pit", "1/2 chest"). The two
+ * cannot be told apart by the label, but they can by the numbers: a chest column
+ * whose LARGEST size is under 28" is not describing an adult body, because no
+ * adult chest is 27" round. Waist and hips get the same treatment, with the floor
+ * moved to where a body stops being a body.
+ *
+ * Nothing is flagged when a column has no measure attached: a merchant's own
+ * unlabelled column (a length, a cuff) is not ours to reinterpret.
+ */
+const FLAT_BELOW = { chest: 28, bust: 28, waist: 24, hips: 30 };
+
+function markFlatColumns(columns, rows) {
+  const list = Object.values(rows || {});
+  for (const c of columns) {
+    const field = measureField(c.measure);
+    const floor = FLAT_BELOW[field];
+    if (!floor) continue;
+    const nums = list.map((r) => r[c.id]).filter((n) => Number.isFinite(n));
+    if (!nums.length) continue;
+    if (Math.max(...nums) < floor) c.flat = true;
+  }
 }

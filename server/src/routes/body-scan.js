@@ -1743,6 +1743,9 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     },
     size: size?.sizeKey || null,
     sizeChart: size?.row || null,
+    // True when the store's deciding column is a garment measured flat, so the
+    // row beside the size is a half-circumference rather than a body girth.
+    sizeChartFlat: Boolean(size?.flat),
     sizeBasis: size ? sizeBasis : null,
     // Whose chart answered: 'store' (the one carried in the link, which is the
     // garment actually being bought) or 'reference' (ours). null = no size.
