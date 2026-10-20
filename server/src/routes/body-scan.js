@@ -335,6 +335,7 @@ async function callModelRaw(model, messages, opts = {}) {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(payload),
+      ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
     });
     if (res.ok) {
       recordVision(true);
@@ -516,9 +517,17 @@ MEASUREMENTS, in INCHES, for a standing adult, and humanly possible:
 chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86. Use null for anything the frames cannot support.
 
 Reply with ONLY this JSON, no prose:
-{"frames":[{"i":0,"view":"front|back|side|three-quarter","turn":0,"landmarks":{"shoulderL":{"x":0,"y":0}}}],
+{"frames":[{"i":0,"view":"front|back|side|three-quarter","turn":0}],
  "measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":0},
  "notes":["what you corrected, in a few words"]}`;
+
+/**
+ * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
+ * can queue a call for two minutes; the shopper must never wait for that. If the
+ * calculation has not come back in time, the scan measures from the points it
+ * already has and says nothing about it.
+ */
+const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 12_000);
 
 async function reconcileWithCloudflare(frames) {
   const raw = frames.map((f, i) => ({
@@ -526,7 +535,6 @@ async function reconcileWithCloudflare(frames) {
     view: f.view,
     turn: Number.isFinite(f.turn) ? f.turn : null,
     visible: f.visible,
-    clothing: f.clothing?.topFit || undefined,
     landmarks: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
   }));
 
@@ -534,27 +542,22 @@ async function reconcileWithCloudflare(frames) {
   const data = await callModelRaw(model, [
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
-  ], { viaCloudflare: true, maxTokens: 2400, json: true, temperature: 0.1 });
+  ], { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0.1, timeoutMs: RECONCILE_TIMEOUT_MS });
 
   const out = parseJson(extractText(data));
-  if (!out || !Array.isArray(out.frames)) return null;
+  if (!out) return null;
 
-  let moved = 0;
-  for (const fix of out.frames) {
+  // Which frame is square-on decides every width's correction, and the raw pass
+  // labels all four "three-quarter". That is the one label worth fixing.
+  let relabelled = 0;
+  for (const fix of Array.isArray(out.frames) ? out.frames : []) {
     const frame = frames[Number(fix?.i)];
     if (!frame) continue;
-    if (fix.view) frame.view = normView(fix.view);
-    if (Number.isFinite(Number(fix.turn))) frame.turn = clamp(Number(fix.turn), [0, 90]);
-    if (fix.landmarks && typeof fix.landmarks === 'object') {
-      const corrected = normalizeLandmarks(fix.landmarks);
-      for (const [k, p] of Object.entries(corrected)) {
-        const was = frame.landmarks[k];
-        if (was && Math.abs(was.x - p.x) + Math.abs(was.y - p.y) < 0.005) continue;
-        frame.landmarks[k] = p;
-        moved += 1;
-      }
-      frame.scale = frameScale(frame);
-    }
+    const view = fix.view ? normView(fix.view) : frame.view;
+    const turn = Number.isFinite(Number(fix.turn)) ? clamp(Number(fix.turn), [0, 90]) : frame.turn;
+    if (view !== frame.view || turn !== frame.turn) relabelled += 1;
+    frame.view = view;
+    if (turn != null) frame.turn = turn;
   }
 
   const calc = {};
@@ -563,7 +566,7 @@ async function reconcileWithCloudflare(frames) {
     const range = RANGES[k];
     if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
   }
-  return { calc, moved, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [] };
+  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [] };
 }
 
 
@@ -1193,7 +1196,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
       const reck = await reconcileWithCloudflare(frames);
       if (reck) {
         calc = reck.calc;
-        log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms - ${reck.moved} point(s) corrected; said ${JSON.stringify(reck.calc)}`);
+        log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms - ${reck.relabelled} view(s) corrected; said ${JSON.stringify(reck.calc)}`);
         if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
       } else {
         log(`  Cloudflare returned no usable reconciliation (${Date.now() - t0}ms) - measuring from the raw points`);
@@ -1350,17 +1353,19 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   const fromCalc = [];
   if (calc) {
     for (const [k, v] of Object.entries(calc)) {
-      if (measured[k] || !REGIONS[k]) continue;
+      if (!REGIONS[k]) continue;
+      const had = Boolean(measured[k]);
       measured[k] = {
+        ...(measured[k] || {}),
         label: REGIONS[k].label,
         valueIn: v,
-        widthIn: null,
-        depthIn: null,
+        widthIn: measured[k]?.widthIn ?? null,
+        depthIn: measured[k]?.depthIn ?? null,
         girth: Boolean(REGIONS[k].girth),
-        confidence: 0.6,
+        confidence: Math.max(0.6, measured[k]?.confidence ?? 0),
         source: 'cloudflare',
       };
-      fromCalc.push(k);
+      if (!had) fromCalc.push(k);
     }
   }
   if (calc) diagnostics.calc = { filledByCloudflare: fromCalc, cloudflareSaid: calc };
