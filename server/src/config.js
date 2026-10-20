@@ -1,4 +1,4 @@
-const list = (v, fallback) =>
+﻿const list = (v, fallback) =>
   (v ?? fallback).split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
 
 export const config = Object.freeze({
@@ -25,7 +25,7 @@ export const config = Object.freeze({
   }),
   /**
    * Who reads the frames. `mistral` when a Mistral key is present (or when
-   * VISION_PROVIDER says so), otherwise Cloudflare — so pasting the key into
+   * VISION_PROVIDER says so), otherwise Cloudflare â€” so pasting the key into
    * Render is the whole switch, and deleting it is the whole rollback.
    *
    * The provider only ever answers "where are these landmarks". Every
@@ -41,7 +41,7 @@ export const config = Object.freeze({
     fallback: process.env.VISION_FALLBACK !== '0',
     mistral: Object.freeze({
       apiKey: process.env.MISTRAL_API_KEY || '',
-      model: process.env.MISTRAL_MODEL || 'mistral-small-latest',
+      model: process.env.MISTRAL_MODEL || 'ministral-14b-latest',
       apiBase: (process.env.MISTRAL_API_BASE || 'https://api.mistral.ai/v1').replace(/\/$/, ''),
     }),
   }),
@@ -81,3 +81,4 @@ export function visionConfigured() {
     ? Boolean(config.vision.mistral.apiKey)
     : Boolean(config.cloudflare.accountId && config.cloudflare.apiToken);
 }
+
