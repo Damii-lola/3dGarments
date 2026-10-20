@@ -505,7 +505,7 @@ async function callVision(b64, prompt, opts = {}) {
  */
 const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. Per frame: view, turn, missing parts, p = x,y pairs on a 0-100 grid in keys order (0,0 = absent).
 
-Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height.
+Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height. Give every number; null only when unsupported.
 
 Reply ONLY with JSON, adult inches:
 {"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
@@ -600,7 +600,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     attempts += 1;
     const t0 = Date.now();
     try {
-      const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 320, json: true, temperature: 0, timeoutMs: step.timeoutMs });
+      const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) {
         // A reply with no number in it is not an answer, whatever shape it has.
@@ -661,7 +661,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // of the scan from treating an empty object as an answer.
   const mm = Object.keys(calc).length;
   if (!mm) return { calc: null, relabelled, notes: [], attempts, waited, error: 'no measurements in the reply', model: usedModel };
-  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null, model: usedModel, usage };
+  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: attempts > 1 ? lastError : null, model: usedModel, usage };
 }
 
 
