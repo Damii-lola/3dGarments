@@ -106,7 +106,9 @@ async function prime(video) {
     if (played && typeof played.catch === 'function') played.catch(() => {});
   } catch { /* autoplay refused - wait for data instead */ }
   const ok = await waitForData(video, PRIME_TIMEOUT);
-  try { video.pause(); } catch { /* ignore */ }
+  // Deliberately left playing: pausing a tiny off-screen video can drop the
+  // decoded data again, and every later seek then times out. It is removed by
+  // withVideo() when the frames are done.
   return ok;
 }
 
