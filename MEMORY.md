@@ -785,3 +785,45 @@ Measured on the fixed four frames in `%TEMP%\opencode\frames4` (same clip, feet 
 - **Debug knobs on the live API:** `?calcModel=<model>` and `?reads=<1-3>`.
 - One scan can still take 30 s when the rate limit bites. That is the queue, not the maths.
 
+---
+
+## Calculation cost, and why the live chart said XXL (commits ef8fd5b..51710d6)
+
+**Tokens per calculation, measured from the reply's own usage field:**
+
+| version | in | out | total |
+|---|---|---|---|
+| long prompt + object-per-point (original) | ~1300 | up to 600 | ~1900-2700 |
+| compact prompt, object points | 1241 | 100 | ~1340 |
+| flat number table, 18 points | 901 | 100 | ~1000 |
+| flat number table, 14 points | 902 | 100 | ~1000 |
+| **flat table, 10 points, terse rules (now)** | **545** | **206** | **~750** |
+
+- The **output is 206 tokens for a ~100-token JSON**: `qwen3.8-27b` spends the rest
+  thinking. `llama-3.3-70b-fp8-fast` answers in ~100 but reads waist 28 / hips 40.
+- The point table is the measurement, so it is the floor: 10 points x 2 numbers x 4
+  frames. Cutting it further (armpits, wrists) cost the shoulder reading, which now
+  falls back to geometry (20-21" against a 19" truth).
+- **Do not shorten the rules.** A 100-word prompt without "one head in every frame",
+  "wrist below the hip" and "shoulders at least as wide as hips" read chest 32 and
+  waist 24 on the same four frames (truth 40.8 / 32.2). Wording that states the
+  invariants is what keeps the chest at 38-40; it is ~120 tokens and it is load-bearing.
+- Workers AI bills **neurons**, not tokens, but they scale together. The 10,000
+  free neurons lasted ~60 scans at ~2,700 tokens (~165 neurons/scan); at ~750 tokens
+  that is roughly 45 neurons a scan, so ~200 scans a day. The allowance resets
+  around 00:00 UTC; `/health/deep?calc=1&model=...` reports the refusal verbatim.
+- Mistral's key states `x-ratelimit-limit-req-minute: 30`; a scan sends 12 reads.
+  The pacer is now a rolling minute with an 80% burst cap, not a 1.1 s metronome.
+
+**The test chart is why the size looked wrong.** `iosbo5ufoui8` ("Mil Spec Crew")
+carries chest 22.75 (S) to 27.75 (XXL) - widths taken across a garment lying flat, not
+body girths. A 38" chest sits above every row, so the old scorer answered the largest
+size every time. `chartFromInput` now marks a chest column whose largest value is
+under 28" as flat (waist 24", hips 30") and `bestSize` compares half the body girth with
+it; a column with no measure is never reinterpreted. Ties between two sizes now go to
+the larger one (the garment that closes), not the smaller.
+
+With that chart the scan answers **S**, because its own S row is a 45.5" finished
+chest. A chart of real girths (36/40/44/48) answers M for the same body. If the
+merchant meant body girths, the table needs real ones.
+
