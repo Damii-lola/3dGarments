@@ -348,15 +348,19 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
   // step, which saw every frame together. Map span → region so 'bust' finds
   // 'chest'.
   const spanRegion = Object.fromEntries(SPAN_SETS.map(([k, r]) => [k, r]));
-  const calcValue = (span) => {
+  const calcValue = (span, kind) => {
+    // A girth is not a width: the only flat width the calculation step reports is
+    // the shoulder span. Filling "back width" from a chest circumference put a
+    // 38" girth into a 14" slot.
+    if (kind === 'width' && span !== 'shoulder') return null;
     const n = calc ? Number(calc[spanRegion[span]]) : NaN;
     return Number.isFinite(n) ? n : null;
   };
   for (const spec of CATALOGUE[group]) {
     let value = null;
     let how = null;
-    if (spec.kind === 'girth') value = spans[spec.span]?.valueIn ?? calcValue(spec.span);
-    else if (spec.kind === 'width') value = spans[spec.span]?.widthIn ?? calcValue(spec.span);
+    if (spec.kind === 'girth') value = spans[spec.span]?.valueIn ?? calcValue(spec.span, spec.kind);
+    else if (spec.kind === 'width') value = spans[spec.span]?.widthIn ?? calcValue(spec.span, spec.kind);
     else if (spec.kind === 'vertical') value = verticals[spec.vertical]?.in ?? null;
     else if (spec.kind === 'path') value = paths[spec.path]?.in ?? null;
     else if (spec.kind === 'derived') {
