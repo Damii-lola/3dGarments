@@ -84,12 +84,28 @@ const VERTICALS = {
 };
 
 /**
- * Paths through joint landmarks. A sleeve length is the tape from the shoulder
- * point to the wrist bone — the body's measurement, which is what a garment is
- * then cut from.
+ * Paths through landmarks. Two lengths are asked for by the same word, and they
+ * are 9 inches apart on an adult, so both are read rather than one being called
+ * "sleeve length" and the other left out:
+ *
+ *   centreBackToWrist  the NAPE, out over the shoulder point, through the elbow,
+ *                      to the wrist bone. This is what a shirt chart prints as
+ *                      "sleeve length", what a tailor tapes, and what a garment
+ *                      is graded along. A 6'1" man is about 31-33".
+ *   shoulderToWrist    the shoulder point itself, through the elbow, to the wrist
+ *                      bone: the arm as anatomy counts it, about 22-24" on the same
+ *                      man. Shorter by the neck-to-shoulder run, which is half the
+ *                      shoulder width - the same tape, laid from a different start.
  */
 const PATHS = {
+  centreBackToWrist: { points: ['neckCentre', 'shoulder', 'elbow', 'wrist'], range: [20, 44] },
   shoulderToWrist: { points: ['shoulder', 'elbow', 'wrist'], range: [16, 33] },
+};
+
+/** What each path actually runs along, said in words the shopper can check. */
+const PATH_WORDS = {
+  centreBackToWrist: 'the nape of your neck, out over your shoulder point, through your elbow, to your wrist bone',
+  shoulderToWrist: 'your shoulder point, through your elbow, to your wrist bone',
 };
 
 /** How a row is named when it is described back to the user. */
@@ -117,7 +133,8 @@ const MEN = [
   { key: 'shoulder', label: 'Shoulder', kind: 'width', span: 'shoulder' },
   { key: 'napeToWaist', label: 'Nape to waist', kind: 'vertical', vertical: 'napeToWaist' },
   { key: 'armholeDepth', label: 'Armscye depth', kind: 'vertical', vertical: 'armholeDepth' },
-  { key: 'sleeveLength', label: 'Sleeve Length', kind: 'path', path: 'shoulderToWrist' },
+  { key: 'sleeveLength', label: 'Sleeve Length', kind: 'path', path: 'centreBackToWrist', note: 'measured from the nape, the way a shirt chart measures it' },
+  { key: 'armLength', label: 'Arm (shoulder to wrist)', kind: 'path', path: 'shoulderToWrist' },
   { key: 'shoulderToWaist', label: 'Front Shoulder to Waist', kind: 'vertical', vertical: 'shoulderToWaist' },
   { key: 'waistToKnee', label: 'Waist to Knee', kind: 'vertical', vertical: 'waistToKnee' },
   { key: 'waistToHip', label: 'Waist to Hip', kind: 'vertical', vertical: 'waistToHip' },
@@ -163,7 +180,8 @@ const WOMEN = [
   { key: 'waistToHip', label: 'Waist to Hip', kind: 'vertical', vertical: 'waistToHip' },
   { key: 'waistToFloor', label: 'Waist to Floor', kind: 'vertical', vertical: 'waistToFloor' },
   { key: 'bodyRise', label: 'Body Rise', kind: 'vertical', vertical: 'bodyRise' },
-  { key: 'sleeveLength', label: 'Sleeve Length', kind: 'path', path: 'shoulderToWrist' },
+  { key: 'sleeveLength', label: 'Sleeve Length', kind: 'path', path: 'centreBackToWrist', note: 'measured from the nape, the way a shirt chart measures it' },
+  { key: 'armLength', label: 'Arm (shoulder to wrist)', kind: 'path', path: 'shoulderToWrist' },
   { key: 'cuffShirts', label: 'Cuff Size Shirts', kind: 'derived', derive: 'cuffShirts' },
   { key: 'trouserBottom', label: 'Trouser Bottom Width', kind: 'derived', derive: 'trouserBottom' },
 ];
@@ -258,7 +276,7 @@ function howFor(spec, ev, value) {
   if (spec.kind === 'path') {
     const v = ev.paths[spec.path];
     if (!v) return null;
-    const line = 'the shoulder point, through the elbow, to the wrist bone';
+    const line = PATH_WORDS[spec.path] || 'your shoulder point, through your elbow, to your wrist bone';
     return `${round1(value)}" from ${line}, from ${v.n} frame${v.n === 1 ? '' : 's'}`;
   }
   return null;

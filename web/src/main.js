@@ -379,7 +379,8 @@ const ABOUT = {
   calf: { what: 'How big around your calf is.', where: 'Around the fattest part of your calf.' },
   highAnkle: { what: 'How big around your leg is above the ankle.', where: 'Around your leg just above the ankle bone.' },
   ankle: { what: 'How big around your ankle is.', where: 'Around your ankle bone, over the bump.' },
-  sleeveLength: { what: 'How long your arm is.', where: 'From your shoulder corner, over a slightly bent elbow, down to your wrist bone.' },
+  sleeveLength: { what: 'How long a sleeve has to be.', where: 'From the nape of your neck, out over your shoulder point, down through a slightly bent elbow, to your wrist bone. This is how a shirt chart measures it.' },
+  armLength: { what: 'How long your arm is, without the shoulder.', where: 'From your shoulder point, through a slightly bent elbow, down to your wrist bone. Shorter than the sleeve length by the run across your shoulder.' },
   napeToWaist: { what: 'How long your back is.', where: 'From the bump at the bottom of your neck, down your back, to your belt line.' },
   shoulderToWaist: { what: 'How long your front is.', where: 'From your shoulder line, down the front, to your belt line.' },
   armholeDepth: { what: 'How deep the armhole needs to be.', where: 'From your shoulder line straight down to your armpit.' },
@@ -505,7 +506,7 @@ const GROUPS = [
   {
     title: 'How long things are',
     note: 'shoulder to wrist, waist to floor',
-    keys: ['sleeveLength', 'napeToWaist', 'shoulderToWaist', 'armholeDepth', 'waistToKnee', 'waistToHip', 'waistToFloor', 'bodyRise', 'upperbodyHeight', 'lowerbodyHeight'],
+    keys: ['sleeveLength', 'armLength', 'napeToWaist', 'shoulderToWaist', 'armholeDepth', 'waistToKnee', 'waistToHip', 'waistToFloor', 'bodyRise', 'upperbodyHeight', 'lowerbodyHeight'],
   },
   {
     title: 'Cuffs and trouser bottoms',
@@ -936,7 +937,8 @@ if (new URLSearchParams(location.search).has('demo')) {
         { key: 'shoulder', label: 'Shoulder', in: 18.3, cm: 46.5, how: '18.3" across the shoulders, from 3 frames' },
         { key: 'backWidth', label: 'Back Width', in: 18.0, cm: 45.7, how: '18.0" across your back at armpit level, from 2 frames' },
         { key: 'napeToWaist', label: 'Nape to waist', in: 17.4, cm: 44.2, how: '17.4" from the nape of your neck to your waist line, from 4 frames' },
-        { key: 'sleeveLength', label: 'Sleeve Length', in: 24.1, cm: 61.2, how: '24.1" from the shoulder point, through the elbow, to the wrist bone, from 3 frames' },
+        { key: 'sleeveLength', label: 'Sleeve Length', in: 33.3, cm: 84.6, how: '33.3" from the nape of your neck, out over your shoulder point, through your elbow, to your wrist bone, from 3 frames' },
+        { key: 'armLength', label: 'Arm (shoulder to wrist)', in: 24.1, cm: 61.2, how: '24.1" from your shoulder point, through your elbow, to your wrist bone, from 3 frames' },
         { key: 'waistToKnee', label: 'Waist to Knee', in: 22.4, cm: 56.9, how: '22.4" from your waist line to your knee, from 4 frames' },
         { key: 'waistToFloor', label: 'Waist to Floor', in: 41.4, cm: 105.2, how: '41.4" from your waist line to the floor, from 4 frames' },
         { key: 'calf', label: 'Calf', in: 15.3, cm: 38.9, how: '5.0" across x 4.8" deep (0.95x width, modelled) -> a tape of 15.3" around it' },

@@ -59,7 +59,6 @@ import { HttpError, ah } from '../lib/errors.js';
 import { framesFromVideo, MAX_FRAMES } from '../lib/videoFrames.js';
 import {
   CM_PER_IN,
-  GIRTH_REGIONS,
   HEAD_HEIGHT_CM,
   REGIONS,
   clamp,
@@ -82,7 +81,8 @@ import {
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
-import { bestSize, chartFromInput } from '../lib/sizing.js';
+import { bestSize, chartFromInput, CHARTS, chartKey, columnsFromRows } from '../lib/sizing.js';
+import { measureField } from '../shared/measures.js';
 
 /**
  * Uploads land on disk, not in memory: a phone clip can be tens of megabytes and
@@ -117,7 +117,7 @@ const RANGES = {
   hips: [28, 66],
   shoulder: [14, 26],
   neck: [11, 22],
-  arm: [8, 22],
+  arm: [9, 22],
   height: [54, 86],
 };
 
@@ -129,7 +129,7 @@ const FRAME_PROMPT = `You are a measuring instrument, not a guesser. You are sho
 
 STEP 1 - FIND THE PERSON. Ignore the background, furniture, other people, pets, text and objects. Use only the single person in the foreground. If no person is clearly visible, reply {"personVisible": false} and nothing else.
 
-STEP 2 - WHICH WAY ARE THEY FACING? "view": front | back | side | three-quarter (a side view is a left or right profile).
+STEP 2 - WHICH WAY ARE THEY FACING? "view": front | back | side | three-quarter (a side view is a left or right profile). Also give "turn": how far the body has rotated away from square-on to the camera, in whole degrees 0-90, kept consistent with the view (front or back 0-15, three-quarter 25-65, side 70-90).
 
 STEP 3 - PLACE LANDMARKS. Give each point as x,y on a 0-100 scale of THIS image: x=0 is the left edge and x=100 the right edge; y=0 is the top edge and y=100 the bottom. WHOLE NUMBERS only, no decimals.
 A labelled 10x10 grid has been drawn over the image to help you: the numbers along the TOP edge give x and the numbers down the LEFT edge give y. Read each landmark against that grid so it lands within a few percent of the right place. The grid is only an overlay — ignore it otherwise, it is not clothing and not part of the scene.
@@ -137,7 +137,7 @@ Points:
   headTop     top of the skull
   chin        the LOWEST point of the chin/jaw, below the mouth - not the mouth, not the lip
   neckL, neckR       left/right edges of the neck where it meets the shoulders
-  shoulderL, shoulderR   the outer bony corners of the shoulders
+  shoulderL, shoulderR   the outer bony corners of the shoulders - the WIDEST points of the deltoids, level with the top of the armpit. Not the neck, not the collarbone, not the inner edge of the arm
   armpitL, armpitR   left/right edges of the TORSO at armpit/chest level - the torso only, NOT the arms
   waistL, waistR     left/right edges of the torso at the narrowest point of the waist
   hipL, hipR         left/right edges of the body at the widest hip/seat point
@@ -174,27 +174,29 @@ STEP 7 - WHO. gender: male | female | unsure with genderConfidence 0-1, judged f
 
 HOW THE POINTS RELATE ON A REAL STANDING ADULT - a check on your own answer, never a substitute for looking at the frame:
   - the whole body is about 7.5 head-lengths tall, so in a full-body frame the head is about 1/7.5 of the person's height
-  - the bony shoulder corners are about 2.1 head-lengths apart
+  - the bony shoulder corners are about 2.1 head-lengths apart. CHECK THIS: take your own headTop-to-chin distance and your own shoulderL-to-shoulderR distance. If the shoulders are less than two head-lengths apart you have placed them on the neck or the armpits - move them out onto the widest bony corners and check again
+  - the elbow joint sits about 3.3 head-lengths below the crown and the wrist bone about 4.6, so the wrist bone hangs BELOW the widest hip point and well below the waist - never level with the waist, never at the hip
   - the chest is a little narrower than the shoulders, the waist narrower again, and the hips a little wider than the waist
 
 Respond with ONLY this JSON, no markdown and no prose outside it. The numbers in it are only the FORMAT, and happen to describe one full-body portrait frame with the person filling it: they are not an answer to copy, and the person in your frame may sit in a completely different part of the image.
 {
   "personVisible": true,
   "view": "front",
+  "turn": 0,
   "gender": "male",
   "genderConfidence": 0.0,
   "build": "average",
   "landmarks": {
     "headTop": { "x": 50, "y": 5 },
     "chin": { "x": 50, "y": 17 },
-    "neckL": { "x": 45, "y": 20 }, "neckR": { "x": 55, "y": 20 },
-    "shoulderL": { "x": 28, "y": 24 }, "shoulderR": { "x": 72, "y": 24 },
-    "armpitL": { "x": 31, "y": 31 }, "armpitR": { "x": 69, "y": 31 },
-    "waistL": { "x": 35, "y": 42 }, "waistR": { "x": 65, "y": 42 },
+    "neckL": { "x": 45, "y": 19 }, "neckR": { "x": 55, "y": 19 },
+    "shoulderL": { "x": 28, "y": 21 }, "shoulderR": { "x": 72, "y": 21 },
+    "armpitL": { "x": 31, "y": 27 }, "armpitR": { "x": 69, "y": 27 },
+    "waistL": { "x": 35, "y": 40 }, "waistR": { "x": 65, "y": 40 },
     "hipL": { "x": 34, "y": 47 }, "hipR": { "x": 66, "y": 47 },
-    "armL": { "x": 21, "y": 32 }, "armR": { "x": 31, "y": 32 },
-    "elbowJointL": { "x": 19, "y": 40 }, "elbowJointR": { "x": 33, "y": 40 },
-    "wristJointL": { "x": 18, "y": 50 }, "wristJointR": { "x": 34, "y": 50 },
+    "armL": { "x": 21, "y": 30 }, "armR": { "x": 31, "y": 30 },
+    "elbowJointL": { "x": 26, "y": 38 }, "elbowJointR": { "x": 74, "y": 38 },
+    "wristJointL": { "x": 25, "y": 51 }, "wristJointR": { "x": 75, "y": 51 },
     "crotch": { "x": 50, "y": 52 },
     "footL": { "x": 45, "y": 95 }, "footR": { "x": 55, "y": 95 }
   },
@@ -882,6 +884,14 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
         const frame = {
           file: file.originalname,
           view: normView(parsed.view),
+          // How far the body is turned, when the model gave one. A clip is a
+          // person TURNING, so a frame called "front" can be 30 degrees off, and
+          // every width read off it is short by cos(30) = 13%. Without a number
+          // here the turn could only be inferred from the view label, which is
+          // exactly the thing that was wrong.
+          turn: (parsed.turn != null && Number.isFinite(Number(parsed.turn)))
+            ? clamp(Number(parsed.turn), [0, 90])
+            : undefined,
           gender: chosenGender !== 'unsure' ? chosenGender : normGender(parsed.gender),
           genderConfidence: Number(parsed.genderConfidence) || 0,
           build: typeof parsed.build === 'string' ? parsed.build : null,
@@ -1025,6 +1035,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   const measured = {};
   const methods = {};
   const dropped = [];
+  const outOfRange = [];
   const rejectedEverywhere = [];
   const droppedByCheck = new Set();
   for (const key of Object.keys(REGIONS)) {
@@ -1038,14 +1049,19 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     if (r.skipped) droppedByCheck.add(REGIONS[key].label);
     // The core girths have hand-written plausibility ranges; everything else is
     // already bounded by the span ranges the frame check applied.
+    //
+    // A reading outside its range is NOT this measurement, so it is dropped
+    // rather than pulled to the nearest edge. The edge is a number nobody
+    // measured, and it reads back on the panel exactly like one that was: a 12"
+    // shoulder used to be reported as "14", the floor of the range, which is a
+    // confident wrong answer where "could not be read" is the true one.
     const range = RANGES[key];
-    if (range) {
-      const v = clamp(r.valueIn, range);
-      r.clamped = Math.abs(v - r.valueIn) > 0.05;
-      r.valueIn = v;
-    } else {
-      r.clamped = false;
+    if (range && (r.valueIn < range[0] || r.valueIn > range[1])) {
+      dropped.push(key);
+      outOfRange.push(REGIONS[key].label.toLowerCase());
+      continue;
     }
+    r.clamped = false;
     measured[key] = r;
     methods[key] = {
       label: r.label,
@@ -1121,11 +1137,19 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     arm: round1(measured.arm?.valueIn),
     height: round1(heightIn),
   };
+  // Taking the fabric off can, at the extreme, push a reading under the floor of
+  // what a body can be. A number that only exists because it was pulled back up
+  // to the floor is a number nobody measured, so it goes null instead.
+  const afterCloth = (v, range) => {
+    if (v == null) return null;
+    const out = round1(v);
+    return out < range[0] || out > range[1] ? null : out;
+  };
   const adjusted = {
-    chest: seen.chest != null ? round1(clamp(seen.chest - removed, RANGES.chest)) : null,
-    waist: seen.waist != null ? round1(clamp(seen.waist - removed, RANGES.waist)) : null,
-    hips: seen.hips != null ? round1(clamp(seen.hips - removedLower, RANGES.hips)) : null,
-    shoulder: seen.shoulder != null ? round1(clamp(seen.shoulder - removedWidth, RANGES.shoulder)) : null,
+    chest: afterCloth(seen.chest == null ? null : seen.chest - removed, RANGES.chest),
+    waist: afterCloth(seen.waist == null ? null : seen.waist - removed, RANGES.waist),
+    hips: afterCloth(seen.hips == null ? null : seen.hips - removedLower, RANGES.hips),
+    shoulder: afterCloth(seen.shoulder == null ? null : seen.shoulder - removedWidth, RANGES.shoulder),
     neck: seen.neck,
     arm: seen.arm,
     height: seen.height,
@@ -1187,6 +1211,34 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     }
   }
 
+  // Why a size is missing, named properly.
+  //
+  // The refusal a shopper meets most is a clip that WAS square on, whose deciding
+  // number was refused. Saying "this clip did not show a straight-on front view
+  // with the arms clear of the sides" when the front view was fine and the chest
+  // was what failed is not a hedge, it is a wrong explanation - and it sends the
+  // shopper off to re-shoot a video that was never the problem. So the reason is
+  // derived from what is actually absent.
+  const decidingColumn = (() => {
+    if (chart) {
+      const cols = chart.columns?.length ? chart.columns : columnsFromRows(chart.rows);
+      const col = cols.find((c) => measureField(c.measure));
+      return col ? { field: measureField(col.measure), label: col.label } : null;
+    }
+    const key = chartKey(CHARTS[sheet || 'male']) || 'chest';
+    return { field: measureField(key) || 'chest', label: key === 'bust' ? 'bust' : key };
+  })();
+  const sizeMissingReason = size ? null : (() => {
+    const square = frames.filter((f) => f.view === 'front' || f.view === 'back').length;
+    if (!square) return 'the clip never showed you square on to the camera, front or back.';
+    if (decidingColumn && adjusted[decidingColumn.field] == null) {
+      const word = decidingColumn.field === 'arm' ? 'upper arm' : decidingColumn.field;
+      const framesWord = frames.length === 1 ? 'this frame' : `these ${frames.length} frames`;
+      return `your ${word} is the number this ${chartName ? 'garment' : 'size'} is decided on, and it could not be read from ${framesWord}.`;
+    }
+    return 'the numbers this size is laid against could not be read from the clip.';
+  })();
+
   // 9. Notes. Only ever about what WAS measured, or about the video itself.
   //    A category the clip did not contain is simply absent from the list
   //    above — announcing the blank would suggest we had an opinion about it.
@@ -1204,9 +1256,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   if (rejectedEverywhere.length || droppedByCheck.size) {
     notes.push('One reading came out impossible for a human body in every frame that showed it, so it was left out rather than guessed.');
   }
-  const clampedRegions = GIRTH_REGIONS.filter((k) => measured[k]?.clamped);
-  if (clampedRegions.length) {
-    notes.push('A girth read outside the plausible range and has been clamped — treat it as the least reliable number here.');
+  if (outOfRange.length) {
+    notes.push(`A reading came back outside what a human body can be (${outOfRange.join(', ')}), so it was left out rather than pulled to the edge of the range.`);
   }
   if (heightIn == null && (measured.chest || measured.waist || measured.hips)) {
     notes.push('Your feet were not in shot, so nothing that needs the floor could be read.');
@@ -1280,8 +1331,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     }
   } else {
     notes.push(chartName
-      ? `No size is given for ${chartName}: this clip did not show a straight-on front view with the arms clear of the sides.`
-      : 'No size was given: this clip did not show a straight-on front view with the arms clear of the sides.');
+      ? `No size is given for ${chartName}: ${sizeMissingReason}`
+      : `No size was given: ${sizeMissingReason}`);
   }
   if (frames.length < 3) notes.push(`Only ${frames.length} usable frame${frames.length === 1 ? '' : 's'} came out of the video.`);
   if (h && h.views > 1 && h.spread > 3) {

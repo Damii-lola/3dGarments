@@ -346,6 +346,24 @@ const fusedHips = ready({
 });
 checkTrue('a hip row wider than the shoulders is refused too', fusedHips.bad.has('hips'), [...fusedHips.bad].join(',') || 'nothing dropped');
 checkTrue('a chest the arms genuinely clear is kept', !ready(frontFrame()).bad.has('chest'), 'kept');
+checkTrue('and an honest shoulder line is kept', !ready(frontFrame()).bad.has('shoulder'), 'kept');
+
+console.log('\n== a shoulder on the neck must not convict the chest ==');
+// One real clip came back with a 14" shoulder against a true 19": the two points
+// had landed near the neck. Because every torso row is judged against a fraction
+// of the shoulder span, that short ruler then called a perfectly good chest "the
+// arms" in every frame - and a scan with no chest has no size. Two things have to
+// hold: the short shoulder is not published, and it is not used as the ruler.
+const neckShoulder = ready({
+  ...body,
+  landmarks: {
+    ...body.landmarks,
+    shoulderL: body.landmarks.neckL,
+    shoulderR: body.landmarks.neckR,
+  },
+});
+checkTrue('a shoulder placed on the neck is refused, not published', neckShoulder.bad.has('shoulder'), [...neckShoulder.bad].join(',') || 'nothing dropped');
+checkTrue('and a short shoulder ruler does not condemn the chest', !neckShoulder.bad.has('chest'), 'chest kept');
 
 console.log('\n== what is not visible is left blank ==');
 const torsoOnly = scaled(frontFrame());
@@ -419,7 +437,16 @@ checkTrue('chest is a chest girth', near(item(men, 'chest')?.in, 39, 43), `chest
 checkTrue('head, neck, waist, lower waist and hips all come out', ['head', 'neck', 'waist', 'lowWaist', 'hips'].every((k) => item(men, k)), men.items.slice(0, 6).map((i) => i.label).join(', '));
 checkTrue('nape to waist is a real length', near(item(men, 'napeToWaist')?.in, 15, 19), `nape->waist ${item(men, 'napeToWaist')?.in} in`);
 checkTrue('armscye depth is the shoulder-to-armpit drop', near(item(men, 'armholeDepth')?.in, 5, 8), `armscye ${item(men, 'armholeDepth')?.in} in`);
-checkTrue('sleeve length runs shoulder -> elbow -> wrist', near(item(men, 'sleeveLength')?.in, 21, 26), `sleeve ${item(men, 'sleeveLength')?.in} in`);
+checkTrue('the arm is shoulder -> elbow -> wrist', near(item(men, 'armLength')?.in, 21, 26), `arm ${item(men, 'armLength')?.in} in`);
+// A shirt chart's "sleeve length" starts at the nape, not at the shoulder point:
+// the tape runs out across the shoulder first. That run is half the shoulder
+// width, so on this 46 cm-shouldered 176 cm man it must add about 9" - and on a
+// real 6'1" man with a 19" shoulder it is what turns a 23" arm into a 31" sleeve.
+checkTrue('sleeve length starts at the nape, the way a shirt chart measures it',
+  near(item(men, 'sleeveLength')?.in, 28, 35), `sleeve ${item(men, 'sleeveLength')?.in} in`);
+checkTrue('and is longer than the arm by the run across the shoulder',
+  item(men, 'sleeveLength')?.in > item(men, 'armLength')?.in + 5,
+  `${item(men, 'sleeveLength')?.in} vs ${item(men, 'armLength')?.in} in`);
 
 console.log('\n== the arm survives both naming schemes and a turned frame ==');
 // The vision model is asked for shoulderL / elbowJointL / wristJointL, the pose

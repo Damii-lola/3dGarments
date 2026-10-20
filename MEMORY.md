@@ -333,6 +333,35 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   `REGIONS` those are the two EDGES of one limb (a girth), so using them as left/right joints would
   read the distance between the elbows as an arm. `measurePath` also undoes the frame's turn by
   dividing the horizontal component by cos(turn); frames past 60° are skipped — too little left to undo.
+- **"Sleeve length" now means what a shirt chart means, and the arm is read separately.** On a 6'1"
+  man the app reported 22" against a true 31", and neither number was wrong: 22" is the anatomical
+  shoulder-point-to-wrist-bone arm (ANSUR's mean is 21.8"), while a shirt chart's sleeve length starts
+  at the NAPE and runs out over the shoulder first — about 9" more, which is half the shoulder width.
+  `PATHS.centreBackToWrist` (`neckCentre → shoulder → elbow → wrist`, where `neckCentre` is the
+  midpoint of `neckL/R`, a point the prompt already asks for) now feeds `sleeveLength`, and
+  `shoulderToWrist` feeds a new `armLength` row, labelled "Arm (shoulder to wrist)". On the
+  geometry fixture that is 32.9" vs 23.7"; on a 19"-shouldered man, 31" vs 23". A chart column typed
+  "Sleeve Length" is still informational (`MEASURES` has no sleeve id), so this changes what the
+  shopper is SHOWN, never how a size is decided.
+- **A shoulder that is not a shoulder used to cost the whole scan its size.** One real clip came back
+  with a 14" shoulder against a true 19" (the points had landed near the neck). `TORSO_SPAN_LIMIT`
+  judges every torso row against a fraction of the shoulder span, so that short ruler called a good
+  chest "the arms" in every frame, `bestSize` had no chest to anchor on, and the shopper got no size —
+  with a note blaming "no straight-on front view". Two fixes: `checkFrame` now cross-checks
+  `shoulderL-shoulderR` against `headTop-chin` (`SHOULDER_HEAD_RATIO` 1.55-2.60 head-lengths, adults
+  run 1.65-2.35) and DROPS the shoulder when it fails, and the relational torso test is skipped in a
+  frame whose own shoulder failed — a bad ruler no longer convicts the chest. The no-size note is now
+  derived from the chart's deciding column ("your chest … could not be read"), not guessed at.
+- **A reading outside its plausible range is dropped, not clamped to the edge.** Clamping published
+  the range's own floor as if it were measured — a 12" shoulder came back as "14", a 7" upper arm as
+  "8" — which is a confident wrong number where "could not be read" is the true one. Applies both to
+  the region pass and to the fabric subtraction (`afterCloth`), which can only push a value under the
+  floor. `RANGES.arm` moved to [9, 22] because an adult upper arm below 9" is not a reading.
+- **The vision model is now asked for `turn` (0-90°) and the vision path keeps it.** The clip is a
+  person TURNING, so a frame called "front" can be 30° off, and every width off it is short by
+  cos 30 = 13% — the other plausible cause of that 14-16.6" shoulder. `frameTurn` already preferred a
+  numeric turn; the frame object simply never carried the model's answer. The prompt pins the number
+  to the view (front/back 0-15, three-quarter 25-65, side 70-90) so it cannot drift into nonsense.
 - **The confirmation link goes to the login page.** `signUp` asks for `emailRedirectTo:
   accountPageUrl()` = `<origin>/<base>auth/` (built from `import.meta.env.BASE_URL`, not from the
   current path), and the account screen picks the session up and opens the scanner. That is only half

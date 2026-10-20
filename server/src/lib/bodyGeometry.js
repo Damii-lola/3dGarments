@@ -166,6 +166,35 @@ export const TORSO_SPAN_LIMIT = {
   female: { upperChest: 0.74, chest: 0.74, underbust: 0.74, waist: 0.97, lowWaist: 0.97, hips: 1.0 },
 };
 
+/**
+ * How many HEAD-LENGTHS apart a pair of bony shoulder corners is, in a frame
+ * square on to the camera.
+ *
+ * This is the one cross-check the shoulder has that does not need a scale,
+ * because it compares two landmarks of the same body in the same frame: the
+ * span shoulderL-shoulderR against the span headTop-chin. It is not used to
+ * BUILD a shoulder (a modelled shoulder is an opinion, not a measurement); it is
+ * used to spot one that cannot be a shoulder at all, so that it is neither
+ * published nor allowed to judge anything else.
+ *
+ * The band is deliberately wide. Across ANSUR II the bideltoid runs about 2.06
+ * head-lengths in men and 1.93 in women, and adult extremes reach roughly 1.65
+ * (a small woman) and 2.35 (a broad man). Anything inside 1.55-2.60 is left
+ * alone; outside it, the two points are on the neck, on the armpits or on the
+ * background, and the honest answer is that this frame has no shoulder.
+ *
+ * Why it matters beyond the shoulder row: TORSO_SPAN_LIMIT, above, judges every
+ * torso row against a fraction of the shoulder span. One real clip came back with
+ * a 14" shoulder against a true 19" - about 1.5 head-lengths, the points having
+ * landed near the neck - and that short ruler then rejected a perfectly good
+ * chest as "the arms" in every single frame, which cost the whole scan its size.
+ * A reading that is not a shoulder must not be allowed to convict a chest.
+ */
+export const SHOULDER_HEAD_RATIO = [1.55, 2.6];
+
+/** The turn, in degrees, up to which the shoulder cross-check above is valid. */
+const SHOULDER_HEAD_TURN_MAX = 20;
+
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 export const round1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
 export const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
@@ -375,6 +404,14 @@ export function point(frame, name) {
  * The shoulder is the one place both mean the same thing — the bony corner.
  */
 export function joint(frame, name, side) {
+  // The nape: the point a shirt's sleeve is measured from. It is not a joint and
+  // not asked of the model - it is the midpoint of the two neck edges, which are.
+  if (name === 'neckCentre') {
+    const l = point(frame, 'neckL');
+    const r = point(frame, 'neckR');
+    if (l && r) return { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2 };
+    return l || r || null;
+  }
   const names = name === 'shoulder'
     ? [`shoulder${side}`, `shoulderJ${side}`]
     : [`${name}Joint${side}`, `${name}J${side}`];
@@ -545,6 +582,25 @@ export function checkFrame(frame) {
   }
 
   const turn = frameTurn(frame);
+
+  // Is the shoulder span a shoulder at all? Tested before the loop below, because
+  // the answer also decides whether the shoulder may be used as a ruler further
+  // down. Turned frames are left out: the cross-check compares a horizontal span
+  // with a vertical one, and a turned body compresses only the horizontal.
+  let shoulderSuspect = false;
+  if (turn <= SHOULDER_HEAD_TURN_MAX) {
+    const headSpan = spanY(frame, point(frame, 'headTop')?.y, point(frame, 'chin')?.y);
+    const shoulderSpan = spanX(frame, REGIONS.shoulder.left, REGIONS.shoulder.right);
+    if (headSpan > 0.02 && shoulderSpan > 0) {
+      const ratio = shoulderSpan / headSpan;
+      if (ratio < SHOULDER_HEAD_RATIO[0] || ratio > SHOULDER_HEAD_RATIO[1]) {
+        shoulderSuspect = true;
+        bad.add('shoulder');
+        notes.push(`shoulder spans ${round2(ratio)} head-lengths`);
+      }
+    }
+  }
+
   for (const key of Object.keys(REGIONS)) {
     const spec = REGIONS[key];
     // A breadth-only region read from a profile is the body's DEPTH, and there
@@ -571,7 +627,12 @@ export function checkFrame(frame) {
   // of the shoulder span is the arms, not the torso. Both spans are undone with
   // this frame's own turn, so it holds at three-quarter too, and at square-on it
   // is exactly the span comparison it always was.
-  if (turn <= 70 && frame.scale) {
+  //
+  // Only when the shoulder is believable. A shoulder that failed the head-length
+  // cross-check above is a short ruler, and a short ruler calls every honest chest
+  // "the arms" - which is how one bad shoulder silently deleted the size from a
+  // whole clip.
+  if (!shoulderSuspect && turn <= 70 && frame.scale) {
     const shoulderSpan = spanX(frame, REGIONS.shoulder.left, REGIONS.shoulder.right);
     const shoulderCm = shoulderSpan == null ? 0
       : unproject(shoulderSpan * frame.scale.cmPerWidth, turn, depthRatio('shoulder', frame.gender));
