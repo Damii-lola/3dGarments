@@ -19,9 +19,16 @@ export const mistralConfigured = () => Boolean(config.vision.mistral.apiKey);
  */
 let gapMs = Number(process.env.MISTRAL_MIN_GAP_MS || 0);
 let nextStart = 0;
+let lastLimitAt = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function pacedStart() {
+  // A limit met a minute ago says nothing about now. Without this the very first
+  // 429 a process ever sees would slow every scan until the next deploy.
+  if (gapMs && Date.now() - lastLimitAt > 60_000) {
+    gapMs = 0;
+    nextStart = Math.min(nextStart, Date.now());
+  }
   const now = Date.now();
   const at = Math.max(now, nextStart);
   nextStart = at + gapMs;
@@ -43,15 +50,17 @@ export const mistralPace = () => ({ gap_ms: gapMs, next_start_in_ms: Math.max(0,
  * No retry loop of its own: the caller retries capacity errors, and a Mistral
  * 400 is a real 400 (bad image, bad model name), not a shape to try again.
  */
-export async function mistralChat(messages, { maxTokens = 2600, json = false, timeoutMs = 90_000 } = {}) {
+export async function mistralChat(messages, { maxTokens = 2600, json = false, timeoutMs = 90_000, temperature = 0.1 } = {}) {
   if (!mistralConfigured()) throw new HttpError(503, 'Mistral is not configured (set MISTRAL_API_KEY)');
 
   const payload = {
     model: config.vision.mistral.model,
     messages,
     max_tokens: maxTokens,
-    // Placing a point on a photograph is not a creative act.
-    temperature: 0.1,
+    // Placing a point on a photograph is not a creative act. The first read of a
+    // frame stays cold; the repeat reads are sent warmer on purpose, so they look
+    // again instead of returning the same answer three times.
+    temperature,
   };
   if (json) payload.response_format = { type: 'json_object' };
 
@@ -76,6 +85,7 @@ export async function mistralChat(messages, { maxTokens = 2600, json = false, ti
     const kind = classifyAiError(res.status, msg);
     if (res.status === 429) {
       // The service just told us the pace. Take it, and let the retry wait.
+      lastLimitAt = Date.now();
       const retryAfter = Number(res.headers.get('retry-after'));
       gapMs = Math.max(gapMs, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1150);
       nextStart = Math.max(nextStart, Date.now() + gapMs);

@@ -35,6 +35,10 @@ export const config = Object.freeze({
     provider: (process.env.VISION_PROVIDER
       || (process.env.MISTRAL_API_KEY ? 'mistral' : 'cloudflare')).toLowerCase(),
     concurrency: Number(process.env.VISION_CONCURRENCY || 4),
+    // How many times each frame is read. Three is the smallest number that can
+    // outvote a wrong reading; two would only tie it. VISION_READS=1 returns to
+    // one pass per frame.
+    reads: Math.max(1, Math.round(Number(process.env.VISION_READS) || 3)),
     // If the chosen provider refuses, may Workers AI read the frame instead?
     // On by default: a key that cannot answer should not switch the shop off.
     // VISION_FALLBACK=0 makes the choice strict.

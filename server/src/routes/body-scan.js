@@ -287,7 +287,7 @@ async function callModelRaw(model, messages, opts = {}) {
   if (config.vision.provider === 'mistral') {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        const out = await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json });
+        const out = await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json, temperature: opts.temperature ?? 0.1 });
         servedBy = 'mistral';
         return out;
       } catch (e) {
@@ -318,6 +318,7 @@ async function callModelRaw(model, messages, opts = {}) {
   // Workers AI model.
   const cfModel = config.vision.provider === 'mistral' ? config.cloudflare.visionModel : model;
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
+  if (Number.isFinite(Number(opts.temperature))) payload.temperature = Number(opts.temperature);
   if (/qwen/i.test(cfModel)) {
     // Qwen 3 reasons before it answers, and that reasoning is billed as output
     // AND counted against max_tokens. At 1600 the JSON was being cut off
@@ -480,6 +481,78 @@ async function callVision(b64, prompt, opts = {}) {
   }
   if (visionFormat != null) visionFormat = null; // rediscover on the next request
   throw lastErr;
+}
+
+/** The middle value. With three readings it is the one that agreed. */
+function median(nums) {
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/** The value that turned up most often, and how often. */
+function mostCommon(values) {
+  const tally = new Map();
+  for (const v of values) tally.set(v, (tally.get(v) || 0) + 1);
+  const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  return sorted[0] ? { value: sorted[0][0], count: sorted[0][1] } : { value: null, count: 0 };
+}
+
+/**
+ * One frame, read more than once, agreed down to one reading.
+ *
+ * A single pass places a shoulder point once and is stuck with it; the second
+ * pass usually lands within a centimetre, and when it does not, the median of
+ * three ignores the one that wandered. That is the whole point: the reads are
+ * deliberately not identical (the repeats run at a temperature that lets the
+ * model look again rather than repeat itself), so agreement is evidence and a
+ * lone wild reading is outvoted instead of averaged into the body.
+ *
+ * Landmarks are merged per point, because a frame that nails the hips and
+ * misses a wrist should keep the hips. Labels (view, gender) go by majority;
+ * measurements (turn) by median. Anything only one read mentioned is kept only
+ * if a majority of the reads that saw the frame produced it.
+ */
+function mergeReads(list) {
+  if (list.length === 1) return list[0];
+  const base = list[0];
+  const need = Math.ceil(list.length / 2);
+
+  const landmarks = {};
+  const keys = new Set(list.flatMap((r) => Object.keys(r.landmarks || {})));
+  for (const k of keys) {
+    const pts = list
+      .map((r) => r.landmarks?.[k])
+      .filter((p) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+      .map((p) => ({ x: Number(p.x), y: Number(p.y) }));
+    if (pts.length < need) continue;
+    landmarks[k] = { x: round2(median(pts.map((p) => p.x))), y: round2(median(pts.map((p) => p.y))) };
+  }
+
+  const visible = {};
+  for (const k of new Set(list.flatMap((r) => Object.keys(r.visible || {})))) {
+    const vals = list.map((r) => r.visible?.[k]).filter((v) => typeof v === 'boolean');
+    if (vals.length) visible[k] = vals.filter(Boolean).length * 2 > vals.length;
+  }
+
+  const views = list.map((r) => normView(r.view)).filter(Boolean);
+  const turns = list.map((r) => Number(r.turn)).filter((n) => Number.isFinite(n));
+  const genders = list.map((r) => normGender(r.gender)).filter((g) => g !== 'unsure');
+  const gender = mostCommon(genders);
+
+  return {
+    ...base,
+    view: mostCommon(views).value || base.view,
+    turn: turns.length ? median(turns) : base.turn,
+    gender: gender.value || base.gender,
+    // How sure the frame is, now meaning how many of the reads agreed — not one
+    // read's own claim about itself.
+    genderConfidence: genders.length ? round2(gender.count / genders.length) : 0,
+    landmarks,
+    visible,
+    confidence: round2(list.reduce((s, r) => s + (Number(r.confidence) || 0.5), 0) / list.length),
+    reads: list.length,
+  };
 }
 
 function parseJson(text) {
@@ -945,10 +1018,26 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   await mapLimit(files, config.vision.concurrency, async (file, i) => {
     const frameStart = Date.now();
     try {
-      const { text: raw, meta } = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 2600, json: true });
-      const parsed = parseJson(raw);
+      // The same frame, read again. One pass places a shoulder once and is stuck
+      // with it; three reads agree on most points and let the median throw out
+      // the one that wandered. The first read is the careful one; the repeats run
+      // warmer so the model looks afresh instead of echoing itself.
+      const wanted = Math.max(1, config.vision.reads);
+      const answers = await Promise.all(Array.from({ length: wanted }, (_, r) => callVision(
+        file.buffer.toString('base64'),
+        FRAME_PROMPT,
+        { maxTokens: 2600, json: true, temperature: r === 0 ? 0.1 : 0.5 },
+      ).then((v) => ({ ...v, parsed: parseJson(v.text) })).catch((e) => ({ error: e }))));
+
+      const usable = answers.filter((a) => a.parsed && a.parsed.personVisible !== false);
+      const failed = answers.filter((a) => a.error);
+      const first = (usable[0] || answers[0] || {});
+      const raw = first.text || '';
+      const meta = first.meta || {};
       const ms = Date.now() - frameStart;
-      if (parsed && parsed.personVisible !== false) {
+      const parsed = usable.length ? mergeReads(usable.map((a) => a.parsed)) : null;
+      if (!parsed && failed.length) throw failed[0].error;
+      if (parsed) {
         const frame = {
           file: file.originalname,
           view: normView(parsed.view),
@@ -996,7 +1085,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
 
         frames.push(frame);
         const keys = Object.keys(frame.landmarks);
-        log(`  frame ${i + 1}/${files.length} ok (${ms}ms) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
+        log(`  frame ${i + 1}/${files.length} ok (${ms}ms, reads ${usable.length}/${wanted}) - view=${frame.view} gender=${frame.gender} conf=${frame.confidence} landmarks=${keys.length} scale=${frame.scale ? round2(frame.scale.cmPerWidth) + ' cm/width (reliability ' + round2(frame.scale.reliability) + ')' : 'NONE'}${check.bad.size ? ' dropped-regions=' + [...check.bad].join(',') : ''}`);
       } else {
         unreadable.push({ file: file.originalname, reply: String(raw).slice(0, 400), ms, ...meta });
         log(`  frame ${i + 1}/${files.length} skipped (${ms}ms) - ${parsed ? 'no person visible' : 'unreadable reply'} finish=${meta.finish} tokens=${meta.usage?.completion_tokens ?? '?'}`);
