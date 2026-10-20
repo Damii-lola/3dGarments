@@ -755,3 +755,33 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0139JKEoXc4irHwm6ZnPDgHe
 ```
 
+---
+
+## Size scan: stability and speed (commits 3df6ed8, 20 Oct 2026)
+
+Measured on the fixed four frames in `%TEMP%\opencode\frames4` (same clip, feet out of shot):
+
+- **The numbers are stable now.** Six to eight consecutive scans return the same body:
+  chest 38, waist 32, hips 36, shoulder 18 (catalogue: bust 38 / waist 32 / hips 36 /
+  shoulder 18). Before this, hips swung 36-40 and a run could lose the chest entirely.
+- **What was moving was the calculation step, not the vision.** Mistral's three reads per
+  frame, merged by median, are deterministic on identical frames. The single Workers AI
+  calculation call at temperature 0.1 was not. It is now temperature 0.
+- **Fabric was coming off twice.** The calculation step is asked for the *body*, so its
+  numbers no longer lose `2*pi*t` again in `buildCatalogue` (spans it fills are marked
+  `fromCalc`). Only geometry-derived spans still lose fabric. That alone was 1.5" of chest.
+- **The calculation model stalls.** `@cf/qwen/qwen3.8-27b` reads this body best (waist within
+  0.5") and usually answers in 3-5 s, but on a shared queue it sometimes waits out the whole
+  deadline. `/health/deep?calc=1&model=...` times any model: qwen answered 420 ms once and
+  then timed out at 25 s; `@cf/meta/llama-3.3-70b-instruct-fp8-fast` answered ~200 ms every
+  time but reads waist 28 and hips 40 (worse). Plan is now qwen 8 s, qwen 8 s, then llama.
+- **When the calculation is lost the fallback is ~7" small** (geometry takes its scale from
+  the head on a clip cropped at the shins: bust 30.6 for a 38 read). Rare now, but that is
+  what a bad run looks like. `diagnostics.calcAttempts` says how many tries and which model.
+- **Mistral is the speed bottleneck, not the calculation.** 12 vision calls per scan at
+  roughly 1 request/second is an 11-12 s floor. Measured vision time 10-34 s; the calculation
+  is 3-5 s. 15 of 93 vision calls hit 429. `?reads=1|2|3` picks the per-frame read count for
+  one scan; three is still the best (two reads measured no faster and cannot take a median).
+- **Debug knobs on the live API:** `?calcModel=<model>` and `?reads=<1-3>`.
+- One scan can still take 30 s when the rate limit bites. That is the queue, not the maths.
+
