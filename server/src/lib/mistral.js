@@ -96,7 +96,7 @@ export async function mistralChat(messages, { maxTokens = 2600, json = false, ti
  * key — is it accepted, and does it carry the model we are configured to use —
  * without sending a shopper's frame anywhere.
  */
-export async function verifyMistral({ probe = false } = {}) {
+export async function verifyMistral({ probe = false, probeModel = '' } = {}) {
   if (!mistralConfigured()) return { ok: false, error: 'not configured' };
   try {
     const res = await fetch(`${config.vision.mistral.apiBase}/models`, {
@@ -123,20 +123,29 @@ export async function verifyMistral({ probe = false } = {}) {
     // reply are the only honest description of how fast this key may go. Ten
     // tokens spent to stop guessing at a pace.
     if (probe) {
-      const t0 = Date.now();
-      const r2 = await fetch(`${config.vision.mistral.apiBase}/chat/completions`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${config.vision.mistral.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with one word: ok' }], max_tokens: 5, temperature: 0 }),
-        signal: AbortSignal.timeout(60_000),
-      });
-      const text = await r2.text().catch(() => '');
-      out.probe = {
-        status: r2.status,
-        ms: Date.now() - t0,
-        body: text.slice(0, 400),
-        rate_headers: Object.fromEntries([...r2.headers].filter(([k]) => /rate|limit|retry|quota/i.test(k))),
-      };
+      // Which models can this key actually call? One at a time tells you about
+      // one model; `model=all` tells you whether the account is the problem.
+      const list = probeModel === 'all'
+        ? ['mistral-small-latest', 'ministral-3b-latest', 'mistral-small-2506']
+        : [probeModel || model];
+      out.probes = [];
+      for (const m of list) {
+        const t0 = Date.now();
+        const r2 = await fetch(`${config.vision.mistral.apiBase}/chat/completions`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${config.vision.mistral.apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: m, messages: [{ role: 'user', content: 'Reply with one word: ok' }], max_tokens: 5, temperature: 0 }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        const text = await r2.text().catch(() => '');
+        out.probes.push({
+          model: m,
+          status: r2.status,
+          ms: Date.now() - t0,
+          body: text.slice(0, 300),
+          rate_headers: Object.fromEntries([...r2.headers].filter(([k]) => /rate|limit|retry|quota/i.test(k))),
+        });
+      }
     }
     return out;
   } catch (e) {

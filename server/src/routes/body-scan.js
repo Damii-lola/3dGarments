@@ -424,6 +424,20 @@ const VISION_FORMATS = [
   },
 ];
 
+/**
+ * Mistral's own image message, exactly as its docs spell it: `image_url` is the
+ * data URL STRING, not the OpenAI `{ url }` object Cloudflare accepts. Getting
+ * this wrong is invisible until the first call that is allowed through — which
+ * is why it is a separate shape rather than a hope that both providers agree.
+ */
+const MISTRAL_MESSAGES = (b64, prompt) => [
+  { role: 'system', content: prompt },
+  { role: 'user', content: [
+    { type: 'text', text: 'Analyse this frame and reply with the JSON.' },
+    { type: 'image_url', image_url: `data:image/jpeg;base64,${b64}` },
+  ] },
+];
+
 /** The index of the vision format that last worked (null = not yet known). */
 let visionFormat = null;
 
@@ -437,7 +451,7 @@ async function callVision(b64, prompt, opts = {}) {
   // Mistral takes one message shape and means its 400s: there is no shape to
   // discover, and nothing to hide a real error behind.
   if (config.vision.provider === 'mistral') {
-    const data = await callModelRaw(visionModelName(), VISION_FORMATS[0].messages(b64, prompt), opts);
+    const data = await callModelRaw(visionModelName(), MISTRAL_MESSAGES(b64, prompt), opts);
     return { text: extractText(data), meta: extractMeta(data) };
   }
 
