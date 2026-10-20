@@ -791,27 +791,35 @@ async function runAnalysis() {
     if (!data) {
       measuredOn = 'the server';
 
-      // EIGHT STILLS FIRST, and the clip only if they cannot be taken.
+      // STILLS FIRST, and the clip only if they cannot be taken.
       //
-      // The server never reads the clip as a clip: it takes eight still frames
-      // out of it and measures those. So uploading the video meant sending
-      // 30-40 MB — half a minute of a phone camera, which is minutes on a
-      // shopper's uplink — so that the server could do the one job the phone can
-      // do in two seconds, and then delete it. Eight JPEGs are about 450 KB, and
-      // the video never leaves the phone at all.
+      // The server never reads the clip as a clip: it takes still frames out of
+      // it and measures those. So uploading the video meant sending 30-40 MB —
+      // half a minute of a phone camera, which is minutes on a shopper's uplink
+      // — so that the server could do the one job the phone can do in a few
+      // seconds, and then delete it. Four JPEGs are about 240 KB, and the video
+      // never leaves the phone at all.
+      //
+      // FOUR, and not eight, because Workers AI serves a burst of four calls in
+      // about 15 s each and then parks every call after them in a shared GPU
+      // queue for another 30-45 s. Measured on a real scan: frames 1-4 came back
+      // in 15.3, 15.7, 29.6 and 18.3 s; frames 5-7 took 57.9, 61.7 and 74.7 s.
+      // Eight frames cost 91 s of model time, four cost about 18 s. The phone
+      // also pays for every frame it seeks to (10 s for eight, 4 s for four).
       //
       // The clip path survives for the WebViews that cannot seek or draw a
-      // frame, and is asked for explicitly with ?clip=1. ?frames=1 means stills
-      // and nothing else.
+      // frame, and is asked for explicitly with ?clip=1. ?frames=N asks for N
+      // stills and nothing else.
       const UPLOAD_LIMIT = 80 * 1024 * 1024;
       const UPLOAD_BUDGET_MS = 10000;
       const mb = (recordedBlob.size / 1048576).toFixed(1);
+      const FRAME_COUNT = Math.max(1, Math.min(12, Math.round(Number(params.get('frames')) || 4)));
 
       const sendStills = async () => {
-        setStatus(`Taking eight frames from your clip… · ${since(startedAt)}`, 'busy');
+        setStatus(`Taking ${FRAME_COUNT} frames from your clip… · ${since(startedAt)}`, 'busy');
         let frames;
         try {
-          frames = await extractFrames(recordedBlob, { count: 8, from, to });
+          frames = await extractFrames(recordedBlob, { count: FRAME_COUNT, from, to });
         } catch (e) {
           log('frame extraction failed — falling back to a single frame:', e.message);
           const poster = await extractPoster(recordedBlob, { maxWidth: 900, grid: true });
