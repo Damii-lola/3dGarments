@@ -538,7 +538,7 @@ Reply with ONLY this JSON, no prose:
 const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 10_000);
 const RECONCILE_ATTEMPTS = 2;
 
-async function reconcileWithCloudflare(frames) {
+async function reconcileWithCloudflare(frames, modelOverride = '') {
   const raw = frames.map((f, i) => ({
     i,
     view: f.view,
@@ -547,7 +547,7 @@ async function reconcileWithCloudflare(frames) {
     landmarks: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
   }));
 
-  const model = config.cloudflare.textModel || config.cloudflare.visionModel;
+  const model = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
   const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
@@ -1239,7 +1239,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
       && frames.length && config.cloudflare.accountId && config.cloudflare.apiToken) {
     const t0 = Date.now();
     try {
-      const reck = await reconcileWithCloudflare(frames);
+      const reck = await reconcileWithCloudflare(frames, String(req.query.calcModel || ''));
       calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error } : null;
       if (reck && reck.calc) {
         calc = reck.calc;
