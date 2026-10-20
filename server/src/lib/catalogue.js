@@ -304,6 +304,9 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
     if (spans[key] && Number.isFinite(fixed)) {
       if (region === 'shoulder') spans[key].widthIn = fixed;
       else spans[key].valueIn = fixed;
+      // The calculation step is asked for the body, not for the garment, so
+      // fabric must not be taken off its number a second time.
+      spans[key].fromCalc = true;
     }
   }
   const verticals = {};
@@ -359,9 +362,14 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
   for (const spec of CATALOGUE[group]) {
     let value = null;
     let how = null;
-    if (spec.kind === 'girth') value = spans[spec.span]?.valueIn ?? calcValue(spec.span, spec.kind);
-    else if (spec.kind === 'width') value = spans[spec.span]?.widthIn ?? calcValue(spec.span, spec.kind);
-    else if (spec.kind === 'vertical') value = verticals[spec.vertical]?.in ?? null;
+    let fromCalc = Boolean(spans[spec.span]?.fromCalc);
+    if (spec.kind === 'girth') {
+      value = spans[spec.span]?.valueIn ?? null;
+      if (value == null) { value = calcValue(spec.span, spec.kind); fromCalc = value != null; }
+    } else if (spec.kind === 'width') {
+      value = spans[spec.span]?.widthIn ?? null;
+      if (value == null) { value = calcValue(spec.span, spec.kind); fromCalc = value != null; }
+    } else if (spec.kind === 'vertical') value = verticals[spec.vertical]?.in ?? null;
     else if (spec.kind === 'path') value = paths[spec.path]?.in ?? null;
     else if (spec.kind === 'derived') {
       const d = DERIVED[spec.derive]?.(ev) || null;
@@ -369,7 +377,10 @@ export function buildCatalogue({ frames, gender, clothing = {}, calc = null }) {
       how = d ? d.how : null;
     }
     if (value == null || !Number.isFinite(value)) continue;
-    const off = clothOff(spec.kind, spec.span);
+    // Fabric comes off a measurement the camera worked out for itself. A number
+    // the calculation step gave already describes the body, so taking a layer off
+    // it again made every girth about 1.5" small.
+    const off = fromCalc ? 0 : clothOff(spec.kind, spec.span);
     if (off > 0) value -= off;
     const sentence = how || howFor(spec, ev, value) || spec.label;
     items.push({

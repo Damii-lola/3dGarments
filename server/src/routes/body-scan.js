@@ -545,7 +545,7 @@ async function reconcileWithCloudflare(frames) {
   const data = await callModelRaw(model, [
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
-  ], { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0.1, timeoutMs: RECONCILE_TIMEOUT_MS });
+  ], { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: RECONCILE_TIMEOUT_MS });
 
   const out = parseJson(extractText(data));
   if (!out) return null;
