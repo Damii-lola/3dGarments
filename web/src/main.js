@@ -179,6 +179,12 @@ const calibrator = createCalibrator({
 
 /** The recorded video, held in memory while the user is on the page. */
 let recordedBlob = null;
+/**
+ * The clip's length, once it is known. The trim sliders cannot speak before
+ * then, and clicking Analyze in that first second used to sample the whole clip
+ * instead of the kept part.
+ */
+let durationReady = Promise.resolve(0);
 let videoUrl = null;
 let posterUrl = null;
 let analyzing = false;
@@ -309,7 +315,8 @@ async function handleRecording(file) {
   videoUrl = URL.createObjectURL(file);
   trimVideo.src = videoUrl;
 
-  const duration = await readDuration(file);
+  durationReady = readDuration(file);
+  const duration = await durationReady;
   trimmer.load(duration);
   calibrator.load(duration);
   log('duration', duration);
@@ -713,6 +720,9 @@ async function runAnalysis() {
   let measuredOn = 'the server';
 
   try {
+    // The trim sliders cannot say anything until the clip's length is known.
+    // Clicking Analyze in that first second used to sample the whole clip.
+    if (!trimmer.getSpan().duration) await durationReady;
     const { from, to, fromSec, toSec } = trimmer.getSpan();
     log('analyze start', { bytes: recordedBlob.size, type: recordedBlob.type, from: fromSec, to: toSec });
 

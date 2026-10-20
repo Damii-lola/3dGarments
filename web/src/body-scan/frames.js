@@ -15,6 +15,7 @@
 
 const METADATA_TIMEOUT = 15000;
 const SEEK_TIMEOUT = 6000;
+const DATA_TIMEOUT = 8000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...args) => console.log('[3dg:framed]', ...args);
@@ -57,6 +58,50 @@ function waitForMetadata(video) {
   });
 }
 
+/** Resolves true once there is a frame to draw, false if the decoder never got there. */
+function waitForData(video, ms = DATA_TIMEOUT) {
+  if (video.readyState >= 2) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let done = false;
+    const cleanup = () => {
+      video.removeEventListener('loadeddata', onData);
+      video.removeEventListener('canplay', onData);
+      video.removeEventListener('timeupdate', onData);
+      clearTimeout(timer);
+    };
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(ok);
+    };
+    const onData = () => finish(true);
+    const timer = setTimeout(() => finish(video.readyState >= 2), ms);
+    video.addEventListener('loadeddata', onData);
+    video.addEventListener('canplay', onData);
+    video.addEventListener('timeupdate', onData);
+  });
+}
+
+/**
+ * A muted, off-screen video that never plays may decode nothing at all: the
+ * browser fetches the header, reports the duration, and then sits at
+ * readyState 1 forever. Every seek then times out and every drawImage paints an
+ * empty (black) canvas - measured on the live site: four black frames, all
+ * labelled "no person visible".
+ *
+ * Playing it for a moment forces the decoder to fetch real data; autoplay is
+ * allowed because the video is muted. Pausing afterwards leaves it parked on a
+ * decoded frame, which is all the seeking needs.
+ */
+async function prime(video) {
+  if (video.readyState >= 2) return true;
+  try { await video.play(); } catch { /* autoplay refused - wait for data instead */ }
+  const ok = await waitForData(video);
+  try { video.pause(); } catch { /* ignore */ }
+  return ok;
+}
+
 export function seek(video, time) {
   return new Promise((resolve) => {
     let done = false;
@@ -65,7 +110,9 @@ export function seek(video, time) {
       done = true;
       video.removeEventListener('seeked', finish);
       clearTimeout(timer);
-      resolve();
+      // 'seeked' can fire before a single frame is decoded; say whether the
+      // canvas is actually drawable rather than pretending the seek worked.
+      resolve(video.readyState >= 2);
     };
     const timer = setTimeout(finish, SEEK_TIMEOUT);
     // already there? no 'seeked' will fire
@@ -137,6 +184,7 @@ export async function withVideo(file, run) {
     video.src = url;
     video.load();
     await waitForMetadata(video);
+    await prime(video);
     return await run(video);
   } finally {
     video.removeAttribute('src');
@@ -177,7 +225,14 @@ export async function extractFrames(file, opts = {}) {
     const frames = [];
     for (let i = 0; i < count; i += 1) {
       const t = Math.min(duration - 0.02, t0 + span * ((i + 0.5) / count));
-      await seek(video, t);
+      let ok = await seek(video, t);
+      if (!ok) {
+        // The decoder stalled: nudge it awake and try the same point once more
+        // rather than sending a black frame off to be measured.
+        await prime(video);
+        ok = await seek(video, t);
+      }
+      if (!ok) throw new Error('The video would not play here — try the clip again');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       drawGrid(ctx, canvas.width, canvas.height);
       const blob = await toBlob(canvas, quality);
@@ -214,7 +269,13 @@ export async function extractPoster(file, { maxWidth = 720, quality = 0.82, grid
     const vh = video.videoHeight;
     if (!vw || !vh) throw new Error('The recorded video has no picture');
 
-    if (duration && Number.isFinite(duration)) await seek(video, duration * 0.1);
+    if (duration && Number.isFinite(duration)) {
+      const at = duration * 0.1;
+      if (!(await seek(video, at))) {
+        await prime(video);
+        await seek(video, at);
+      }
+    }
 
     const scale = Math.min(1, maxWidth / vw);
     const canvas = document.createElement('canvas');
