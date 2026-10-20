@@ -536,6 +536,13 @@ Reply with ONLY this JSON, no prose:
  */
 const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 8_000);
 /**
+ * A frame read that has not answered in this long is not going to. Without a cap
+ * the provider's own ninety-second default applies, and a stall plus the retry
+ * loop held one scan open for seven minutes. Two of three reads are enough to
+ * place a frame.
+ */
+const READ_TIMEOUT_MS = Number(process.env.VISION_READ_TIMEOUT_MS || 25_000);
+/**
  * The model that takes over when the first one misses. The default calculator
  * reads this body best (waist within half an inch) but shares a queue and
  * occasionally waits out the whole deadline; this one answered every probe in
@@ -1217,7 +1224,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
       const answers = await Promise.all(Array.from({ length: wanted }, (_, r) => callVision(
         file.buffer.toString('base64'),
         FRAME_PROMPT,
-        { maxTokens: 2600, json: true, temperature: r === 0 ? 0.1 : 0.5 },
+        { maxTokens: 2600, json: true, temperature: r === 0 ? 0.1 : 0.5, timeoutMs: READ_TIMEOUT_MS },
       ).then((v) => ({ ...v, parsed: parseJson(v.text) })).catch((e) => ({ error: e }))));
 
       const usable = answers.filter((a) => a.parsed && a.parsed.personVisible !== false);
