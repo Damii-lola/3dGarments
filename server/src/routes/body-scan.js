@@ -503,17 +503,16 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `You are the calculation step of a body-measuring tool. A vision model read 4 frames of ONE adult turning 360 degrees. Each frame gives view, turn in degrees, missing (parts not in shot) and p: x,y pairs on a 0-100 grid (x left to right, y top to bottom) in the order of keys. A point of 0,0 is absent.
+const RECONCILE_PROMPT = `Calculation step of a body-measuring tool. A vision model read 4 frames of ONE adult turning 360 degrees: view, turn in degrees, missing parts, and p - x,y pairs on a 0-100 grid (x left to right, y top to bottom) in the order of keys; 0,0 means absent.
 
-Turn the readings into ONE consistent body and state its measurements in INCHES.
+Turn the readings into ONE consistent body and give its measurements in INCHES.
 
-RULES - these decide the readings:
-- The widest shoulder span is the front or back frame; the narrowest is the profile.
+- Widest shoulder span is the front or back frame; narrowest is the profile.
 - Shoulders are at least as wide as the hips; the waist is narrower than both.
-- The head is the same length in every frame; one wildly longer or shorter is mis-scaled, so correct it and its frame.
+- The head is the same length in every frame; one wildly longer or shorter is mis-scaled - correct it and its frame.
 - The wrist hangs below the hip point, never level with the waist.
-- Never invent a part listed as missing. If no frame shows the feet there is no floor contact and height is null.
-- Plausible: chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86.
+- Never invent a part listed as missing. No feet in any frame means no height: null.
+- Adult and humanly possible: chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist), height 54-86.
 
 Reply ONLY with this JSON, no prose:
 {"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
@@ -552,8 +551,8 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // point per frame. The calculation needs the points that decide its seven numbers
   // (head, shoulders, armpits, waist, hips, wrists, feet, crotch); knees and elbows
   // are read by the geometry pass and are not worth their tokens here.
-  const WANTED = ['headTop', 'chin', 'neckBase', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR',
-    'waistL', 'waistR', 'hipL', 'hipR', 'crotch', 'wristL', 'wristR', 'ankleL', 'ankleR', 'footL', 'footR'];
+  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR',
+    'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'];
   const raw = {
     keys: WANTED,
     frames: frames.map((f, i) => {
