@@ -1,7 +1,7 @@
 ﻿import { Router } from 'express';
 import { config, missingConfig, visionConfigured, visionModelName } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
-import { cloudflareConfigured, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
+import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 
 const started = Date.now();
@@ -59,6 +59,24 @@ health.get('/deep', async (req, res) => {
   // visible reason instead of a mystery.
   if (config.vision.provider === 'mistral') out.vision.pace = mistralPace();
   if (mistralConfigured()) out.vision.mistral_key_present = true;
+
+  // Ask the calculation model a one-line question and time it. The scan's slow
+  // tail is that call waiting on a shared queue, so being able to measure the
+  // queue from outside the scan is worth more than a log line nobody kept.
+  if (req.query.calc === '1' && cloudflareConfigured()) {
+    const model = String(req.query.model || config.cloudflare.textModel || config.cloudflare.visionModel);
+    const t0 = Date.now();
+    try {
+      const reply = await runModel(model, {
+        messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+        max_tokens: 8,
+        temperature: 0,
+      }, { timeoutMs: Number(req.query.timeout || 20_000) });
+      out.calc = { ok: true, model, ms: Date.now() - t0, reply: String(reply?.response ?? '').slice(0, 60) };
+    } catch (e) {
+      out.calc = { ok: false, model, ms: Date.now() - t0, error: String(e.message || e).slice(0, 200) };
+    }
+  }
 
   const ok = Object.values(out).every((v) => v.ok);
   res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
