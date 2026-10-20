@@ -529,8 +529,14 @@ Reply with ONLY this JSON, no prose:
  * can queue a call for two minutes; the shopper must never wait for that. If the
  * calculation has not come back in time, the scan measures from the points it
  * already has and says nothing about it.
+ *
+ * A miss is not free, though: the points on their own read about seven inches
+ * small on a clip that does not show the feet, because the scale comes from the
+ * head. So a miss is worth one more attempt, and the attempt count is kept for
+ * the diagnostics rather than hidden.
  */
-const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 12_000);
+const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 10_000);
+const RECONCILE_ATTEMPTS = 2;
 
 async function reconcileWithCloudflare(frames) {
   const raw = frames.map((f, i) => ({
@@ -542,13 +548,30 @@ async function reconcileWithCloudflare(frames) {
   }));
 
   const model = config.cloudflare.textModel || config.cloudflare.visionModel;
-  const data = await callModelRaw(model, [
+  const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
-  ], { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: RECONCILE_TIMEOUT_MS });
+  ];
 
-  const out = parseJson(extractText(data));
-  if (!out) return null;
+  let out = null;
+  let attempts = 0;
+  let waited = 0;
+  let lastError = null;
+  while (!out && attempts < RECONCILE_ATTEMPTS) {
+    attempts += 1;
+    const t0 = Date.now();
+    try {
+      const data = await callModelRaw(model, messages, { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: RECONCILE_TIMEOUT_MS });
+      out = parseJson(extractText(data));
+      if (!out) lastError = 'unreadable reply';
+    } catch (e) {
+      lastError = String(e?.message || e).slice(0, 160);
+    }
+    waited += Date.now() - t0;
+    if (!out && attempts < RECONCILE_ATTEMPTS) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - one more go`);
+  }
+
+  if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError };
 
   // Which frame is square-on decides every width's correction, and the raw pass
   // labels all four "three-quarter". That is the one label worth fixing.
@@ -569,7 +592,7 @@ async function reconcileWithCloudflare(frames) {
     const range = RANGES[k];
     if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
   }
-  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [] };
+  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null };
 }
 
 
@@ -1211,17 +1234,19 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   // readings into one consistent body. If Workers AI is unreachable the scan
   // still measures — from the points as they came in.
   let calc = null;
+  let calcMeta = null;
   if (config.vision.provider === 'mistral' && config.vision.reconcile
       && frames.length && config.cloudflare.accountId && config.cloudflare.apiToken) {
     const t0 = Date.now();
     try {
       const reck = await reconcileWithCloudflare(frames);
-      if (reck) {
+      calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error } : null;
+      if (reck && reck.calc) {
         calc = reck.calc;
-        log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms - ${reck.relabelled} view(s) corrected; said ${JSON.stringify(reck.calc)}`);
+        log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - ${reck.relabelled} view(s) corrected; said ${JSON.stringify(reck.calc)}`);
         if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
       } else {
-        log(`  Cloudflare returned no usable reconciliation (${Date.now() - t0}ms) - measuring from the raw points`);
+        log(`  Cloudflare returned no usable reconciliation after ${Date.now() - t0}ms${reck ? ` / ${reck.attempts} attempt(s): ${reck.error}` : ''} - measuring from the raw points`);
       }
     } catch (e) {
       log(`!! Cloudflare could not reconcile (${Date.now() - t0}ms): ${e.message} - measuring from the raw points`);
@@ -1391,6 +1416,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     }
   }
   if (calc) diagnostics.calc = { filledByCloudflare: fromCalc, cloudflareSaid: calc };
+  if (calcMeta) diagnostics.calcAttempts = calcMeta;
 
   // 5. The catalogue: every category a tailor's sheet asks for that this video
   //    actually shows, in the group for the gender chosen. Anything the clip
