@@ -253,12 +253,14 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
 - **`ffmpeg-static` in the API.** ~45 MB Windows / ~78 MB Linux binary fetched at `npm ci`; nothing to
   install on Render. Measured on the free instance: **22 s** for eight seeks on a 30 s 478×850 clip,
   **11 s** for four. Grouped with the model wait, extraction is now only a quarter of a scan.
-- **Measured end to end on a real phone clip (2026-10-19, after the truncation fix):** 8 frames **89.5 s**
-  (decode 22 s, vision 63 s) with **8/8 frames usable**; 4 frames **59.5 s** (decode 11 s, vision 42 s).
-  Per frame: 13–63 s, 643–853 completion tokens, **292–353 neurons**. The tail is Cloudflare's own queue —
-  six of eight calls came back in 13–31 s and two took 63 s — so the wall clock is roughly the slowest
-  call, not the number of frames. Upload of a 4.7 MB clip is a couple of seconds and is not the problem.
-- **Eight frames, eight in flight, one wave.** Eight samples over one turn are 45° apart (worst case
+- **Measured end to end on a real phone clip (2026-10-20, after the one-pass decode and the four-at-a-time
+  vision limit):** 8 frames **68.2 s** wall from the API's own clock — decode **16.4 s**, vision **38.9 s**,
+  every frame 15–19 s, 709–868 completion tokens, 320–367 neurons. The same scan an hour earlier took
+  **116.7 s** (decode 17.2 s, vision 87.7 s) because eight calls at once put two of them behind a 70 s GPU
+  queue. The 2026-10-19 baseline was 89.5 s (decode 22 s, vision 63 s). Remaining wall: Render's free
+  instance decodes 900 frames in ~16 s at 0.1 CPU, and two waves of four vision calls cost ~39 s. Both are
+  hosting choices, not code.
+- **Eight frames, four in flight, two waves.** Eight samples over one turn are 45° apart (worst case
   22.5° off square-on) and `measurePath` divides that out by cos(turn). Sixteen fired at once drew a 429
   ("capacity temporarily exceeded"), which is a measurement thrown away; `callModelRaw` retries a
   429/5xx twice with a short backoff as a second line of defence.
@@ -314,13 +316,13 @@ profiles          id uuid → auth.users (cascade), username text (unique, lower
   canvas path draws (sharp + an SVG), because `FRAME_PROMPT` tells the model the top numbers are x and the
   left numbers are y. Frames from a clip never touched a canvas, so before this the prompt was describing
   a ruler that was not on the picture — the one thing worse than no grid is a promise of one.
-- **The wall is one vision call, not the number of frames — measured, not assumed.** On the live API
-  (free plan) a scan takes ~55–110 s, and 4 stills took 91 s where 8 took 55 s: the per-call latency is
-  ~40–50 s and the parallel calls finish together, so cutting frames saves nothing and costs angles.
-  That is why 8 stays. Free Workers AI is also capacity-limited (a 16-frame burst drew a 429) and
-  metered at 10,000 neurons/day per account — a day of testing spent all of it. A paid plan, or a
-  smaller/faster vision model via `CF_VISION_MODEL`, is the fix; there is no code change that makes a
-  27B model answer faster.
+- **The wall is a vision call, not the number of frames — measured, not assumed.** A call is now
+  **15–19 s** when it gets a GPU slot; what used to cost 55–110 s a scan was the queue. Eight calls fired
+  at once got six slots and left two waiting ~70 s, so the limit is **four at a time**: two waves, ~39 s,
+  all eight angles kept. Cutting to six frames would save one wave (~19 s) and cost 15° of angle coverage;
+  that is a trade to make deliberately, not by accident. A paid Render instance (0.1 → 0.5+ CPU) takes the
+  ~16 s decode down to a few seconds; a smaller/faster model via `CF_VISION_MODEL` is the other lever.
+  There is no code change that makes a 27B model answer faster than the GPU allows.
 - **`/health/deep` reports the credentials the server actually holds** (`cloudflare_ai.credentials`:
   length, type, whitespace, an 8-char one-way fingerprint, and the account id) plus each verify
   attempt with Cloudflare's own error code. This exists because a rejected token and a token that was
