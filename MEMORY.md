@@ -797,20 +797,36 @@ Measured on the fixed four frames in `%TEMP%\opencode\frames4` (same clip, feet 
 | compact prompt, object points | 1241 | 100 | ~1340 |
 | flat number table, 18 points | 901 | 100 | ~1000 |
 | flat number table, 14 points | 902 | 100 | ~1000 |
-| **flat table, 10 points, terse rules (now)** | **545** | **206** | **~750** |
+| **flat table, 14 points, terse rules, measurements-only reply (now)** | **632** | **76** | **~708** |
 
-- The **output is 206 tokens for a ~100-token JSON**: `qwen3.8-27b` spends the rest
-  thinking. `llama-3.3-70b-fp8-fast` answers in ~100 but reads waist 28 / hips 40.
-- The point table is the measurement, so it is the floor: 10 points x 2 numbers x 4
-  frames. Cutting it further (armpits, wrists) cost the shoulder reading, which now
-  falls back to geometry (20-21" against a 19" truth).
-- **Do not shorten the rules.** A 100-word prompt without "one head in every frame",
+- The **output is 76 tokens** once the reply stopped echoing the frames back. Echoing
+  `{"i","view","turn"}` per frame cost ~130 tokens of answer and bought nothing.
+- Asking the calculation to re-label the views was actively harmful: it called a profile
+  "front", the catalogue took that frame's shoulder span, and the shoulder came back as
+  **9.7"** - a body's depth printed as its breadth. The view a frame carries is already
+  the majority of three reads, so the calculation now states measurements only.
+- **The point table is the measurement, and it is the floor**: 14 points x 2 numbers x 4
+  frames. Ten points (no armpits, no wrists) measured 545 in / 76 out - **621 total, only
+  87 fewer** - and the shoulder collapsed to 14.7" because the shoulder points alone sit
+  inside the deltoid. The armpits are what say how wide the torso under them is.
+- **Below ~620 there is nothing left to cut except accuracy.** A ~200-token calculation
+  would be four frames of six points and a one-line prompt; that is the version that read
+  chest 32 / waist 24 on these frames.
+- Shoulder is the one number this clip cannot support: the calculation gives it on two
+  scans in eight and the landmark span reads 13-15" against a 19" truth. `catalogue.js`
+  now drops a shoulder outside a 2.4th-to-1.75th of the chest girth (bounds applied to
+  the calculated value too, which once answered 25" on a 40" chest), so the row is left
+  unscored rather than printed.
+- **Stable, 8 runs on the same four frames:** chest 40 every run (truth 40.8), waist
+  32-34 (truth 32.2), hips 38 (truth 38), calc 1.7-3.5 s, whole scan 10-16 s, with the
+  occasional 42-48 s when a Mistral read is slow.
+- **Do not shorten the rules.** A ~100-word prompt without "one head in every frame",
   "wrist below the hip" and "shoulders at least as wide as hips" read chest 32 and
   waist 24 on the same four frames (truth 40.8 / 32.2). Wording that states the
-  invariants is what keeps the chest at 38-40; it is ~120 tokens and it is load-bearing.
+  invariants is what keeps the chest at 40; it is ~120 tokens and it is load-bearing.
 - Workers AI bills **neurons**, not tokens, but they scale together. The 10,000
-  free neurons lasted ~60 scans at ~2,700 tokens (~165 neurons/scan); at ~750 tokens
-  that is roughly 45 neurons a scan, so ~200 scans a day. The allowance resets
+  free neurons lasted ~60 scans at ~2,700 tokens (~165 neurons/scan); at ~700 tokens
+  that is roughly 43 neurons a scan, so ~230 scans a day. The allowance resets
   around 00:00 UTC; `/health/deep?calc=1&model=...` reports the refusal verbatim.
 - Mistral's key states `x-ratelimit-limit-req-minute: 30`; a scan sends 12 reads.
   The pacer is now a rolling minute with an 80% burst cap, not a 1.1 s metronome.
