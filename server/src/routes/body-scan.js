@@ -503,26 +503,19 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `You are the calculation step of a body-measuring tool. A cheaper vision model looked at frames of ONE person slowly turning through 360 degrees and reported, per frame, landmark positions on a 0-100 grid (x: 0 left edge to 100 right edge; y: 0 top edge to 100 bottom edge), what parts were visible, which way they were facing and how far they were turned. It is good at seeing and bad at consistency.
+const RECONCILE_PROMPT = `Turn landmark readings from 4 frames of ONE adult turning 360 degrees into one body, and state its measurements in INCHES.
 
-Turn those raw readings into ONE consistent human body and state its measurements.
+Points are x,y on 0-100 (x left to right, y top to bottom). Per frame: view (front/back/side/three-quarter), turn in degrees, which parts are visible, and the points.
 
-WHAT MUST HOLD, in every frame you correct and across the set:
-- A person is widest square-on and narrowest in profile. The frame with the widest shoulder span is the front or back frame; the narrowest is the profile.
-- Shoulders are at least as wide as the hips in a front or back view; the waist is narrower than both.
-- The wrist bone hangs below the hip point, never level with the waist.
-- The chin is below the mouth, the headTop above it; the head is about one seventh of a standing body.
-- The same head, in metres, in every frame: if one frame's headTop-to-chin span is wildly different from the others, it is the outlier and its points are scaled wrongly.
-- Never invent a part that is out of shot. If the feet were not visible in any frame there is no floor contact and no height.
-- Move a point only when the evidence requires it, and keep it inside 0-100.
+RULES
+- Widest shoulder span = the front or back frame; narrowest = the profile.
+- Shoulders at least as wide as hips; waist narrower than both.
+- The same head in every frame: one wildly different head span is a mis-scaled frame.
+- Never invent an out-of-shot part. No feet visible in any frame means height is null.
+- Plausible: chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22, height 54-86. Null if unsupported.
 
-MEASUREMENTS, in INCHES, for a standing adult, and humanly possible:
-chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86. Use null for anything the frames cannot support.
-
-Reply with ONLY this JSON, no prose:
-{"frames":[{"i":0,"view":"front|back|side|three-quarter","turn":0}],
- "measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":0},
- "notes":["what you corrected, in a few words"]}`;
+Reply ONLY with JSON, no prose:
+{"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
@@ -546,13 +539,16 @@ const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 8
 const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function reconcileWithCloudflare(frames, modelOverride = '') {
-  const raw = frames.map((f, i) => ({
-    i,
-    view: f.view,
-    turn: Number.isFinite(f.turn) ? f.turn : null,
-    visible: f.visible,
-    landmarks: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
-  }));
+  const raw = frames.map((f, i) => {
+    const missing = Object.entries(f.visible || {}).filter(([, v]) => v === false).map(([k]) => k);
+    return {
+      i,
+      view: f.view,
+      turn: Number.isFinite(f.turn) ? f.turn : null,
+      ...(missing.length ? { missing } : {}),
+      points: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
+    };
+  });
 
   const primary = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
   // The first miss is usually a queue hiccup on one worker, so the same model is
@@ -572,7 +568,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   if (mistralConfigured()) plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
   const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
-    { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
+    { role: 'user', content: `Frames in time order:\n${JSON.stringify(raw)}` },
   ];
   // The backup answered once with the frame list and no measurements at all. If
   // the first attempt missed, say plainly that the last reply was unusable.
@@ -586,16 +582,20 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   let waited = 0;
   let lastError = null;
   let usedModel = null;
+  let usage = null;
   while (!out && attempts < plan.length) {
     const step = plan[attempts];
     const msgs = step.local || attempts === 0 ? messages : retryMessages;
     attempts += 1;
     const t0 = Date.now();
     try {
-      const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 600, json: true, temperature: 0, timeoutMs: step.timeoutMs });
+      const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 320, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
-      if (out) usedModel = step.model;
-      else lastError = 'unreadable reply';
+      if (out) {
+        usedModel = step.model;
+        const u = data?.result?.usage || data?.usage || null;
+        if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
+      } else lastError = 'unreadable reply';
     } catch (e) {
       lastError = String(e?.message || e).slice(0, 160);
       // A used-up allowance or a rejected key will read exactly the same in two
@@ -618,7 +618,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     if (!out && attempts < plan.length) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - asking again`);
   }
 
-  if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError, model: null };
+  if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError, model: null, usage };
 
   // Which frame is square-on decides every width's correction, and the raw pass
   // labels all four "three-quarter". That is the one label worth fixing.
@@ -643,7 +643,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // of the scan from treating an empty object as an answer.
   const mm = Object.keys(calc).length;
   if (!mm) return { calc: null, relabelled, notes: [], attempts, waited, error: 'no measurements in the reply', model: usedModel };
-  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null, model: usedModel };
+  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null, model: usedModel, usage };
 }
 
 
@@ -1294,7 +1294,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     const t0 = Date.now();
     try {
       const reck = await reconcileWithCloudflare(frames, String(req.query.calcModel || ''));
-      calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model } : null;
+      calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage } : null;
       if (reck && reck.calc) {
         calc = reck.calc;
         log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - ${reck.relabelled} view(s) corrected; said ${JSON.stringify(reck.calc)}`);
