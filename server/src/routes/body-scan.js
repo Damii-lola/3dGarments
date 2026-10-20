@@ -311,7 +311,10 @@ async function callModelRaw(model, messages, opts = {}) {
       }
     }
   }
-  servedBy = 'cloudflare';
+  // The tag describes who read the frames. The calculation step comes through
+  // here too and used to overwrite it, so every scan looked like a Workers AI
+  // fallback even when Mistral had read all four frames.
+  if (!opts.viaCloudflare) servedBy = 'cloudflare';
 
   // When we arrived here by falling back from Mistral, the model argument is
   // Mistral's name — Workers AI would not know it. The net always uses the
