@@ -16,6 +16,8 @@
 const METADATA_TIMEOUT = 15000;
 const SEEK_TIMEOUT = 6000;
 const DATA_TIMEOUT = 8000;
+/** How long a stalled decoder gets to wake up before the scan gives up on it. */
+const PRIME_TIMEOUT = 5000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...args) => console.log('[3dg:framed]', ...args);
@@ -96,8 +98,14 @@ function waitForData(video, ms = DATA_TIMEOUT) {
  */
 async function prime(video) {
   if (video.readyState >= 2) return true;
-  try { await video.play(); } catch { /* autoplay refused - wait for data instead */ }
-  const ok = await waitForData(video);
+  // Fire and forget: play() only settles once playback actually starts, and a
+  // decoder that is refusing to fetch will never get there. Waiting for data
+  // underneath it is what has a deadline.
+  try {
+    const played = video.play();
+    if (played && typeof played.catch === 'function') played.catch(() => {});
+  } catch { /* autoplay refused - wait for data instead */ }
+  const ok = await waitForData(video, PRIME_TIMEOUT);
   try { video.pause(); } catch { /* ignore */ }
   return ok;
 }
