@@ -346,13 +346,35 @@ function gridSvg(w, h) {
   );
 }
 
+/**
+ * The ruler, rasterised ONCE per frame size and then reused.
+ *
+ * Every still out of one clip has the same pixel size, so the eight SVG
+ * rasterisations were eight copies of the same work — and text rasterisation is
+ * the expensive half of drawing the grid. One PNG per size, composited eight
+ * times, is the same picture for a fraction of the CPU (the free Render instance
+ * has 0.1 of a core to spend).
+ */
+const gridCache = new Map();
+
+async function gridPng(w, h) {
+  const key = `${w}x${h}`;
+  const hit = gridCache.get(key);
+  if (hit) return hit;
+  const png = await sharp(gridSvg(w, h)).png().toBuffer();
+  // A handful of sizes at most; a long-lived process must not grow this.
+  if (gridCache.size > 8) gridCache.clear();
+  gridCache.set(key, png);
+  return png;
+}
+
 async function withGrid(buffer) {
   try {
     const image = sharp(buffer);
     const { width, height } = await image.metadata();
     if (!width || !height) return buffer;
     return await image
-      .composite([{ input: gridSvg(width, height), top: 0, left: 0 }])
+      .composite([{ input: await gridPng(width, height), top: 0, left: 0 }])
       .jpeg({ quality: 88 })
       .toBuffer();
   } catch {

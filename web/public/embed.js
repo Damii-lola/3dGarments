@@ -21,10 +21,17 @@
  *     Find my size
  *   </button>
  *
- * data-chart  the code from the dashboard. Required.
+ * data-chart  the code from the dashboard. Required. `data-code` works too.
  * data-label  the button text. Default "Find my size".
  * data-name   the garment's name, for the button's title. Optional.
  * data-base   the site root, if this script is served from somewhere else.
+ * data-float  "1" pins the button to the bottom-right corner instead of
+ *             placing it in the page where the tag is.
+ *
+ * The tag can go anywhere — head, body, a template partial. A tag in the
+ * <head> has nowhere to put a button (a <button> in a head is never rendered),
+ * so it floats instead of disappearing. That was the one way this could be
+ * pasted correctly and still show nothing.
  */
 (function () {
   'use strict';
@@ -55,6 +62,8 @@
     '@keyframes threeDG-rise{from{opacity:0;transform:translateY(.8rem) scale(.985)}to{opacity:1;transform:none}}',
     '@media (max-width:520px){.threeDG-overlay{padding:0}.threeDG-panel{width:100%;height:100%;border:0;border-radius:0}}',
     '@media (prefers-reduced-motion:reduce){.threeDG-overlay,.threeDG-panel{animation:none}}',
+    '.threeDG-float{position:fixed;right:1.1rem;bottom:1.1rem;z-index:2147482000}',
+    '.threeDG-float .threeDG-button{box-shadow:0 .7rem 2rem rgba(0,0,0,.35),0 .5rem 1.4rem rgba(240,74,41,.3)}',
   ].join('');
 
   function ensureStyles() {
@@ -171,24 +180,41 @@
     button.appendChild(label);
     button.addEventListener('click', function () { open(opts); });
 
-    if (target) target.replaceChildren(button);
-    else if (script && script.parentNode) script.parentNode.insertBefore(button, script.nextSibling);
+    if (target) {
+      target.replaceChildren(button);
+      return button;
+    }
+
+    // Where the tag sits decides where the button goes. A tag in the <head> —
+    // which is where a script tag normally goes — has no rendered place to put
+    // one, so it becomes a floating button instead of an invisible element.
+    var parent = script && script.parentNode;
+    var inHead = !parent || parent === document.head || parent.nodeName === 'HEAD';
+    if ((opts && opts.float) || inHead) {
+      var wrap = document.createElement('div');
+      wrap.className = 'threeDG-float';
+      wrap.appendChild(button);
+      (document.body || document.documentElement).appendChild(wrap);
+    } else {
+      parent.insertBefore(button, script.nextSibling);
+    }
     return button;
   }
 
   window.ThreeDG = { open: open, close: close, mount: mount };
 
-  // A tag with data-chart asks for a button; a tag without one is just here to
+  // A tag with a code asks for a button; a tag without one is just here to
   // publish ThreeDG, which is what the dashboard uses to preview a chart.
   if (script) {
     var spec = script.dataset || {};
-    var code = spec.chart || '';
+    var code = spec.chart || spec.code || '';
     if (code) {
       mount(null, {
         code: code,
         name: spec.name || '',
         label: spec.label || 'Find my size',
         base: spec.base || '',
+        float: spec.float === '1' || spec.float === 'true',
       });
     }
   }
