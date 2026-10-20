@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Body scan API: video frames -> visible body geometry -> measurements -> size.
  *
  *   POST /api/body-scan   multipart: video (1 clip, decoded here)        <- default
@@ -19,7 +19,7 @@
  * Results are returned inline and deliberately not stored server-side: the flow
  * is anonymous, and body measurements are not something to keep around.
  *
- * HOW THE NUMBERS ARE PRODUCED — measurement, not guessing:
+ * HOW THE NUMBERS ARE PRODUCED â€” measurement, not guessing:
  *
  *   The vision model is NEVER asked for a size or for inches. It reports only
  *   what it can point at in one frame: normalised landmark coordinates, which
@@ -27,7 +27,7 @@
  *   size. Every number below is then COMPUTED here from that geometry:
  *
  *     1. SCALE. Each frame gets its own centimetres-per-image-width from an
- *        anchor of known size — the subject's own head (adult head height
+ *        anchor of known size â€” the subject's own head (adult head height
  *        22.5-23.5 cm, read off the head landmarks) and/or a reference object
  *        the model could actually identify (a standard door, a chair...).
  *        Anchors are combined as a weighted geometric mean.
@@ -41,7 +41,7 @@
  *        approximation). With no side view the depth falls back to a documented
  *        width:depth ratio.
  *     4. HEIGHT. Head-to-floor, from the floor-contact landmarks in full-body
- *        frames, scaled the same way. Feet out of frame means no height — we say
+ *        frames, scaled the same way. Feet out of frame means no height â€” we say
  *        so instead of inventing one.
  *     5. CLOTHING. The extra width the clothing adds is subtracted from the girths.
  *
@@ -54,7 +54,7 @@ import multer from 'multer';
 import { readFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
-import { config } from '../config.js';
+import { config, visionConfigured, visionModelName } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
 import { framesFromVideo, MAX_FRAMES } from '../lib/videoFrames.js';
 import {
@@ -81,6 +81,7 @@ import {
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
+import { mistralChat } from '../lib/mistral.js';
 import { bestSize, chartFromInput, CHARTS, chartKey, columnsFromRows } from '../lib/sizing.js';
 import { measureField } from '../shared/measures.js';
 
@@ -110,7 +111,7 @@ export const bodyScan = Router();
 
 const log = (...args) => console.log('[body-scan]', ...args);
 
-/** Plausible adult ranges in inches — used to reject/repair absurd values. */
+/** Plausible adult ranges in inches â€” used to reject/repair absurd values. */
 const RANGES = {
   chest: [26, 64],
   waist: [20, 60],
@@ -132,7 +133,7 @@ STEP 1 - FIND THE PERSON. Ignore the background, furniture, other people, pets, 
 STEP 2 - WHICH WAY ARE THEY FACING? "view": front | back | side | three-quarter (a side view is a left or right profile). Also give "turn": how far the body has rotated away from square-on to the camera, in whole degrees 0-90, kept consistent with the view (front or back 0-15, three-quarter 25-65, side 70-90).
 
 STEP 3 - PLACE LANDMARKS. Give each point as x,y on a 0-100 scale of THIS image: x=0 is the left edge and x=100 the right edge; y=0 is the top edge and y=100 the bottom. WHOLE NUMBERS only, no decimals.
-A labelled 10x10 grid has been drawn over the image to help you: the numbers along the TOP edge give x and the numbers down the LEFT edge give y. Read each landmark against that grid so it lands within a few percent of the right place. The grid is only an overlay — ignore it otherwise, it is not clothing and not part of the scene.
+A labelled 10x10 grid has been drawn over the image to help you: the numbers along the TOP edge give x and the numbers down the LEFT edge give y. Read each landmark against that grid so it lands within a few percent of the right place. The grid is only an overlay â€” ignore it otherwise, it is not clothing and not part of the scene.
 Points:
   headTop     top of the skull
   chin        the LOWEST point of the chin/jaw, below the mouth - not the mouth, not the lip
@@ -211,7 +212,7 @@ Respond with ONLY this JSON, no markdown and no prose outside it. The numbers in
  * One analysed frame, as numbers rather than prose: what the model placed, what
  * that works out to in centimetres, and which of those readings the sanity check
  * refused. Attached to the 422 replies so a refusal can be EXPLAINED instead of
- * guessed at — a failed scan that says nothing is impossible to act on.
+ * guessed at â€” a failed scan that says nothing is impossible to act on.
  */
 function frameDigest(f, reason) {
   const spans = {};
@@ -251,7 +252,7 @@ function frameDigest(f, reason) {
  * Run `fn` over `items`, at most `limit` at a time, keeping the order.
  *
  * Four, not eight. Measured on the live API: eight calls at once come back as
- * six in about 15 s and two in about 86 s — the extra two spend seventy seconds
+ * six in about 15 s and two in about 86 s â€” the extra two spend seventy seconds
  * waiting for a GPU slot, and the whole scan waits with them. Two waves of four
  * cost about 30 s and keep all eight angles, which is the trade the shopper
  * actually wants. Sixteen at once is worse still: it draws a 429, which is a
@@ -272,6 +273,24 @@ async function mapLimit(items, limit, fn) {
 }
 
 async function callModelRaw(model, messages, opts = {}) {
+  // Mistral speaks the same message shape we already build, and answers with the
+  // same choices/usage envelope â€” its client wraps that as { result } so every
+  // caller above this line keeps reading one shape. A 429 there is a rate limit,
+  // not a queue: one short wait is worth it, more is not.
+  if (config.vision.provider === 'mistral') {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json });
+      } catch (e) {
+        if (e?.upstream?.kind === 'capacity' && attempt < 1) {
+          await new Promise((r) => setTimeout(r, 900));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
   const payload = { messages, max_tokens: opts.maxTokens ?? 512 };
   if (/qwen/i.test(model)) {
     // Qwen 3 reasons before it answers, and that reasoning is billed as output
@@ -300,15 +319,15 @@ async function callModelRaw(model, messages, opts = {}) {
     // Cloudflare's GPUs are shared: a burst of frames can be told "capacity
     // temporarily exceeded". One short wait and the same frame is read for
     // real, which is much better than throwing a measurement away. A spent
-    // daily allowance is NOT that — it will not clear in a second.
+    // daily allowance is NOT that â€” it will not clear in a second.
     if ((kind === 'capacity' || kind === 'upstream') && attempt < 2) {
       await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
       continue;
     }
     if (kind === 'quota') {
-      log('!! Workers AI daily allowance is spent — every scan will refuse until it resets (around 00:00 UTC)');
+      log('!! Workers AI daily allowance is spent â€” every scan will refuse until it resets (around 00:00 UTC)');
     }
-    if (kind === 'auth') log('!! Workers AI rejected the API token (401/403) — a new token is needed');
+    if (kind === 'auth') log('!! Workers AI rejected the API token (401/403) â€” a new token is needed');
     // The shopper gets a sentence; the scan's own diagnostics get the truth.
     // Without this, five different upstream failures all read as "could not read
     // this clip" and the only place to look is a log we cannot see.
@@ -389,6 +408,13 @@ function isFormatError(e) {
 }
 
 async function callVision(b64, prompt, opts = {}) {
+  // Mistral takes one message shape and means its 400s: there is no shape to
+  // discover, and nothing to hide a real error behind.
+  if (config.vision.provider === 'mistral') {
+    const data = await callModelRaw(visionModelName(), VISION_FORMATS[0].messages(b64, prompt), opts);
+    return { text: extractText(data), meta: extractMeta(data) };
+  }
+
   const order = visionFormat == null
     ? VISION_FORMATS.map((_, i) => i)
     : [visionFormat, ...VISION_FORMATS.map((_, i) => i).filter((i) => i !== visionFormat)];
@@ -469,7 +495,7 @@ function pickGender(analyses) {
   };
 }
 
-const NULLISH = /^(null|nil|none|n\/?a|unknown|unsure|not (visible|applicable|clear)|nothing|no|both|-+|—+|\.+|)$/i;
+const NULLISH = /^(null|nil|none|n\/?a|unknown|unsure|not (visible|applicable|clear)|nothing|no|both|-+|â€”+|\.+|)$/i;
 const firstString = (analyses, get) => analyses
   .map(get)
   .map((v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''))
@@ -549,7 +575,7 @@ function combineClothing(analyses) {
 /**
  * Frames measured ON THE DEVICE and sent as numbers: pose joints plus the
  * silhouette widths the browser read off the segmentation mask. There is no
- * picture and no model call here — the server only does arithmetic and the same
+ * picture and no model call here â€” the server only does arithmetic and the same
  * sanity checks it applies to model-supplied landmarks.
  */
 function geometryFrames(body) {
@@ -579,8 +605,8 @@ function geometryFrames(body) {
 /**
  * The store's own size chart, when the scan came from a link that carries one.
  *
- * It arrives as JSON — an object on the on-device path, a string on the multipart
- * one — and it is only ever used to CHOOSE a size, never to measure anything: a
+ * It arrives as JSON â€” an object on the on-device path, a string on the multipart
+ * one â€” and it is only ever used to CHOOSE a size, never to measure anything: a
  * body is measured from the clip, and the chart is the table that body is then
  * laid against. So a chart that cannot be read is not an error and never fails
  * the scan; it just means the built-in chart is used instead, and the result
@@ -590,7 +616,7 @@ function readChart(body) {
   const raw = body?.chart;
   if (!raw) return null;
   const input = typeof raw === 'string' ? parseJson(raw) : raw;
-  // { rows, columns } — the store's numbers, and the columns they typed them
+  // { rows, columns } â€” the store's numbers, and the columns they typed them
   // under. Which of those columns decides the size is stated by their order.
   const chart = chartFromInput(input);
   if (!chart) return null;
@@ -606,7 +632,7 @@ function readChart(body) {
 /**
  * A marked object belongs to the frame it was marked on, and nowhere else.
  *
- * A frame's scale is its own — the camera moves, the subject steps nearer or
+ * A frame's scale is its own â€” the camera moves, the subject steps nearer or
  * further, and a size that was right a moment ago is not right now. So each
  * reference goes to its nearest sampled frame (measured in the frame's own time)
  * and no other.
@@ -669,7 +695,7 @@ function scoreCamera(frames) {
  * the other fifteen frames still hang off an assumed head length. But the head
  * and the object are measured in the SAME frame, at the same distance, so the
  * ratio between the two scale estimates is not a property of how far away the
- * camera was — it is a property of the assumed head constant and of how well
+ * camera was â€” it is a property of the assumed head constant and of how well
  * the head was found in that frame. That ratio applies to every frame of the
  * clip, so one marked bank card corrects fifteen unmarked frames.
  *
@@ -760,7 +786,7 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
 bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
   const startedAt = Date.now();
 
-  // Whatever the upload was — a clip, a dozen stills, or both — the files on
+  // Whatever the upload was â€” a clip, a dozen stills, or both â€” the files on
   // this disk are deleted the moment the answer is on its way. Nobody's body
   // stays on a server because a response was slow or a frame was discarded.
   const uploaded = Object.values(req.files || {}).flat().filter(Boolean).map((f) => f.path).filter(Boolean);
@@ -820,8 +846,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     });
   }
 
-  if (!config.cloudflare.accountId || !config.cloudflare.apiToken) {
-    throw new HttpError(503, 'Body scan is not configured (set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)');
+  if (!visionConfigured()) {
+    throw new HttpError(503, config.vision.provider === 'mistral'
+      ? 'Body scan is not configured (set MISTRAL_API_KEY)'
+      : 'Body scan is not configured (set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN)');
   }
 
   const received = req.files || {};
@@ -853,7 +881,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
   if (!files || files.length === 0) throw new HttpError(400, 'Upload a clip or at least one frame');
 
   // Uploads are on disk (a clip is tens of megabytes); the vision call wants the
-  // bytes. Read the stills in — they are small — and leave the clip to ffmpeg.
+  // bytes. Read the stills in â€” they are small â€” and leave the clip to ffmpeg.
   files = await Promise.all(files.map(async (f) => (f.buffer
     ? f
     : { buffer: await readFile(f.path), size: f.size, originalname: f.originalname, mimetype: f.mimetype })));
@@ -871,10 +899,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     ? jpeg.width / jpeg.height
     : clamp(Number(req.body?.aspect) || 0.75, [0.3, 3]);
 
-  log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, model=${config.cloudflare.visionModel}`);
+  log(`> POST received - ${files.length} frame(s), ${(totalBytes / 1024).toFixed(0)} KB, aspect=${round2(aspect)}, provider=${config.vision.provider}, model=${visionModelName()}`);
   if (brand) log(`  sizing against the store's own chart${brand.name ? ` "${brand.name}"` : ''} (${Object.keys(brand.chart.rows).length} size(s), for ${brand.sex})`);
 
-  await mapLimit(files, 4, async (file, i) => {
+  await mapLimit(files, config.vision.concurrency, async (file, i) => {
     const frameStart = Date.now();
     try {
       const { text: raw, meta } = await callVision(file.buffer.toString('base64'), FRAME_PROMPT, { maxTokens: 2600, json: true });
@@ -949,7 +977,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     aspect,
     attempted: files.length,
     totalBytes,
-    sourceModel: config.cloudflare.visionModel,
+    sourceModel: visionModelName(),
     poseNotes: [],
     clip: clipInfo,
     timing: { decodeMs, visionMs: Date.now() - startedAt - decodeMs, totalMs: Date.now() - startedAt },
@@ -971,8 +999,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, clip, timing, rejected, unreadable, failures } };
     if (failures.length === attempted) {
-      // When every frame failed for the same shopper-facing reason — the daily
-      // allowance is spent, the key was rejected — that reason is the answer.
+      // When every frame failed for the same shopper-facing reason â€” the daily
+      // allowance is spent, the key was rejected â€” that reason is the answer.
       // "The vision service rejected every frame" is our plumbing, not theirs.
       const reasons = [...new Set(failures.map((f) => f.error))];
       const own = reasons.every((r) => /^The measuring service/.test(r));
@@ -993,7 +1021,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   const scaled = frames.filter((f) => f.scale);
   if (!scaled.length) {
     log('x no frame had a usable scale anchor (no head, no reference object)');
-    throw new HttpError(422, 'We could not work out the scale of your video — keep your head fully in frame for the whole turn, or include a door or similar in shot, and try again.', { diagnostics });
+    throw new HttpError(422, 'We could not work out the scale of your video â€” keep your head fully in frame for the whole turn, or include a door or similar in shot, and try again.', { diagnostics });
   }
 
   const scaleWeight = (f) => frameQuality(f) * (f.scale?.reliability ?? 1);
@@ -1012,21 +1040,21 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   //
   //    The user's own answer is the answer. It sets the head constant (and so
   //    every centimetre), the size chart, and which of the two category groups
-  //    is computed — none of which may be inferred from a silhouette.
+  //    is computed â€” none of which may be inferred from a silhouette.
   const gender = chosenGender && chosenGender !== 'unsure'
     ? { guess: chosenGender, confidence: 1, chosen: true, scores: {} }
     : { ...pickGender(frames), chosen: false };
   const clothing = combineClothing(frames);
   const clothT = clothing.thicknessIn || 0;
   // A layer of fabric wraps the WHOLE way round, and offsetting any closed curve
-  // outward by a thickness t lengthens it by exactly 2*pi*t, whatever its shape —
+  // outward by a thickness t lengthens it by exactly 2*pi*t, whatever its shape â€”
   // so that is what comes off a girth. This used to be 2*t, which left two thirds
   // of a hoodie in the number. A flat width is different: across the shoulders
   // the fabric only adds its own thickness per side, so 2*t.
   const removed = 2 * Math.PI * clothT;
   const removedWidth = 2 * clothT;
   // The lower garment is a separate thickness over separate rows. If nothing was
-  // said about it, nothing comes off the hips — better a slightly padded hip than
+  // said about it, nothing comes off the hips â€” better a slightly padded hip than
   // a jumper's fabric subtracted from a trouser measurement.
   const clothB = clothing.lowerThicknessIn || 0;
   const removedLower = 2 * Math.PI * clothB;
@@ -1081,7 +1109,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
 
   // 5. The catalogue: every category a tailor's sheet asks for that this video
   //    actually shows, in the group for the gender chosen. Anything the clip
-  //    never showed simply is not in here — nothing is estimated, and nothing
+  //    never showed simply is not in here â€” nothing is estimated, and nothing
   //    absent is mentioned.
   const catalogue = buildCatalogue({ frames, gender: gender.guess, clothing });
 
@@ -1090,7 +1118,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     log('x no measurement survived the sanity check');
     // Counts and reasons only. This line used to carry the whole diagnostics
     // object, landmarks included, which put a person's body geometry into a
-    // retained server log — the one place it is not supposed to be. The same
+    // retained server log â€” the one place it is not supposed to be. The same
     // detail is in the response, where it belongs and where it is discarded.
     log(`  ${frames.length} frames, ${rejected.length} rejected, ${failures.length} failed, ${unreadable.length} unreadable; reasons=${JSON.stringify([...new Set(rejected.map((r) => r.reason).filter(Boolean))])}`);
     throw new HttpError(422, 'We could read your video but the measurements did not add up to a human body. Stand straight, face the camera with your arms clear of your sides, and keep your whole body in frame.', { diagnostics });
@@ -1163,10 +1191,10 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   //
   //   1. the store's own chart, when the scan came from a link that carries one.
   //      The shopper is buying that garment, so the store's row for it is the
-  //      only answer that matters — and it is scored by exactly the same rule as
+  //      only answer that matters â€” and it is scored by exactly the same rule as
   //      everything else, so a chart typed badly is a chart that fits badly.
   //   2. the built-in sheets. Nobody is asked which one, so both are scored
-  //      against the body and the one that disagrees least with it wins — and
+  //      against the body and the one that disagrees least with it wins â€” and
   //      the result says in so many words that that is how it was chosen.
   //
   // A store's chart carries its own sex when the store set one; when it does not
@@ -1241,7 +1269,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
 
   // 9. Notes. Only ever about what WAS measured, or about the video itself.
   //    A category the clip did not contain is simply absent from the list
-  //    above — announcing the blank would suggest we had an opinion about it.
+  //    above â€” announcing the blank would suggest we had an opinion about it.
   const notes = [];
   // Caveats the on-device measurement raised itself (arms not clear, feet out of
   // shot). They come first because they explain everything below them.
@@ -1274,9 +1302,9 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     if (removedLower > 0.05) clothBits.push(`${round1(removedLower)} in off the hip and leg girths`);
     notes.push(
       `Clothing${clothing.items.length ? ` (${clothing.items.join(', ')})` : ''}` +
-      `${clothing.density ? ` · ${clothing.density} density` : ''}` +
-      `${clothing.fit ? ` · ${clothing.fit} fit` : ''}` +
-      `${clothBits.length ? ` — ${clothBits.join(', and ')} for the fabric` : ''}.`
+      `${clothing.density ? ` Â· ${clothing.density} density` : ''}` +
+      `${clothing.fit ? ` Â· ${clothing.fit} fit` : ''}` +
+      `${clothBits.length ? ` â€” ${clothBits.join(', and ')} for the fabric` : ''}.`
     );
   }
   if (clothing.note) notes.push(clothing.note);
@@ -1286,7 +1314,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   if (marked) {
     const applied = frames.filter((f) => f.scale?.referenceRatio).length;
     notes.push(applied
-      ? `Your scale came from ${marked.what} (${marked.knownCm} cm) that you marked, applied across ${applied} frame${applied === 1 ? '' : 's'} — so the numbers are set against a known size rather than an assumed head length.`
+      ? `Your scale came from ${marked.what} (${marked.knownCm} cm) that you marked, applied across ${applied} frame${applied === 1 ? '' : 's'} â€” so the numbers are set against a known size rather than an assumed head length.`
       : `You marked ${marked.what}, but the frame it was on had no usable head, so the scale stayed on the head ruler.`);
   }
   if (gender.chosen) {
@@ -1297,8 +1325,8 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
   } else if (gender.guess === 'unsure') {
     notes.push('You did not say who this video was for, so the size was picked from the body proportions alone.');
   }
-  // How much of the clip actually turned side-on. Two notes below talk about it —
-  // the size hedge and the modelled-depth disclosure — and telling the viewer
+  // How much of the clip actually turned side-on. Two notes below talk about it â€”
+  // the size hedge and the modelled-depth disclosure â€” and telling the viewer
   // "no frame turned far enough" in one while the other counts seven that did is
   // the kind of contradiction that makes both of them worthless.
   const profiled = frames.filter((f) => frameTurn(f) >= 70).length;
@@ -1319,7 +1347,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     }
     // The size is picked off one girth. If that girth's front-to-back depth had
     // to be modelled rather than seen from the side, the size can honestly sit a
-    // size either way — and saying so is better than sounding certain. Only the
+    // size either way â€” and saying so is better than sounding certain. Only the
     // torso girth has a depth model; a chart decided on a waist or a shoulder is
     // not hedged by something that never applied to it.
     if (size.field === 'chest' && measured.chest && !measured.chest.depthMeasured) {
@@ -1327,7 +1355,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
       const why = profiled || turned
         ? 'the frames that did turn were not clear enough to read it from'
         : 'no frame turned far enough to show body depth';
-      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} — ${why} — so it could sit one size either way.`);
+      notes.push(`Size ${size.sizeKey} is read from your front width alone${v === 1 ? ', off a single frame' : `, across ${v} frames`} â€” ${why} â€” so it could sit one size either way.`);
     }
   } else {
     notes.push(chartName
@@ -1377,7 +1405,7 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     sizeName: sizeSource === 'store' ? (chartName || null) : null,
     // The catalogue: every category the video actually showed, in the group for
     // the gender chosen. This is the list the user is shown, and it is the whole
-    // list — nothing absent is listed, and nothing listed is an estimate.
+    // list â€” nothing absent is listed, and nothing listed is an estimate.
     catalogue,
     notes,
     views: frames.map((f) => f.view),
@@ -1404,10 +1432,11 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     diagnostics,
   };
 
-  // No measurements in the log — not the girths, not the scale, not the anchors.
+  // No measurements in the log â€” not the girths, not the scale, not the anchors.
   // A retained log is still a saved reading, and the promise is that there is
   // nothing to keep. Timing and provenance are enough to debug the pipeline.
   log(`done in ${result.debug.elapsedMs}ms - basis=${sizeBasis} source=${sizeSource} rows=${catalogue.items.length}`);
 
   res.json(result);
 }
+

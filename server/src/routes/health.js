@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { config, missingConfig } from '../config.js';
+import { config, missingConfig, visionConfigured, visionModelName } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
+import { mistralConfigured, verifyMistral } from '../lib/mistral.js';
 
 const started = Date.now();
 export const health = Router();
@@ -13,14 +14,25 @@ health.get('/', (_req, res) => {
     service: '3dgarments-api',
     version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'dev',
     uptime_s: Math.round((Date.now() - started) / 1000),
-    integrations: { supabase: supabaseConfigured(), cloudflare_ai: cloudflareConfigured() },
+    integrations: {
+      supabase: supabaseConfigured(),
+      cloudflare_ai: cloudflareConfigured(),
+      // Who actually reads the frames. The provider only says where the
+      // landmarks are; the measurements are arithmetic on this server either way.
+      vision: {
+        provider: config.vision.provider,
+        model: visionModelName(),
+        configured: visionConfigured(),
+        concurrency: config.vision.concurrency,
+      },
+    },
     missing_env: missing,
   });
 });
 
 /** Live connectivity check for every integration. */
 health.get('/deep', async (_req, res) => {
-  const out = { supabase: { ok: false }, storage: { ok: false }, cloudflare_ai: { ok: false } };
+  const out = { supabase: { ok: false }, storage: { ok: false }, vision: { ok: false } };
   if (supabaseConfigured()) {
     try {
       const { error } = await db().from('garments').select('id', { head: true, count: 'exact' }).limit(1);
@@ -33,14 +45,15 @@ health.get('/deep', async (_req, res) => {
   } else {
     out.supabase.error = out.storage.error = 'not configured';
   }
-  out.cloudflare_ai = await verifyCloudflare();
-  out.cloudflare_ai.model = config.cloudflare.visionModel;
-  // What the server is actually holding, so a rejected token can be told apart
-  // from a token that was never updated on this host.
-  out.cloudflare_ai.credentials = tokenDiagnostics();
-  // What Workers AI last said, including whether the daily allowance is spent.
-  // `lastError.kind` is one of capacity | quota | auth | upstream | error.
-  out.cloudflare_ai.vision = visionStatus();
+
+  // The provider in use, and only that one, so an unused leftover key cannot
+  // make a broken path look healthy.
+  out.vision = config.vision.provider === 'mistral'
+    ? { provider: 'mistral', ...(await verifyMistral()) }
+    : { provider: 'cloudflare', ...(await verifyCloudflare()), model: config.cloudflare.visionModel };
+  out.vision.last_calls = visionStatus();
+  if (mistralConfigured()) out.vision.mistral_key_present = true;
+
   const ok = Object.values(out).every((v) => v.ok);
   res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
 });
