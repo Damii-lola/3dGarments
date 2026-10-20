@@ -81,7 +81,7 @@ import {
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
-import { mistralChat } from '../lib/mistral.js';
+import { mistralChat, mistralConfigured } from '../lib/mistral.js';
 import { bestSize, chartFromInput, CHARTS, chartKey, columnsFromRows } from '../lib/sizing.js';
 import { measureField } from '../shared/measures.js';
 
@@ -287,7 +287,7 @@ async function callModelRaw(model, messages, opts = {}) {
   if (config.vision.provider === 'mistral' && !opts.viaCloudflare) {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        const out = await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json, temperature: opts.temperature ?? 0.1 });
+        const out = await mistralChat(messages, { maxTokens: opts.maxTokens ?? 512, json: opts.json, temperature: opts.temperature ?? 0.1, timeoutMs: opts.timeoutMs ?? 90_000 });
         servedBy = 'mistral';
         return out;
       } catch (e) {
@@ -558,11 +558,18 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // The first miss is usually a queue hiccup on one worker, so the same model is
   // asked again before the backup takes over. The backup answers fast but reads
   // waist and hips less truly, so it is the last resort, not the spare.
+  //
+  // When Workers AI refuses outright - a spent daily allowance, a rejected token -
+  // the calculation still has to happen, because without it the scan measures from
+  // the raw points and reads about seven inches small. Mistral already read the
+  // frames and is text-only here: the same table of landmarks, the same question,
+  // no image and no extra vision cost.
   const plan = [
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: RECONCILE_BACKUP_MODEL, timeoutMs: RECONCILE_TIMEOUT_MS },
   ];
+  if (mistralConfigured()) plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
   const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
@@ -581,21 +588,28 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   let usedModel = null;
   while (!out && attempts < plan.length) {
     const step = plan[attempts];
-    const msgs = attempts === 0 ? messages : retryMessages;
+    const msgs = step.local || attempts === 0 ? messages : retryMessages;
     attempts += 1;
     const t0 = Date.now();
     try {
-      const data = await callModelRaw(step.model, msgs, { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: step.timeoutMs });
+      const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 600, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) usedModel = step.model;
       else lastError = 'unreadable reply';
     } catch (e) {
       lastError = String(e?.message || e).slice(0, 160);
       // A used-up allowance or a rejected key will read exactly the same in two
-      // seconds. Only a queue hiccup is worth asking again.
+      // seconds. Only a queue hiccup is worth asking again - and if a local
+      // calculator is still waiting in the plan, jump straight to it.
       const kind = e?.debug?.kind || e?.upstream?.kind;
       if (kind && kind !== 'capacity' && kind !== 'upstream') {
         waited += Date.now() - t0;
+        const local = plan.findIndex((p, i) => i >= attempts && p.local);
+        if (local >= 0) {
+          log(`  calculation unavailable (${kind}: ${lastError}) - asking Mistral instead`);
+          attempts = local;
+          continue;
+        }
         log(`  calculation unavailable (${kind}: ${lastError}) - not asking again`);
         break;
       }
