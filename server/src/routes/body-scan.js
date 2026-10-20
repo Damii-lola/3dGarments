@@ -503,19 +503,25 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `Turn landmark readings from 4 frames of ONE adult turning 360 degrees into one body, and state its measurements in INCHES.
+const RECONCILE_PROMPT = `You are the calculation step of a body-measuring tool. A cheaper vision model looked at frames of ONE person slowly turning through 360 degrees and reported, per frame, points on a 0-100 grid (x: 0 left edge to 100 right edge; y: 0 top edge to 100 bottom edge), which parts were missing from the shot, which way they were facing and how far they were turned. It is good at seeing and bad at consistency.
 
-Points are x,y on 0-100 (x left to right, y top to bottom). Per frame: view (front/back/side/three-quarter), turn in degrees, which parts are visible, and the points.
+Turn those raw readings into ONE consistent human body and state its measurements.
 
-RULES
-- Widest shoulder span = the front or back frame; narrowest = the profile.
-- Shoulders at least as wide as hips; waist narrower than both.
-- The same head in every frame: one wildly different head span is a mis-scaled frame.
-- Never invent an out-of-shot part. No feet visible in any frame means height is null.
-- Plausible: chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22, height 54-86. Null if unsupported.
+WHAT MUST HOLD, in every frame you correct and across the set:
+- A person is widest square-on and narrowest in profile. The frame with the widest shoulder span is the front or back frame; the narrowest is the profile.
+- Shoulders are at least as wide as the hips in a front or back view; the waist is narrower than both.
+- The wrist bone hangs below the hip point, never level with the waist.
+- The head is about one seventh of a standing body.
+- The same head, in metres, in every frame: if one frame's headTop-to-chin span is wildly different from the others, it is the outlier and its points are scaled wrongly.
+- Never invent a part that is out of shot. If the feet were not visible in any frame there is no floor contact and no height.
+- Move a point only when the evidence requires it, and keep it inside 0-100.
 
-Reply ONLY with JSON, no prose:
-{"frames":[{"i":0,"view":"front","turn":0}],"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
+MEASUREMENTS, in INCHES, for a standing adult, and humanly possible:
+chest 26-64, waist 20-60, hips 28-66, shoulder 14-26, neck 11-22, arm 9-22 (shoulder to wrist bone), height 54-86. Use null for anything the frames cannot support.
+
+Reply with ONLY this JSON, no prose:
+{"frames":[{"i":0,"view":"front|back|side|three-quarter","turn":0}],
+ "measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":0}}`;
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
