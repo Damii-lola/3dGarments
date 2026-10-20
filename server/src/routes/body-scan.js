@@ -535,8 +535,16 @@ Reply with ONLY this JSON, no prose:
  * head. So a miss is worth one more attempt, and the attempt count is kept for
  * the diagnostics rather than hidden.
  */
-const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 10_000);
+const RECONCILE_TIMEOUT_MS = Number(process.env.VISION_RECONCILE_TIMEOUT_MS || 8_000);
 const RECONCILE_ATTEMPTS = 2;
+/**
+ * The model that takes over when the first one misses. The default calculator
+ * reads this body best (waist within half an inch) but shares a queue and
+ * occasionally waits out the whole deadline; this one answered every probe in
+ * about 200ms. Its numbers are coarser, and coarser is still better than the raw
+ * points, which read seven inches small on a clip that stops at the shins.
+ */
+const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function reconcileWithCloudflare(frames, modelOverride = '') {
   const raw = frames.map((f, i) => ({
@@ -547,7 +555,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     landmarks: Object.fromEntries(Object.entries(f.landmarks).map(([k, p]) => [k, [Math.round(p.x * 100), Math.round(p.y * 100)]])),
   }));
 
-  const model = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
+  const primary = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
+  const plan = [
+    { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
+    { model: RECONCILE_BACKUP_MODEL, timeoutMs: RECONCILE_TIMEOUT_MS },
+  ];
   const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
     { role: 'user', content: `The frames are in time order as the person turns. Raw readings:\n${JSON.stringify(raw)}\n\nReply with the corrected JSON.` },
@@ -557,21 +569,24 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   let attempts = 0;
   let waited = 0;
   let lastError = null;
+  let usedModel = null;
   while (!out && attempts < RECONCILE_ATTEMPTS) {
+    const step = plan[attempts];
     attempts += 1;
     const t0 = Date.now();
     try {
-      const data = await callModelRaw(model, messages, { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: RECONCILE_TIMEOUT_MS });
+      const data = await callModelRaw(step.model, messages, { viaCloudflare: true, maxTokens: 600, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
-      if (!out) lastError = 'unreadable reply';
+      if (out) usedModel = step.model;
+      else lastError = 'unreadable reply';
     } catch (e) {
       lastError = String(e?.message || e).slice(0, 160);
     }
     waited += Date.now() - t0;
-    if (!out && attempts < RECONCILE_ATTEMPTS) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - one more go`);
+    if (!out && attempts < RECONCILE_ATTEMPTS) log(`  calculation attempt ${attempts} missed (${lastError}) after ${Date.now() - t0}ms - trying the backup`);
   }
 
-  if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError };
+  if (!out) return { calc: null, relabelled: 0, notes: [], attempts, waited, error: lastError, model: null };
 
   // Which frame is square-on decides every width's correction, and the raw pass
   // labels all four "three-quarter". That is the one label worth fixing.
@@ -592,7 +607,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     const range = RANGES[k];
     if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
   }
-  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null };
+  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: null, model: usedModel };
 }
 
 
@@ -1240,7 +1255,7 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     const t0 = Date.now();
     try {
       const reck = await reconcileWithCloudflare(frames, String(req.query.calcModel || ''));
-      calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error } : null;
+      calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model } : null;
       if (reck && reck.calc) {
         calc = reck.calc;
         log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - ${reck.relabelled} view(s) corrected; said ${JSON.stringify(reck.calc)}`);
