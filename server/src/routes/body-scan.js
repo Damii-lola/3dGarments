@@ -503,9 +503,9 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. k lists the point names; each frame has v (view: f front, b back, s side, t three-quarter), d (turn in degrees) and p, x,y pairs on a 0-100 grid in k order. 0,0 is absent.
+const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. k names the points; each frame has v (view), d (turn in degrees) and p = x,y pairs on a 0-100 grid in k order (0,0 = absent).
 
-Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent an absent point.
+Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height. Give every number; null only when unsupported.
 
 Reply ONLY with JSON, adult inches:
 {"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
