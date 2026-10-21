@@ -590,15 +590,18 @@ async function askCalculation(provider, frames, parts, { points = 14, model = ''
 }
 
 /**
- * The split: each provider answers the numbers it reads best, in parallel.
+ * The split: each provider answers the whole question, and each contributes only
+ * the parts it reads best.
  *
  * Measured on the same four frames against a 40.8 / 32.2 / 38 / 19 body, qwen reads
- * chest and waist closer to truth and Gemini reads hips and shoulder closer, so the
- * two calls are given different jobs rather than asked the same question twice and
- * averaged. Both still see every point and both are still told the invariants.
+ * chest and waist closer to truth and Gemini reads hips and shoulder closer. Both
+ * are asked everything, because a model told to state only two numbers states them
+ * differently - asked for chest and waist alone, qwen answered 42/34 where the full
+ * question gives 40/32, and asked for hips and shoulder alone, Gemini returned the
+ * hips and not the shoulder at all.
  *
- * A part that comes back missing is filled by asking the ordinary ladder once - the
- * split is an optimisation, and an optimisation that loses the chest is not one.
+ * Cloudflare's answer is therefore always in hand: a Gemini timeout or 503 costs the
+ * upgrade, not the measurement, and nothing has to be asked twice.
  */
 const SPLIT_PARTS = Object.freeze({
   cloudflare: ['chest', 'waist'],
@@ -607,44 +610,33 @@ const SPLIT_PARTS = Object.freeze({
 
 async function reconcileSplit(frames, { points = 14, geminiModel = '' } = {}) {
   const [cf, gem] = await Promise.all([
-    askCalculation('cloudflare', frames, SPLIT_PARTS.cloudflare, { points }),
-    askCalculation('gemini', frames, SPLIT_PARTS.gemini, { points, model: geminiModel }),
+    askCalculation('cloudflare', frames, CALC_PARTS, { points }),
+    askCalculation('gemini', frames, CALC_PARTS, { points, model: geminiModel }),
   ]);
 
   const calc = {};
   const parts = {};
-  const take = (src, wanted) => {
+  const take = (src, wanted, label) => {
     for (const p of wanted) {
       if (src.calc[p] != null && calc[p] == null) {
         calc[p] = src.calc[p];
-        parts[p] = src.model;
+        parts[p] = src.model || label;
       }
     }
   };
-  take(cf, SPLIT_PARTS.cloudflare);
-  take(gem, SPLIT_PARTS.gemini);
-
-  let filled = null;
-  const missing = ['chest', 'waist', 'hips', 'shoulder'].filter((p) => calc[p] == null);
-  if (missing.length) {
-    const full = await reconcileWithCloudflare(frames, '', points, geminiModel);
-    if (full?.calc) {
-      for (const p of missing) {
-        if (full.calc[p] != null) {
-          calc[p] = full.calc[p];
-          parts[p] = `${full.model} (fill)`;
-        }
-      }
-    }
-    filled = { missing, model: full?.model || null, error: full?.error || null };
-  }
+  // The assigned parts first, then whatever else either of them stated - Cloudflare
+  // in front, because it is the one that answers when the other does not.
+  take(cf, SPLIT_PARTS.cloudflare, 'cloudflare');
+  take(gem, SPLIT_PARTS.gemini, 'gemini');
+  take(cf, CALC_PARTS, 'cloudflare');
+  take(gem, CALC_PARTS, 'gemini');
 
   const ok = Object.keys(calc).length > 0;
   return {
     calc: ok ? calc : null,
     relabelled: 0,
     notes: [],
-    attempts: 2 + (filled ? 1 : 0),
+    attempts: 2,
     waited: Math.max(cf.ms, gem.ms),
     error: ok ? null : (cf.error || gem.error || 'no measurements in either reply'),
     model: 'split',
@@ -656,7 +648,6 @@ async function reconcileSplit(frames, { points = 14, geminiModel = '' } = {}) {
     },
     parts,
     sides: { cloudflare: { ms: cf.ms, error: cf.error, said: cf.calc }, gemini: { ms: gem.ms, error: gem.error, said: gem.calc } },
-    filled,
   };
 }
 
