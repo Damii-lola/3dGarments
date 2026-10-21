@@ -783,7 +783,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
         const numbers = Object.values(out.measurements || {}).filter((v) => Number.isFinite(Number(v)) && v !== null).length;
         if (!numbers) {
           out = null;
-          lastError = 'no measurements in the reply';
+          lastError = `no measurements in the reply: ${String(extractText(data)).slice(0, 160)}`;
         } else {
           usedModel = step.gemini ? `gemini:${step.model}` : step.oa ? `${step.oa}:${step.model}` : step.model;
           const u = data?.result?.usage || data?.usage || null;
@@ -826,7 +826,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // of the scan from treating an empty object as an answer.
   const mm = Object.keys(calc).length;
   if (!mm) return { calc: null, relabelled, notes: [], attempts, waited, error: 'no measurements in the reply', model: usedModel };
-  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: attempts > 1 ? lastError : null, model: usedModel, usage };
+  return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: attempts > 1 ? lastError : null, model: usedModel, usage, reply: out };
 }
 
 
@@ -1334,6 +1334,7 @@ async function runCalculation(frames, query = {}) {
       error: reck.error,
       model: reck.model,
       tokens: reck.usage,
+      ...(reck.reply ? { reply: reck.reply } : {}),
       ...(reck.parts ? { parts: reck.parts } : {}),
       ...(reck.sides ? { sides: reck.sides } : {}),
       ...(reck.filled ? { filled: reck.filled } : {}),
