@@ -22,12 +22,16 @@ const PROVIDERS = () => ({
     apiBase: config.zai.apiBase,
     apiKey: config.zai.apiKey,
     model: config.zai.model,
+    queueWaitMs: config.zai.queueWaitMs,
+    maxQueue: config.zai.maxQueue,
     noThink: { thinking: { type: 'disabled' } },
   },
   nvidia: {
     apiBase: config.nvidia.apiBase,
     apiKey: config.nvidia.apiKey,
     model: config.nvidia.model,
+    queueWaitMs: config.nvidia.queueWaitMs,
+    maxQueue: config.nvidia.maxQueue,
     noThink: { chat_template_kwargs: { enable_thinking: false } },
   },
 });

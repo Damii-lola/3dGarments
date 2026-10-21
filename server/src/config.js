@@ -66,6 +66,8 @@ export const config = Object.freeze({
     apiKey: process.env.NVIDIA_API_KEY || '',
     model: process.env.NVIDIA_MODEL || 'qwen/qwen3-32b',
     apiBase: (process.env.NVIDIA_API_BASE || 'https://integrate.api.nvidia.com/v1').replace(/\/$/, ''),
+    queueWaitMs: Math.max(0, Number(process.env.NVIDIA_QUEUE_WAIT_MS || 6_000)),
+    maxQueue: Math.max(0, Number(process.env.NVIDIA_MAX_QUEUE || 2)),
   }),
   /**
    * Who reads the frames. `mistral` when a Mistral key is present (or when
