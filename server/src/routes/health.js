@@ -96,6 +96,11 @@ health.get('/deep', async (req, res) => {
           messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
           max_tokens: 8,
           temperature: 0,
+          // Thinking models answer into `reasoning` and leave `content` null. The
+          // switch that turns that off is spelled differently by each family, so the
+          // probe can try either: `?think=zai` or `?think=template`.
+          ...(req.query.think === 'zai' ? { thinking: { type: 'disabled' } } : {}),
+          ...(req.query.think === 'template' ? { chat_template_kwargs: { enable_thinking: false } } : {}),
         }, { timeoutMs: Number(req.query.timeout || 20_000) });
       const text = wantsGemini ? reply?.result?.choices?.[0]?.message?.content : reply?.response;
       out.calc = {
