@@ -46,6 +46,40 @@ async function post(body, timeoutMs) {
 }
 
 /**
+ * Send the same one-line question three ways, to separate "the network is stuck"
+ * from "this model ignores the thinking switch". Only ever run when asked for by
+ * hand: it is three calls of quota to answer a question about the wiring.
+ */
+export async function geminiDiagnose(timeoutMs = 12000) {
+  if (!geminiConfigured()) return { ok: false, error: 'not configured' };
+  const ask = [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }];
+  const variants = [
+    { name: 'bare', body: { contents: ask } },
+    { name: 'config', body: { contents: ask, generationConfig: { temperature: 0, maxOutputTokens: 16 } } },
+    { name: 'thinking-off', body: { contents: ask, generationConfig: { temperature: 0, maxOutputTokens: 16, thinkingConfig: { thinkingBudget: 0 } } } },
+  ];
+  const { apiKey, model, apiBase } = config.gemini;
+  const url = `${apiBase}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const results = [];
+  for (const v of variants) {
+    const t0 = Date.now();
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(v.body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const text = await res.text();
+      results.push({ variant: v.name, status: res.status, ms: Date.now() - t0, body: text.slice(0, 400) });
+    } catch (e) {
+      results.push({ variant: v.name, ms: Date.now() - t0, error: String(e?.message || e) });
+    }
+  }
+  return { ok: true, model, results };
+}
+
+/**
  * One chat turn. `messages` is the same [{role, content}] the Workers AI path
  * builds; only the system message is separate here, which is where Gemini wants it.
  */

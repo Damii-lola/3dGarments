@@ -3,7 +3,7 @@ import { config, missingConfig, visionConfigured, visionModelName } from '../con
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
-import { geminiChat, geminiConfigured, listGeminiModels } from '../lib/gemini.js';
+import { geminiChat, geminiConfigured, geminiDiagnose, listGeminiModels } from '../lib/gemini.js';
 
 const started = Date.now();
 export const health = Router();
@@ -78,6 +78,7 @@ health.get('/deep', async (req, res) => {
   // model names the key may call, which is the quickest way to find out that the
   // configured name is not one of them.
   if (req.query.geminiModels === '1') out.gemini_models = await listGeminiModels();
+  if (req.query.geminiDiag === '1') out.gemini_diag = await geminiDiagnose();
 
   if (req.query.calc === '1' && (cloudflareConfigured() || geminiConfigured())) {
     const wantsGemini = String(req.query.model || '') === 'gemini' || (req.query.provider === 'gemini');
