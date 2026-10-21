@@ -1155,22 +1155,38 @@ signup is refused by Supabase itself (`x-sb-error-code: email_address_invalid`).
 signed up on the live Pages build (`fmsqa995374@maxxspace.com`, username
 `fmsqa995374`), received **"Confirm your email address"** from
 `FindMySize <damii.projects@gmail.com>` within ~25 s with the pasted template, and
-the `verify` token confirmed the address. Then log in with the password: the page
+the `verify` token confirmed the address. (The sender was switched to
+`findmysize.us@gmail.com` the same day - a later signup mail arrived from
+`"FindMySize" <findmysize.us@gmail.com>`, so the change works.) Then log in with the
+password: the page
 asked for the code, the second mail ("Your sign-in link", subject not yet changed to
 the README's "Your FindMySize login code") arrived, and **the 8-digit code was
 accepted by the API**.
 
 Two faults came out of that test, both configuration rather than code:
 
-- **Supabase's Site URL is still `http://localhost:3000`.** The signup sent
-  `redirect_to=https://damii-lola.github.io/3dGarments/auth/`, but the generated link
-  said `redirect_to=http://localhost:3000`, so a real person clicking "Confirm and
-  open the scanner" lands on a dead page. Both the link and the reset link are
-  affected; the code path is not. Fix: Authentication -> URL Configuration -> Site
-  URL = `https://damii-lola.github.io/3dGarments/auth/`, plus
-  `https://damii-lola.github.io/3dGarments/**` and `http://localhost:5173/**` in
-  Redirect URLs.
-- **The code is 8 digits**, not six - see above.
+- **Supabase's Site URL was `http://localhost:3000`** *(fixed the same day)*. The signup
+  sent `redirect_to=https://damii-lola.github.io/3dGarments/auth/`, but the generated
+  link said `http://localhost:3000`, so a real person clicking "Confirm and open the
+  scanner" landed on a dead page. Setting Site URL to the Pages auth page and adding
+  `https://damii-lola.github.io/3dGarments/**` + `http://localhost:5173/**` fixed it.
+  Proved without an inbox: `GET /auth/v1/verify?token=bogus&redirect_to=…` returns
+  **303** with `Location: https://damii-lola.github.io/3dGarments/auth/#error=…`
+  (and `/auth/?reset=1#…` for the recovery variant). Before the fix both went to
+  `localhost:3000`.
+- **The code was 8 digits**, not six - see above.
+
+After the fix, on the live build: an expired link shows "That link has expired or has
+already been used…" and strips the hash; a real session arriving in the hash (minted
+with the password grant) lands on `/size/` signed in; a `?reset=1#…&type=recovery`
+arrival shows "Set a new password", and submitting it opened the scanner - the new
+password then logged in (200) and the old one did not (400). The SMTP sender is now
+`"FindMySize" <findmysize.us@gmail.com>` (seen in a delivered signup mail), not
+`damii.projects@gmail.com`.
+
+**Junk accounts from the test, safe to delete** (Authentication -> Users):
+`fmsqa995374@maxxspace.com` (confirmed), `fmscheck2110@westcast-systems.com`,
+`fmsdrop2110@maildrop.cc`, `fmslol2110@ov.lucktaro.com`.
 
 
 
