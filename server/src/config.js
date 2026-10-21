@@ -123,7 +123,16 @@ export const config = Object.freeze({
   limits: Object.freeze({
     uploadBytes: Number(process.env.MAX_UPLOAD_MB || 15) * 1024 * 1024,
     uploadsPerHour: Number(process.env.UPLOADS_PER_HOUR || 60),
+    // The body scan is open by design (a shopper never logs in), so these two
+    // numbers are what stops one script from spending every vision token and
+    // every megabyte of temporary disk. A phone clip of 30 s is 30-40 MB.
+    bodyScanBytes: Number(process.env.MAX_BODY_SCAN_MB || 96) * 1024 * 1024,
+    bodyScanPerHour: Number(process.env.BODY_SCAN_PER_HOUR || 20),
+    bodyScanConcurrent: Number(process.env.BODY_SCAN_CONCURRENT || 3),
   }),
+  // /health/deep can call paid providers and shows internals. It answers only to
+  // this header, and only when the variable is set - empty means it is off.
+  healthToken: (process.env.HEALTH_TOKEN || '').trim(),
   // optional shared secret that lets the lab (no login) call /api/scan; empty = off
   scanLabKey: process.env.SCAN_LAB_KEY || '',
   processingSize: Number(process.env.PROCESSING_SIZE || 1024),

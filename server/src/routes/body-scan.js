@@ -51,6 +51,7 @@
 
 import { Router } from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import { readFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
@@ -100,7 +101,7 @@ const upload = multer({
       cb(null, `3dg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
     },
   }),
-  limits: { fileSize: 160 * 1024 * 1024, files: 17 },
+  limits: { fileSize: config.limits.bodyScanBytes, files: 17 },
   fileFilter: (_req, file, cb) => {
     const image = /^image\/(jpeg|png|webp)$/i.test(file.mimetype);
     const video = /^video\//i.test(file.mimetype)
@@ -110,6 +111,35 @@ const upload = multer({
 });
 
 export const bodyScan = Router();
+
+/**
+ * A shopper never logs in, so this route cannot ask for a token. What it can do
+ * is stop being free: one address gets a handful of scans an hour, and only a
+ * few scans run at once. Both are counted before the upload is read, so a loop
+ * costs us nothing and fattens no temp folder.
+ */
+const limiter = rateLimit({
+  windowMs: 60 * 60_000,
+  limit: config.limits.bodyScanPerHour,
+  keyGenerator: (req) => req.ip,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many scans from this connection — try again later.' },
+});
+
+let inFlight = 0;
+function capConcurrency(_req, res, next) {
+  if (inFlight >= config.limits.bodyScanConcurrent) {
+    res.set('Retry-After', '30');
+    return res.status(503).json({ error: 'The scanner is busy — try again in a moment.' });
+  }
+  inFlight += 1;
+  let released = false;
+  const release = () => { if (!released) { released = true; inFlight -= 1; } };
+  res.on('finish', release);
+  res.on('close', release);
+  next();
+}
 
 const log = (...args) => console.log('[body-scan]', ...args);
 
@@ -1357,7 +1387,7 @@ async function runCalculation(frames, query = {}) {
   return { calc, calcMeta };
 }
 
-bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
+bodyScan.post('/', limiter, capConcurrency, upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
   const startedAt = Date.now();
 
   // Whatever the upload was â€” a clip, a dozen stills, or both â€” the files on

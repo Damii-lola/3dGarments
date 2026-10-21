@@ -109,9 +109,15 @@ Go to Cloudflare dashboard → **AI → Workers AI → Use REST API**. Create a 
 ### 3. Render (live)
 The API is running at **https://threedgarments.onrender.com**. Its secrets are stored only as Render environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. There are no `.env` files in this repo. Render redeploys on every push to `main` once CI passes.
 
-**Who reads the frames** is one variable. `MISTRAL_API_KEY` (plus optional `MISTRAL_MODEL`, default `ministral-14b-latest`) makes the scan use Mistral's vision model; without it the scan uses Workers AI exactly as before. `VISION_PROVIDER=mistral|cloudflare` forces the choice when both keys exist. Whichever model runs, it only ever reports *where the landmarks are* — every centimetre after that is arithmetic in `server/src/lib/bodyGeometry.js`, on this server. `/health` reports `integrations.vision` (`provider`, `model`, `configured`, `concurrency`) so the deployment says which one it is actually using.
+**Who reads the frames** is one variable. `MISTRAL_API_KEY` (plus optional `MISTRAL_MODEL`, default `ministral-14b-latest`) makes the scan use Mistral's vision model; without it the scan uses Workers AI exactly as before. `VISION_PROVIDER=mistral|cloudflare` forces the choice when both keys exist. Whichever model runs, it only ever reports *where the landmarks are* — every centimetre after that is arithmetic in `server/src/lib/bodyGeometry.js`, on this server. `/health` says whether the server is up and `ready` (every required variable present); the per-integration detail moved behind `/health/deep`.
 
-Check it at `https://threedgarments.onrender.com/health/deep` → `"ok": true` means Supabase, Storage and Cloudflare AI are all linked. `cloudflare_ai.credentials` shows what the server is actually holding — the token's length, type (`cfut_` user / `cfat_` account / legacy 40-char), whether it has stray whitespace, an 8-character one-way fingerprint, and the account id — and `attempts` shows what Cloudflare said to each verify endpoint. `cloudflare_ai.vision` reports what Workers AI last said: `calls_today`, `lastOkAt`, and `lastError.kind` — `capacity` (shared GPUs busy, wait a minute), `quota` (the account's daily free neurons are spent; a new token on the same account does not reset it), or `auth` (the token was rejected — check `credentials.token_fingerprint` changed after editing it on Render).
+Check it with the token you set as `HEALTH_TOKEN` on Render:
+
+```bash
+curl -H "x-health-token: $HEALTH_TOKEN" https://threedgarments.onrender.com/health/deep
+```
+
+→ `"ok": true` means Supabase, Storage and the vision provider are all linked; `vision.lastOkAt` / `lastError.kind` say what Workers AI last did (`capacity`, `quota` or `auth`). The endpoint runs real provider calls, so it is not public: with no `HEALTH_TOKEN` on the server it answers **503**, and with the variable set a missing or wrong `x-health-token` header answers **401**. The token goes in the header, never the query string, so it does not end up in access logs.
 
 ### 4. GitHub
 - **Settings → Pages → Source: GitHub Actions**
@@ -133,7 +139,8 @@ Rebuild the body models (only after changing `assets/` or `tools/body/`): start 
 ## API
 | Method | Path | |
 |---|---|---|
-| GET | `/health`, `/health/deep` | liveness, integration check |
+| GET | `/health` | liveness: `ok`, `version`, `uptime_s`, `ready` |
+| GET | `/health/deep` | integration check; needs `x-health-token: $HEALTH_TOKEN` (503 when the variable is unset, 401 when the header is missing or wrong) |
 | GET | `/api/garments` | list, with signed image URLs |
 | POST | `/api/body-scan` | measure a clip: `video` (multipart — the default path; the server decodes it, takes 8 stills and reads them) or JPEG `frames` (multipart, `?frames=1` in the app and the automatic fallback) or `pose` landmarks measured on the device (JSON, `?local=1`). Optional `from`/`to` (the trimmed span, seconds), `chart` (the brand's size chart — `{ name, sex, unit, columns, rows }` — used only to pick a size, never to measure). Returns the measurements, the notes, and `size` / `sizeChart` / `sizeSource` |
 | POST | `/api/garments` | multipart `image` returns 202 and processes in the background |

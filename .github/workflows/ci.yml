@@ -9,6 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only by default: a test job has no reason to write to the repo or use a
+# token with more reach than checking the code out.
+permissions:
+  contents: read
+
 jobs:
   server:
     name: API — check & test

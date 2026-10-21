@@ -88,7 +88,7 @@ export function createUploads({ toast }) {
       card.setAttribute('aria-label', `${g.name}, ${g.images.length} images — open to edit`);
       const shown = g.images.slice(0, 4), more = g.images.length - shown.length;
       card.innerHTML = `
-        <div class="gg-thumbs">${shown.map((img, i) => `<span style="background-image:url('${urlOf(img)}')">${i === 3 && more > 0 ? `<b>+${more}</b>` : ''}</span>`).join('')}</div>
+        <div class="gg-thumbs">${shown.map((img, i) => `<span style="background-image:url('${esc(urlOf(img))}')">${i === 3 && more > 0 ? `<b>+${more}</b>` : ''}</span>`).join('')}</div>
         <div class="gg-meta"><b>${esc(g.name)}</b><small>${g.images.length} image${g.images.length === 1 ? '' : 's'}</small></div>
         <button type="button" class="icon-btn" data-act="edit" title="Edit group" aria-label="Edit ${esc(g.name)}">${ICON.edit}</button>
         <button type="button" class="icon-btn danger" data-act="delete" title="Delete group" aria-label="Delete ${esc(g.name)}">${ICON.trash}</button>`;
@@ -144,7 +144,7 @@ export function createUploads({ toast }) {
       count.classList.toggle('full', full);
       grid.innerHTML = draft.images.map((img, i) => `
         <figure class="pick" title="${esc(img.name)}">
-          <img src="${urlOf(img)}" alt="${esc(img.name)}" draggable="false" />
+          <img src="${esc(urlOf(img))}" alt="${esc(img.name)}" draggable="false" />
           <button type="button" class="pick-x" data-i="${i}" aria-label="Remove ${esc(img.name)}">${ICON.x}</button>
         </figure>`).join('')
         + (full ? '' : `<button type="button" class="pick-add" data-act="add">${ICON.plus}<span>Add more</span><small>${MAX_PER_GROUP - n} left</small></button>`);

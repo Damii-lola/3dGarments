@@ -1,54 +1,50 @@
 ﻿import { Router } from 'express';
-import { config, missingConfig, visionConfigured, visionModelName } from '../config.js';
+import crypto from 'node:crypto';
+import { config, missingConfig } from '../config.js';
 import { db, supabaseConfigured } from '../lib/supabase.js';
-import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
+import { cloudflareConfigured, runModel, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured, geminiSweep, listGeminiModels } from '../lib/gemini.js';
-import { oaConfigured, oaKeyCount, oaModels, oaPace, oaProbe } from '../lib/openai-compat.js';
+import { oaConfigured, oaModels, oaProbe } from '../lib/openai-compat.js';
 
 const started = Date.now();
 export const health = Router();
 
 health.get('/', (_req, res) => {
-  const missing = missingConfig();
+  // Public and deliberately boring: enough for Render and a status page to see
+  // that the process is alive, and nothing about keys, models or pace. The
+  // details live behind /health/deep and HEALTH_TOKEN.
   res.json({
     ok: true,
     service: '3dgarments-api',
     version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'dev',
     uptime_s: Math.round((Date.now() - started) / 1000),
-    integrations: {
-      supabase: supabaseConfigured(),
-      cloudflare_ai: cloudflareConfigured(),
-      // Who actually reads the frames. The provider only says where the
-      // landmarks are; the measurements are arithmetic on this server either way.
-      vision: {
-        provider: config.vision.provider,
-        model: visionModelName(),
-        configured: visionConfigured(),
-        concurrency: config.vision.concurrency,
-        reads: config.vision.reads,
-        reconcile: config.vision.reconcile,
-        fallback: config.vision.fallback,
-      },
-      // Who turns the landmarks into tape measurements. `preferred` is what the
-      // deployment asks for; both keys can be present while only one is used.
-      calc: {
-        preferred: config.calc.provider || 'cloudflare',
-        cloudflare: cloudflareConfigured(),
-        gemini: geminiConfigured(),
-        gemini_model: config.gemini.model,
-        cloudflare_model: config.cloudflare.textModel || config.cloudflare.visionModel,
-        // The free OpenAI-shaped calculators. A key is the whole switch.
-        zai: { configured: oaConfigured('zai'), model: config.zai.model, keys: oaKeyCount('zai'), pace: oaPace('zai') },
-        nvidia: { configured: oaConfigured('nvidia'), model: config.nvidia.model },
-      },
-    },
-    missing_env: missing,
+    ready: missingConfig().length === 0,
   });
 });
 
+/**
+ * /health/deep runs real calls against the providers. On an open URL that is a
+ * free way to spend someone else's quota, so it is off unless HEALTH_TOKEN is
+ * set, and it only accepts the value in `x-health-token` (never a query string,
+ * which would end up in access logs and browser history).
+ */
+function requireHealthToken(req, res, next) {
+  const expected = config.healthToken;
+  if (!expected) {
+    return res.status(503).json({ error: 'Deep health checks are off. Set HEALTH_TOKEN on the server to enable them.' });
+  }
+  const given = String(req.get('x-health-token') || '');
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'Missing or wrong x-health-token.' });
+  }
+  next();
+}
+
 /** Live connectivity check for every integration. */
-health.get('/deep', async (req, res) => {
+health.get('/deep', requireHealthToken, async (req, res) => {
   const out = { supabase: { ok: false }, storage: { ok: false }, vision: { ok: false } };
   if (supabaseConfigured()) {
     try {

@@ -220,7 +220,14 @@ function showSentStep(email) {
   showStep('sent');
   titleEl.textContent = 'Confirm your email';
   leadEl.textContent = 'One link, one click, and the scanner opens.';
-  sentNote.innerHTML = `We sent a link to <strong>${email.replace(/[<>&]/g, '')}</strong>. Open it on this device and you land back here, already signed in. Nothing happens until it is clicked.`;
+  // Built as nodes, not a template: an address is text, never markup.
+  const strong = document.createElement('strong');
+  strong.textContent = email;
+  sentNote.replaceChildren(
+    document.createTextNode('We sent a link to '),
+    strong,
+    document.createTextNode('. Open it on this device and you land back here, already signed in. Nothing happens until it is clicked.'),
+  );
   say('The link is on its way — check spam if it is not there in a minute.', 'ok');
   startCooldown(sentResend, 'Send the email again');
 }

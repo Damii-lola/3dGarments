@@ -10,6 +10,9 @@ concurrency:
   group: supabase-migrations
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   migrate:
     runs-on: ubuntu-latest

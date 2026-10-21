@@ -3,6 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- No inline scripts (the reveal script is a file), no third-party code except
+         the MediaPipe loader and its model. Everything else is this origin, the API
+         and the signed Supabase storage URLs. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="theme-color" content="#0d0e12" />
     <title>FindMySize â€” the size is measured, not guessed</title>
     <meta
@@ -13,12 +18,7 @@
     <!-- Sets the flag the reveal styles answer to, before anything is painted, and
          lifts it again if the script below never arrives: a chunk that fails to
          load must not leave the page invisible. -->
-    <script>
-      document.documentElement.classList.add('js');
-      window.__revealFailSafe = setTimeout(function () {
-        document.documentElement.classList.remove('js');
-      }, 3000);
-    </script>
+    <script src="%BASE_URL%reveal.js"></script>
   </head>
   <body>
     <!-- The sky. Three fields of stars, each on its own tile, each sliding one

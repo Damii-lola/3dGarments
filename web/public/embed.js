@@ -109,7 +109,11 @@
     var frame = document.createElement('iframe');
     frame.className = 'threeDG-frame';
     frame.title = 'Find your size';
-    frame.setAttribute('allow', 'camera; microphone; fullscreen');
+    // The clip is recorded in the phone's own camera app (an <input capture>),
+    // not with getUserMedia, so the frame asks for no microphone. `camera` stays
+    // for browsers that gate the capture input on it, and fullscreen is used by
+    // the review step.
+    frame.setAttribute('allow', 'camera; fullscreen');
     frame.setAttribute('allowfullscreen', '');
     frame.src = base + 'size/?g=' + encodeURIComponent(code) + '&embed=1';
 
