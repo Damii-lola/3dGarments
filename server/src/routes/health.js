@@ -3,6 +3,7 @@ import { config, missingConfig, visionConfigured, visionModelName } from '../con
 import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
+import { geminiChat, geminiConfigured, listGeminiModels } from '../lib/gemini.js';
 
 const started = Date.now();
 export const health = Router();
@@ -27,6 +28,15 @@ health.get('/', (_req, res) => {
         reads: config.vision.reads,
         reconcile: config.vision.reconcile,
         fallback: config.vision.fallback,
+      },
+      // Who turns the landmarks into tape measurements. `preferred` is what the
+      // deployment asks for; both keys can be present while only one is used.
+      calc: {
+        preferred: config.calc.provider === 'gemini' ? 'gemini' : 'cloudflare',
+        cloudflare: cloudflareConfigured(),
+        gemini: geminiConfigured(),
+        gemini_model: config.gemini.model,
+        cloudflare_model: config.cloudflare.textModel || config.cloudflare.visionModel,
       },
     },
     missing_env: missing,
@@ -63,16 +73,26 @@ health.get('/deep', async (req, res) => {
   // Ask the calculation model a one-line question and time it. The scan's slow
   // tail is that call waiting on a shared queue, so being able to measure the
   // queue from outside the scan is worth more than a log line nobody kept.
-  if (req.query.calc === '1' && cloudflareConfigured()) {
-    const model = String(req.query.model || config.cloudflare.textModel || config.cloudflare.visionModel);
+  //
+  // `?calc=1&model=gemini` probes Gemini instead; `?geminiModels=1` lists the
+  // model names the key may call, which is the quickest way to find out that the
+  // configured name is not one of them.
+  if (req.query.geminiModels === '1') out.gemini_models = await listGeminiModels();
+
+  if (req.query.calc === '1' && (cloudflareConfigured() || geminiConfigured())) {
+    const wantsGemini = String(req.query.model || '') === 'gemini' || (req.query.provider === 'gemini');
+    const model = wantsGemini ? 'gemini' : String(req.query.model || config.cloudflare.textModel || config.cloudflare.visionModel);
     const t0 = Date.now();
     try {
-      const reply = await runModel(model, {
-        messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
-        max_tokens: 8,
-        temperature: 0,
-      }, { timeoutMs: Number(req.query.timeout || 20_000) });
-      out.calc = { ok: true, model, ms: Date.now() - t0, reply: String(reply?.response ?? '').slice(0, 60) };
+      const reply = wantsGemini
+        ? await geminiChat([{ role: 'user', content: 'Reply with the single word: ready' }], { maxTokens: 16, json: false, timeoutMs: Number(req.query.timeout || 20_000) })
+        : await runModel(model, {
+          messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+          max_tokens: 8,
+          temperature: 0,
+        }, { timeoutMs: Number(req.query.timeout || 20_000) });
+      const text = wantsGemini ? reply?.result?.choices?.[0]?.message?.content : reply?.response;
+      out.calc = { ok: true, model, ms: Date.now() - t0, reply: String(text ?? '').slice(0, 60), tokens: wantsGemini ? reply?.result?.usage : null };
     } catch (e) {
       out.calc = { ok: false, model, ms: Date.now() - t0, error: String(e.message || e).slice(0, 200) };
     }

@@ -82,6 +82,7 @@ import {
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
 import { mistralChat, mistralConfigured } from '../lib/mistral.js';
+import { geminiChat, geminiConfigured } from '../lib/gemini.js';
 import { bestSize, chartFromInput, CHARTS, chartKey, columnsFromRows } from '../lib/sizing.js';
 import { measureField } from '../shared/measures.js';
 
@@ -538,12 +539,18 @@ const READ_TIMEOUT_MS = Number(process.env.VISION_READ_TIMEOUT_MS || 25_000);
  */
 const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
-async function reconcileWithCloudflare(frames, modelOverride = '') {
+async function reconcileWithCloudflare(frames, modelOverride = '', points = 14) {
   // The table is the measurement and it is what costs tokens, so it carries only
-  // the points the seven numbers are made of: head, shoulders, waist, hips. The
-  // armpits and the wrists are read by the geometry pass anyway, and the feet were
-  // never in this clip - a point that is absent costs two numbers to say so.
-  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR', 'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'];
+  // the points the seven numbers are made of. The three sets below are the ones
+  // worth measuring: 14 is what the calculation reads best, 10 drops the wrists,
+  // and 8 drops the armpits as well - each one was tried on the same four frames
+  // and cost about two inches of chest, which is why 14 is the default.
+  const POINT_SETS = {
+    14: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR', 'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'],
+    10: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR', 'footL', 'footR'],
+    8: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR'],
+  };
+  const WANTED = POINT_SETS[points] || POINT_SETS[14];
   const raw = {
     k: WANTED,
     f: frames.map((f) => ({
@@ -554,7 +561,13 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     })),
   };
 
-  const primary = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
+  // `?calcModel=gemini` and CALC_PROVIDER=gemini both mean "ask Gemini first". It
+  // is a rung, not a replacement: if it is slow or refuses, the Cloudflare ladder
+  // below still answers, and the scan never notices which one did.
+  const geminiFirst = geminiConfigured() && (modelOverride === 'gemini' || config.calc.provider === 'gemini');
+  const primary = modelOverride && modelOverride !== 'gemini'
+    ? modelOverride
+    : (config.cloudflare.textModel || config.cloudflare.visionModel);
   // The first miss is usually a queue hiccup on one worker, so the same model is
   // asked again before the backup takes over. The backup answers fast but reads
   // waist and hips less truly, so it is the last resort, not the spare.
@@ -564,11 +577,13 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // the raw points and reads about seven inches small. Mistral already read the
   // frames and is text-only here: the same table of landmarks, the same question,
   // no image and no extra vision cost.
-  const plan = [
+  const plan = [];
+  if (geminiFirst) plan.push({ gemini: true, timeoutMs: RECONCILE_TIMEOUT_MS });
+  plan.push(
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: RECONCILE_BACKUP_MODEL, timeoutMs: RECONCILE_TIMEOUT_MS },
-  ];
+  );
   if (mistralConfigured()) plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
   const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
@@ -593,7 +608,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
     attempts += 1;
     const t0 = Date.now();
     try {
-      const data = await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
+      // Gemini takes the same messages and returns the same envelope, so the loop
+      // does not need to know which provider answered - only `usedModel` records it.
+      const data = step.gemini
+        ? await geminiChat(msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs })
+        : await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) {
         // A reply with no number in it is not an answer, whatever shape it has.
@@ -602,7 +621,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
           out = null;
           lastError = 'no measurements in the reply';
         } else {
-          usedModel = step.model;
+          usedModel = step.gemini ? 'gemini' : step.model;
           const u = data?.result?.usage || data?.usage || null;
           if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
         }
@@ -1289,26 +1308,32 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
 
   log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${rejected.length} rejected as implausible, ${failures.length} failed)`);
 
-  // The calculation step. Mistral saw the frames; Cloudflare now turns those
-  // readings into one consistent body. If Workers AI is unreachable the scan
+  // The calculation step. Mistral saw the frames; a calculator now turns those
+  // readings into one consistent body. If the calculator is unreachable the scan
   // still measures — from the points as they came in.
   let calc = null;
   let calcMeta = null;
+  // Either calculator will do: Cloudflare when its credentials are present, Gemini
+  // when its key is, and the ladder inside falls through to the other.
+  const calcConfigured = (config.cloudflare.accountId && config.cloudflare.apiToken) || geminiConfigured();
   if (config.vision.provider === 'mistral' && config.vision.reconcile
-      && frames.length && config.cloudflare.accountId && config.cloudflare.apiToken) {
+      && frames.length && calcConfigured) {
     const t0 = Date.now();
+    // `?calcPoints=8|10|14` is a test knob, not a setting: it exists so the same
+    // four frames can be shown to a model with fewer points and the shrink measured.
+    const points = Number(req.query.calcPoints);
     try {
-      const reck = await reconcileWithCloudflare(frames, String(req.query.calcModel || ''));
+      const reck = await reconcileWithCloudflare(frames, String(req.query.calcModel || ''), points === 8 || points === 10 ? points : 14);
       calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage } : null;
       if (reck && reck.calc) {
         calc = reck.calc;
-        log(`  Cloudflare reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - ${reck.relabelled} view(s) corrected; said ${JSON.stringify(reck.calc)}`);
+        log(`  ${reck.model || 'calculation'} reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - said ${JSON.stringify(reck.calc)}`);
         if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
       } else {
-        log(`  Cloudflare returned no usable reconciliation after ${Date.now() - t0}ms${reck ? ` / ${reck.attempts} attempt(s): ${reck.error}` : ''} - measuring from the raw points`);
+        log(`  calculation returned nothing usable after ${Date.now() - t0}ms${reck ? ` / ${reck.attempts} attempt(s): ${reck.error}` : ''} - measuring from the raw points`);
       }
     } catch (e) {
-      log(`!! Cloudflare could not reconcile (${Date.now() - t0}ms): ${e.message} - measuring from the raw points`);
+      log(`!! calculation could not reconcile (${Date.now() - t0}ms): ${e.message} - measuring from the raw points`);
     }
   }
 

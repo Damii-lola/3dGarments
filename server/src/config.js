@@ -24,6 +24,20 @@ export const config = Object.freeze({
     apiBase: process.env.CLOUDFLARE_API_BASE || 'https://api.cloudflare.com/client/v4',
   }),
   /**
+   * Who does the calculation step - the one that turns four frames of landmarks
+   * into seven tape measurements. Cloudflare by default; `CALC_PROVIDER=gemini`
+   * makes Gemini the first rung, and `?calcModel=gemini` asks for it on a single
+   * scan without changing the deployment the shop is using.
+   */
+  calc: Object.freeze({
+    provider: (process.env.CALC_PROVIDER || '').toLowerCase(),
+  }),
+  gemini: Object.freeze({
+    apiKey: process.env.GEMINI_API_KEY || '',
+    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    apiBase: process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com/v1beta',
+  }),
+  /**
    * Who reads the frames. `mistral` when a Mistral key is present (or when
    * VISION_PROVIDER says so), otherwise Cloudflare — so pasting the key into
    * Render is the whole switch, and deleting it is the whole rollback.
