@@ -50,15 +50,15 @@ async function post(body, timeoutMs) {
  * carry a POST" from "this model ignores the thinking switch". Only ever run when
  * asked for by hand: it spends a little quota to answer a question about wiring.
  *
- * The GET that lists models works, and the POST that asks a question does not, so
- * the variants walk across exactly that line: the OpenAI-shaped endpoint, the v1
- * path, the key in a header instead of the query, and a POST to a host that is not
- * Google at all.
+ * The GET that lists models works, and the POST that asks a question never even
+ * returns headers, so the variants walk across exactly that line: a streaming
+ * POST (which other people's servers report working when plain generateContent
+ * hangs), and the same POST wearing a browser user agent, in case something on
+ * the way is holding requests it does not like the look of.
  */
 export async function geminiDiagnose(timeoutMs = 12000) {
   if (!geminiConfigured()) return { ok: false, error: 'not configured' };
   const { apiKey, model, apiBase } = config.gemini;
-  const root = apiBase.replace(/\/v1beta$/, '');
   const ask = { contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }] };
   const auth = { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
   const variants = [
@@ -69,21 +69,19 @@ export async function geminiDiagnose(timeoutMs = 12000) {
       headers: auth,
     },
     {
-      name: 'openai-compat',
-      url: `${apiBase}/openai/chat/completions`,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: { model, messages: [{ role: 'user', content: 'Reply with the single word: ready' }], max_tokens: 16 },
-    },
-    {
-      name: 'v1-path',
-      url: `${root}/v1/models/${encodeURIComponent(model)}:generateContent`,
+      name: 'stream-sse',
+      url: `${apiBase}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
       headers: auth,
       body: ask,
     },
     {
-      name: 'header-key',
+      name: 'ua-browser',
       url: `${apiBase}/models/${encodeURIComponent(model)}:generateContent`,
-      headers: auth,
+      headers: {
+        ...auth,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+        Origin: 'https://3dgarments.com',
+      },
       body: ask,
     },
     {
