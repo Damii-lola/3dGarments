@@ -58,7 +58,7 @@
         <h1 id="auth-title">Create your account</h1>
         <p class="lead" id="auth-lead">
           A name, an email and a password. Confirm the address once, and after
-          that every log in is your password plus a six-digit code we email you
+          that every log in is your password plus a code we email you
           &mdash; nothing to install.
         </p>
       </header>
@@ -89,7 +89,7 @@
           </label>
           <p class="auth-note">
             We send one confirmation link now. After that, every log in asks for
-            the six-digit code we email you &mdash; a password alone is not enough.
+            the code we email you &mdash; a password alone is not enough.
           </p>
           <div class="actions">
             <button class="btn-primary" id="signup-submit" type="submit">Create account</button>
@@ -117,8 +117,8 @@
       <section class="auth-step" id="auth-code" hidden>
         <form class="auth-form" id="code-form" novalidate>
           <label class="auth-field">
-            <span>Six-digit code</span>
-            <input class="auth-code-input" id="code-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" />
+            <span>Code from the email</span>
+            <input class="auth-code-input" id="code-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" />
           </label>
           <div class="actions">
             <button class="btn-primary" id="code-submit" type="submit">Verify and open the scanner</button>

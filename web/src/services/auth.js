@@ -121,7 +121,8 @@ export async function signOut(scope = 'global') {
 /* ---------------------------- second step: the inbox ---------------------------- */
 
 /**
- * The six-digit code that finishes a login.
+ * The code that finishes a login. Its length is the project's setting (six to
+ * ten digits), so nothing here assumes six.
  *
  * Supabase calls this the magic link: the same email carries a code and a link,
  * and both prove the same thing — that the person holding the password can also

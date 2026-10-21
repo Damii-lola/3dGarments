@@ -26,7 +26,7 @@ const SCANNER = 'size/';
 const ACCOUNT = 'auth/';
 
 /** Where a demo request goes. Change this one line when the address changes. */
-const DEMO_EMAIL = 'hello@findmysize.com';
+const DEMO_EMAIL = 'findmysize.us@gmail.com';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

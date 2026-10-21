@@ -14,7 +14,7 @@ Supabase → **Authentication** → **Email Templates**:
 
 ## The one variable that matters
 
-`magic-link.html` contains `{{ .Token }}`. That is the six-digit code the login
+`magic-link.html` contains `{{ .Token }}`. That is the code the login
 screen asks for. Supabase's default Magic Link template only has
 `{{ .ConfirmationURL }}` (the clickable link), so if you paste the default back
 in, logins still work by clicking the link but the code box has nothing to type.
@@ -30,13 +30,19 @@ told to wait.
 
 Free options that work (Supabase → Authentication → **SMTP Settings**):
 
-- **Resend** — free tier, 100 emails/day, 3,000/month. Needs a domain you own,
-  or their `onboarding@resend.dev` sender for testing only.
-- **Brevo** — free tier, 300 emails/day.
+- **Gmail** — no domain needed. Turn on 2-Step Verification, create an app
+  password (Google Account → Security → App passwords), then host
+  `smtp.gmail.com`, port 587, username the full address, password the app
+  password. ~500 a day, and the From is that address.
+- **Brevo** — free tier, 300 emails/day. Works without a domain if you verify a
+  sender address under Senders, Domains & IPs. Host `smtp-relay.brevo.com`,
+  port 587, the SMTP login and key from SMTP & API → SMTP.
+- **Resend** — free tier, 100 emails/day. Needs a domain you own, or their
+  `onboarding@resend.dev` sender for testing only.
 
-Set the sender to something at a domain you control (for example
-`no-reply@findmysize.com`) once the domain exists, and keep the display name
-`FindMySize`.
+This project currently sends through the Gmail account `findmysize.us@gmail.com`,
+with the display name `FindMySize`. When a domain exists, move the sender to
+something like `no-reply@findmysize.com` and keep everything else the same.
 
 ## Site URL and redirects
 

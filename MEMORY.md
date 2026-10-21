@@ -1093,7 +1093,7 @@ project (`mailer_autoconfirm: false`), so there is no session yet: the page says
 
 1. Password, via `signInWithPassword`. The session that creates is **given straight
    back** with `signOut({ scope: 'local' })` - it proves only the password.
-2. A six-digit code via `signInWithOtp({ shouldCreateUser: false })`, checked with
+2. A code via `signInWithOtp({ shouldCreateUser: false })`, checked with
    `verifyOtp`.
 
 `redirectBlocked` exists because the SIGNED_IN event from step 1 would otherwise send
@@ -1105,6 +1105,13 @@ The code comes from Supabase's **Magic Link** template, which must contain
 `{{ .Token }}`. Without that the email only has a link, and the code box has nothing
 to type - the link still works, because `detectSessionInUrl` turns it into a session
 and the page redirects.
+
+**The code is 8 digits in this project, not 6.** Measured 21 Oct 2026: the mail said
+`29756589`, and `POST /auth/v1/verify { type: 'email', token }` took it. The box
+therefore takes 6-10 digits, validates `^\d{6,10}$`, and does **not** auto-submit at
+six - an early submit on an 8-digit project burns a wrong attempt. If you want the
+old wording back, set Authentication -> Providers -> Email -> *Email OTP Length* to
+6; the screen no longer promises a number either way.
 
 **This needs a custom SMTP, and the dashboard will not even let the templates be
 edited without one.** Supabase's built-in mailer allows a handful of messages an hour
@@ -1142,10 +1149,28 @@ scanner for any session that arrives without the form being touched.
 
 Local dev, real Supabase: page renders with no console errors; tabs switch; a wrong
 password returns "That email and password do not match an account."; an `@example.com`
-signup is refused by Supabase itself (`x-sb-error-code: email_address_invalid`), now
-mapped to "That email address cannot receive mail". The confirmation mail, the login
-code and the reset mail could not be tested end to end without a real inbox - they
-need a person's address and the SMTP/templates above.
+signup is refused by Supabase itself (`x-sb-error-code: email_address_invalid`).
+
+**End to end, 21 Oct 2026, through the real mail:** a throwaway mailbox at mail.tm
+signed up on the live Pages build (`fmsqa995374@maxxspace.com`, username
+`fmsqa995374`), received **"Confirm your email address"** from
+`FindMySize <damii.projects@gmail.com>` within ~25 s with the pasted template, and
+the `verify` token confirmed the address. Then log in with the password: the page
+asked for the code, the second mail ("Your sign-in link", subject not yet changed to
+the README's "Your FindMySize login code") arrived, and **the 8-digit code was
+accepted by the API**.
+
+Two faults came out of that test, both configuration rather than code:
+
+- **Supabase's Site URL is still `http://localhost:3000`.** The signup sent
+  `redirect_to=https://damii-lola.github.io/3dGarments/auth/`, but the generated link
+  said `redirect_to=http://localhost:3000`, so a real person clicking "Confirm and
+  open the scanner" lands on a dead page. Both the link and the reset link are
+  affected; the code path is not. Fix: Authentication -> URL Configuration -> Site
+  URL = `https://damii-lola.github.io/3dGarments/auth/`, plus
+  `https://damii-lola.github.io/3dGarments/**` and `http://localhost:5173/**` in
+  Redirect URLs.
+- **The code is 8 digits**, not six - see above.
 
 
 

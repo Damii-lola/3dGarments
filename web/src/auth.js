@@ -3,7 +3,7 @@
  *
  * Signing up asks for a username, an email and a password, then confirms the
  * address once by email. Logging in is deliberately two steps: the password,
- * and then a six-digit code sent to that address. The password alone never
+ * and then a code sent to that address. The password alone never
  * opens the scanner — a stolen password is not enough without the inbox, and
  * the inbox alone is not enough without the password.
  *
@@ -46,11 +46,11 @@ const RESEND_SECONDS = 60;
 const TABS = {
   signup: {
     title: 'Create your account',
-    lead: 'A name, an email and a password. Confirm the address once, and after that every log in is your password plus a six-digit code we email you — nothing to install.',
+    lead: 'A name, an email and a password. Confirm the address once, and after that every log in is your password plus a code we email you - nothing to install.',
   },
   login: {
     title: 'Welcome back',
-    lead: 'Your password, then the six-digit code we send to your inbox.',
+    lead: 'Your password, then the code we send to your inbox.',
   },
 };
 
@@ -208,7 +208,7 @@ function showCodeStep(email) {
   codeInput.value = '';
   showStep('code');
   titleEl.textContent = 'Check your email';
-  leadEl.textContent = `We sent a six-digit code to ${email}. Enter it to finish logging in.`;
+  leadEl.textContent = `We sent a code to ${email}. Enter it to finish logging in.`;
   say('');
   codeInput.focus();
   startCooldown(codeResend, 'Send a new code');
@@ -350,16 +350,18 @@ loginForm.addEventListener('submit', async (event) => {
 });
 
 /* ---------- the code ---------- */
+// The length is the project's choice (6 to 10 digits, set in Supabase), so this
+// takes whatever digits arrive rather than guessing. Typing six and firing early
+// would eat a wrong attempt on a project set to eight.
 codeInput.addEventListener('input', () => {
-  codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
-  if (codeInput.value.length === 6) codeForm.requestSubmit();
+  codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 10);
 });
 
 codeForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (busy) return;
   const code = codeInput.value.trim();
-  if (!/^\d{6}$/.test(code)) return say('The code is six digits.', 'error');
+  if (!/^\d{6,10}$/.test(code)) return say('Paste the whole code from the email — six to ten digits.', 'error');
 
   setBusy(true, 'Checking the code…');
   try {
