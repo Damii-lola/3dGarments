@@ -4,7 +4,7 @@ import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured, geminiSweep, listGeminiModels } from '../lib/gemini.js';
-import { oaConfigured, oaModels } from '../lib/openai-compat.js';
+import { oaConfigured, oaChat, oaModels } from '../lib/openai-compat.js';
 
 const started = Date.now();
 export const health = Router();
@@ -119,6 +119,24 @@ health.get('/deep', async (req, res) => {
       };
     } catch (e) {
       out.calc = { ok: false, model, ms: Date.now() - t0, error: String(e.message || e).slice(0, 200) };
+    }
+  }
+
+  // `?oa=zai|nvidia` asks a free calculator one word and shows the whole envelope.
+  // A timeout is not a diagnosis: the status line and the body say whether the key,
+  // the model name or the pace is the problem.
+  if (req.query.oa) {
+    const name = String(req.query.oa);
+    const t0 = Date.now();
+    try {
+      const reply = await oaChat(name, [{ role: 'user', content: 'Reply with the single word: ready' }], {
+        maxTokens: 16,
+        json: false,
+        timeoutMs: Number(req.query.timeout || 30_000),
+      });
+      out.oa = { ok: true, name, ms: Date.now() - t0, raw: reply?.result };
+    } catch (e) {
+      out.oa = { ok: false, name, ms: Date.now() - t0, error: String(e?.message || e).slice(0, 300), upstream: e?.upstream || null };
     }
   }
 
