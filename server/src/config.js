@@ -54,7 +54,7 @@ export const config = Object.freeze({
    */
   zai: Object.freeze({
     apiKey: process.env.Z_API_KEY || process.env.ZAI_API_KEY || '',
-    model: process.env.ZAI_MODEL || 'glm-4.7-flash',
+    model: process.env.ZAI_MODEL || 'glm-4.5-flash',
     apiBase: (process.env.ZAI_API_BASE || 'https://api.z.ai/api/paas/v4').replace(/\/$/, ''),
   }),
   nvidia: Object.freeze({
