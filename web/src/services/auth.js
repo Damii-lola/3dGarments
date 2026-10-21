@@ -42,7 +42,7 @@ export async function accessToken() {
 export async function onAuthChange(cb) {
   const c = await sb();
   if (!c) return () => {};
-  const { data } = c.auth.onAuthStateChange((_e, session) => cb(session));
+  const { data } = c.auth.onAuthStateChange((event, session) => cb(session, event));
   return () => data.subscription.unsubscribe();
 }
 
@@ -113,7 +113,74 @@ export function isAccount(session) {
   return Boolean(session && !session.user?.is_anonymous);
 }
 
-export async function signOut() {
+export async function signOut(scope = 'global') {
   const c = await sb();
-  if (c) await c.auth.signOut();
+  if (c) await c.auth.signOut(scope === 'local' ? { scope: 'local' } : undefined);
+}
+
+/* ---------------------------- second step: the inbox ---------------------------- */
+
+/**
+ * The six-digit code that finishes a login.
+ *
+ * Supabase calls this the magic link: the same email carries a code and a link,
+ * and both prove the same thing — that the person holding the password can also
+ * read the address. `shouldCreateUser: false` matters: a code is not a way to
+ * conjure an account, so an address with no account gets no email.
+ */
+export async function sendLoginCode(email) {
+  const c = await sb();
+  if (!c) throw new Error('cloud not configured');
+  const { error } = await c.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: false, emailRedirectTo: accountPageUrl() },
+  });
+  if (error) throw error;
+}
+
+/** The code, checked. Gives the session the password step deliberately did not keep. */
+export async function verifyLoginCode(email, token) {
+  const c = await sb();
+  const { data, error } = await c.auth.verifyOtp({ email, token: String(token).trim(), type: 'email' });
+  if (error) throw error;
+  return data.session;
+}
+
+/** The signup confirmation, again. Rate-limited by Supabase, so the page counts down. */
+export async function resendConfirmation(email) {
+  const c = await sb();
+  if (!c) throw new Error('cloud not configured');
+  const { error } = await c.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: accountPageUrl() },
+  });
+  if (error) throw error;
+}
+
+/** A reset link. The answer is the same whether or not the address has an account. */
+export async function requestPasswordReset(email) {
+  const c = await sb();
+  if (!c) throw new Error('cloud not configured');
+  const { error } = await c.auth.resetPasswordForEmail(email, { redirectTo: `${accountPageUrl()}?reset=1` });
+  if (error) throw error;
+}
+
+/** Set the new password on the session the reset link carried. */
+export async function updatePassword(password) {
+  const c = await sb();
+  const { data, error } = await c.auth.updateUser({ password });
+  if (error) throw error;
+  return data;
+}
+
+/** Google, in a redirect. Comes back to this page already signed in. */
+export async function signInWithGoogle() {
+  const c = await sb();
+  if (!c) throw new Error('cloud not configured');
+  const { error } = await c.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: accountPageUrl(), queryParams: { prompt: 'select_account' } },
+  });
+  if (error) throw error;
 }

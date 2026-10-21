@@ -1071,6 +1071,50 @@ body {
 .auth-hint.good { color: var(--good); }
 .auth-hint.bad { color: #ff5470; }
 
+/* ---------- the account screen's extra steps ---------- */
+/* Google sits above the email forms, because it is the shorter way in; the
+   divider says the forms below are an equally good one. */
+.auth-entry, .auth-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 26rem;
+  margin: 0 auto;
+}
+.btn-oauth {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  height: 3.125rem;
+  border: 1px solid var(--line-2);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.25s var(--ease-soft), border-color 0.25s var(--ease-soft), transform 0.3s var(--ease);
+}
+.btn-oauth:hover { background: rgba(255, 255, 255, 0.11); border-color: rgba(255, 255, 255, 0.28); transform: translateY(-1px); }
+.btn-oauth:active { transform: translateY(0) scale(0.98); }
+.btn-oauth:disabled { opacity: 0.5; pointer-events: none; }
+.oauth-mark { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; }
+
+.auth-or { display: flex; align-items: center; gap: 0.7rem; margin: 0.35rem 0 0.05rem; color: var(--faint); font-size: 0.76rem; }
+.auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.10); }
+
+.auth-note { margin: 0.15rem 0 0; color: var(--faint); font-size: 0.78rem; line-height: 1.55; }
+.auth-link { align-self: flex-start; padding: 0.1rem 0; border: 0; background: none; color: var(--accent-2); font: inherit; font-size: 0.82rem; cursor: pointer; }
+.auth-link:hover { color: var(--accent); text-decoration: underline; }
+.auth-code-input {
+  font-size: 1.35rem !important;
+  letter-spacing: 0.42em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The landing's one button, while the site works out whether an account is
    needed before it can open the camera. */
 .open-camera:disabled { opacity: 0.55; pointer-events: none; }

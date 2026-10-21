@@ -26,7 +26,7 @@ const SCANNER = 'size/';
 const ACCOUNT = 'auth/';
 
 /** Where a demo request goes. Change this one line when the address changes. */
-const DEMO_EMAIL = 'hello@3dgarments.com';
+const DEMO_EMAIL = 'hello@findmysize.com';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -93,7 +93,7 @@ demoForm?.addEventListener('submit', (event) => {
     '',
     message || '(no notes)',
     '',
-    '— sent from the 3dGarments home page',
+    '- sent from the FindMySize home page',
   ]
     .filter((line) => line !== null)
     .join('\r\n');

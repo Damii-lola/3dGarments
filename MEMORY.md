@@ -1071,6 +1071,68 @@ A congested evening still measures like Cloudflare (38/32/36) rather than like Z
 (40/32/38): when the free pool is busy a call takes 10-37 s, the 10 s cap fires, and
 the ladder answers. That is the correct outcome, not a bug.
 
+## Accounts: signup, the login code, reset, Google (21 Oct 2026)
+
+### The name
+
+The product is **FindMySize** everywhere a person can see it. The repository, the
+Pages path (`/3dGarments/`), the Render service, the package names and the `ThreeDG`
+global in `embed.js` still say 3dGarments on purpose: they are addresses, not labels,
+and changing them would break every link and the embed. The visual name lives in five
+HTML files (`brand-name`, `<title>`, `aria-label`), two JS strings and the emails.
+
+### Sign up
+
+`/auth/` -> username (3-20, `[A-Za-z0-9._-]`), email, password (6+), confirm ->
+`username_taken` RPC on blur and again on submit -> `signUp({ data: { username } })`
+-> the `handle_new_user` trigger writes `profiles`. **Confirm email is ON** in the live
+project (`mailer_autoconfirm: false`), so there is no session yet: the page says
+"Confirm your email" and offers to send it again (60 s cooldown).
+
+### Log in is two steps, on purpose
+
+1. Password, via `signInWithPassword`. The session that creates is **given straight
+   back** with `signOut({ scope: 'local' })` - it proves only the password.
+2. A six-digit code via `signInWithOtp({ shouldCreateUser: false })`, checked with
+   `verifyOtp`.
+
+`redirectBlocked` exists because the SIGNED_IN event from step 1 would otherwise send
+the page to the scanner before step 2 happened. `scope: 'local'` matters: the default
+`signOut()` revokes every refresh token and would log the person out on their other
+devices.
+
+The code comes from Supabase's **Magic Link** template, which must contain
+`{{ .Token }}`. Without that the email only has a link, and the code box has nothing
+to type - the link still works, because `detectSessionInUrl` turns it into a session
+and the page redirects.
+
+**This needs a custom SMTP.** Supabase's built-in mailer allows a handful of messages
+an hour for the whole project; every login now sends one. Resend or Brevo, free tier.
+Without it the second or third login in an hour is told to wait. This is the single
+blocking setup step, not a code problem.
+
+### Reset and Google
+
+`resetPasswordForEmail` -> `?.../auth/?reset=1#access_token=...&type=recovery` -> the
+page reads the hash **before** Supabase consumes it, shows the new-password form,
+`updateUser({ password })`, then opens the scanner. A reset link outranks the
+"already signed in" bounce.
+
+Google: `signInWithOAuth({ provider: 'google' })`, back to `/auth/`. Google sends no
+username, so `20261021000000_oauth_usernames.sql` rewrites `handle_new_user` to use
+the address's own name (`sam@example.com` -> `sam`), suffixing on collision, and keeps
+the 3-20 shape. The same body is in `supabase/setup.sql`.
+
+### Tested, and what was not
+
+Local dev, real Supabase: page renders with no console errors; tabs switch; a wrong
+password returns "That email and password do not match an account."; an `@example.com`
+signup is refused by Supabase itself (`x-sb-error-code: email_address_invalid`), now
+mapped to "That email address cannot receive mail". The confirmation mail, the login
+code and the reset mail could not be tested end to end without a real inbox - they
+need a person's address and the SMTP/templates above.
+
+
 
 
 

@@ -1,0 +1,69 @@
+<!--
+  The "Magic Link" email - which is also the LOGIN CODE email.
+
+  FindMySize uses Supabase's one-time-password flow as the second step of a
+  login: the password proves who you are, this code proves the inbox is yours.
+  Supabase calls the template "Magic Link"; the same email carries both a code
+  and a link, and either one proves the same thing.
+
+  Paste this into Supabase -> Authentication -> Email Templates -> Magic Link
+  (see supabase/emails/README.md). `{{ .Token }}` is the six-digit code; unless
+  this template contains it, the login step has nothing to type.
+-->
+<div style="margin:0;padding:24px 12px;background:#0b0c10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#15181f;border:1px solid rgba(255,255,255,0.10);border-radius:16px;overflow:hidden;">
+
+    <div style="padding:22px 24px 0;">
+      <span style="display:inline-block;width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#ff5b3a,#ff2e63);vertical-align:-4px;"></span>
+      <span style="color:#eef0f4;font-size:17px;font-weight:700;letter-spacing:-0.02em;margin-left:8px;">
+        FindMy<span style="color:#ff5b3a;">Size</span>
+      </span>
+    </div>
+
+    <div style="padding:20px 24px 4px;">
+      <h1 style="margin:0 0 10px;color:#eef0f4;font-size:22px;line-height:1.25;font-weight:700;letter-spacing:-0.02em;">
+        Your login code
+      </h1>
+      <p style="margin:0 0 16px;color:#8b90a0;font-size:15px;line-height:1.6;">
+        Type this into the page that is open on your device. It is the second half
+        of your login &mdash; your password was the first.
+      </p>
+    </div>
+
+    <div style="padding:0 24px 6px;">
+      <div style="padding:18px 16px;border-radius:14px;border:1px solid rgba(255,255,255,0.12);background:#1d212a;text-align:center;">
+        <span style="color:#eef0f4;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:34px;font-weight:700;letter-spacing:10px;">{{ .Token }}</span>
+      </div>
+    </div>
+
+    <div style="padding:10px 24px 4px;">
+      <p style="margin:0;color:#5d6272;font-size:12px;line-height:1.6;">
+        The code works once, and only for an hour. Or use the button instead &mdash;
+        it does the same thing in one click:
+      </p>
+    </div>
+
+    <div style="padding:12px 24px 8px;">
+      <a href="{{ .ConfirmationURL }}"
+         style="display:inline-block;padding:13px 20px;border-radius:12px;background:linear-gradient(180deg,#ff8a5c,#ff5b3a);color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">
+        Finish logging in
+      </a>
+    </div>
+
+    <div style="margin-top:20px;padding:16px 24px;border-top:1px solid rgba(255,255,255,0.10);background:rgba(61,220,151,0.06);">
+      <p style="margin:0;color:#3ddc97;font-size:13px;font-weight:600;">Nothing is saved.</p>
+      <p style="margin:6px 0 0;color:#8b90a0;font-size:12px;line-height:1.6;">
+        This code is the only thing in this email. It is not a link to your body,
+        your video or your measurements &mdash; there is nothing here to leak.
+      </p>
+    </div>
+
+    <div style="padding:14px 24px 22px;">
+      <p style="margin:0;color:#5d6272;font-size:12px;line-height:1.6;">
+        Did not try to log in? Then do not type this code, and change your password:
+        someone who knows it is trying to get in.
+      </p>
+    </div>
+
+  </div>
+</div>

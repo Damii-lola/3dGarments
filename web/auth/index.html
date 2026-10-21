@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0d0e12" />
-    <title>3dGarments â€” Your account</title>
+    <title>FindMySize â€” Your account</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body class="app">
@@ -18,9 +18,9 @@
          place, on all five â€” so the screens below start with their own thing. -->
     <header class="nav">
       <div class="nav-inner">
-        <a class="brand nav-brand" href="%BASE_URL%" aria-label="3dGarments â€” home">
+        <a class="brand nav-brand" href="%BASE_URL%" aria-label="FindMySize â€” home">
           <span class="brand-mark" aria-hidden="true"></span>
-          <span class="brand-name">3d<b>Garments</b></span>
+          <span class="brand-name">FindMy<b>Size</b></span>
         </a>
 
         <nav class="nav-links" id="nav-links" aria-label="Sections">
@@ -57,53 +57,116 @@
       <header class="intro" id="auth-head">
         <h1 id="auth-title">Create your account</h1>
         <p class="lead" id="auth-lead">
-          Your size belongs to you, so the scanner asks who it is measuring
-          before it opens the camera. A name, an email and a password &mdash; no
-          codes to read out and no app to install.
+          A name, an email and a password. Confirm the address once, and after
+          that every log in is your password plus a six-digit code we email you
+          &mdash; nothing to install.
         </p>
       </header>
 
-      <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="Create an account or log in">
-        <button class="auth-tab on" id="tab-signup" type="button" role="tab" aria-selected="true" aria-controls="signup-form">Sign up</button>
-        <button class="auth-tab" id="tab-login" type="button" role="tab" aria-selected="false" aria-controls="login-form">Log in</button>
+      <div class="auth-entry" id="auth-entry">
+        <button class="btn-oauth" id="google-btn" type="button">
+          <svg class="oauth-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.7 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.2C12.4 13.4 17.7 9.5 24 9.5z" />
+            <path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9.1h12.4c-.5 2.9-2.1 5.3-4.5 6.9l7 5.4c4.1-3.8 6.5-9.4 6.5-16.1z" />
+            <path fill="#FBBC05" d="M10.5 28.6A14.6 14.6 0 0 1 9.7 24c0-1.6.3-3.2.8-4.6l-7.9-6.2A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.2z" />
+            <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7-5.4c-2 1.3-4.6 2.1-8.9 2.1-6.3 0-11.6-3.9-13.5-9.4l-7.9 6.2C6.5 42.6 14.6 48 24 48z" />
+          </svg>
+          Continue with Google
+        </button>
+
+        <p class="auth-or"><span>or with email</span></p>
+
+        <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="Create an account or log in">
+          <button class="auth-tab on" id="tab-signup" type="button" role="tab" aria-selected="true" aria-controls="signup-form">Sign up</button>
+          <button class="auth-tab" id="tab-login" type="button" role="tab" aria-selected="false" aria-controls="login-form">Log in</button>
+        </div>
+
+        <form class="auth-form" id="signup-form" role="tabpanel" aria-labelledby="tab-signup" novalidate>
+          <label class="auth-field">
+            <span>Username</span>
+            <input id="signup-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="e.g. sam.okafor" />
+          </label>
+          <p class="auth-hint" id="username-state"></p>
+          <label class="auth-field">
+            <span>Email</span>
+            <input id="signup-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" />
+          </label>
+          <label class="auth-field">
+            <span>Password</span>
+            <input id="signup-password" name="password" type="password" autocomplete="new-password" />
+          </label>
+          <label class="auth-field">
+            <span>Confirm password</span>
+            <input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" />
+          </label>
+          <p class="auth-note">
+            We send one confirmation link now. After that, every log in asks for
+            the six-digit code we email you &mdash; a password alone is not enough.
+          </p>
+          <div class="actions">
+            <button class="btn-primary" id="signup-submit" type="submit">Create account</button>
+          </div>
+        </form>
+
+        <form class="auth-form" id="login-form" role="tabpanel" aria-labelledby="tab-login" hidden novalidate>
+          <label class="auth-field">
+            <span>Email</span>
+            <input id="login-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" />
+          </label>
+          <label class="auth-field">
+            <span>Password</span>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" />
+          </label>
+          <button class="auth-link" id="forgot-btn" type="button">Forgot password?</button>
+          <div class="actions">
+            <button class="btn-primary" id="login-submit" type="submit">Log in</button>
+          </div>
+        </form>
       </div>
 
-      <form class="auth-form" id="signup-form" role="tabpanel" aria-labelledby="tab-signup" novalidate>
-        <label class="auth-field">
-          <span>Username</span>
-          <input id="signup-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="e.g. sam.okafor" />
-        </label>
-        <p class="auth-hint" id="username-state"></p>
-        <label class="auth-field">
-          <span>Email</span>
-          <input id="signup-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" />
-        </label>
-        <label class="auth-field">
-          <span>Password</span>
-          <input id="signup-password" name="password" type="password" autocomplete="new-password" />
-        </label>
-        <label class="auth-field">
-          <span>Confirm password</span>
-          <input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" />
-        </label>
+      <!-- Step two of a log in: the password proved who you are, the code proves
+           the inbox is yours. -->
+      <section class="auth-step" id="auth-code" hidden>
+        <form class="auth-form" id="code-form" novalidate>
+          <label class="auth-field">
+            <span>Six-digit code</span>
+            <input class="auth-code-input" id="code-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" />
+          </label>
+          <div class="actions">
+            <button class="btn-primary" id="code-submit" type="submit">Verify and open the scanner</button>
+          </div>
+        </form>
         <div class="actions">
-          <button class="btn-primary" id="signup-submit" type="submit">Create account</button>
+          <button class="btn-ghost" id="code-resend" type="button">Send a new code</button>
+          <button class="btn-ghost" id="code-back" type="button">Use a different account</button>
         </div>
-      </form>
+      </section>
 
-      <form class="auth-form" id="login-form" role="tabpanel" aria-labelledby="tab-login" hidden novalidate>
-        <label class="auth-field">
-          <span>Email</span>
-          <input id="login-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" />
-        </label>
-        <label class="auth-field">
-          <span>Password</span>
-          <input id="login-password" name="password" type="password" autocomplete="current-password" />
-        </label>
+      <!-- Signup when the project still confirms the address by email. -->
+      <section class="auth-step" id="auth-sent" hidden>
+        <p class="auth-note" id="sent-note"></p>
         <div class="actions">
-          <button class="btn-primary" id="login-submit" type="submit">Log in</button>
+          <button class="btn-primary" id="sent-resend" type="button">Send the email again</button>
+          <button class="btn-ghost" id="sent-back" type="button">Back to log in</button>
         </div>
-      </form>
+      </section>
+
+      <!-- The reset link lands here with a session; this is what it opens. -->
+      <section class="auth-step" id="auth-recover" hidden>
+        <form class="auth-form" id="recovery-form" novalidate>
+          <label class="auth-field">
+            <span>New password</span>
+            <input id="recovery-password" name="password" type="password" autocomplete="new-password" />
+          </label>
+          <label class="auth-field">
+            <span>Confirm new password</span>
+            <input id="recovery-confirm" name="confirm" type="password" autocomplete="new-password" />
+          </label>
+          <div class="actions">
+            <button class="btn-primary" id="recovery-submit" type="submit">Set the password</button>
+          </div>
+        </form>
+      </section>
 
       <p class="status" id="auth-status" role="status" aria-live="polite"></p>
 

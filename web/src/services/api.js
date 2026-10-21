@@ -27,7 +27,7 @@ export async function api(path, { method = 'GET', body, form, timeout = 90_000 }
     return json;
   } catch (err) {
     if (err.name === 'TimeoutError') throw new Error('The server took too long to respond. Try again.');
-    if (err instanceof TypeError) throw new Error('Cannot reach the 3dGarments server.');
+    if (err instanceof TypeError) throw new Error('Cannot reach the FindMySize server.');
     throw err;
   } finally {
     clearTimeout(slow);

@@ -218,15 +218,52 @@ security definer
 set search_path = public
 as $$
 declare
-  wanted text := lower(trim(coalesce(new.raw_user_meta_data ->> 'username', '')));
+  meta      jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
+  typed     text  := lower(trim(coalesce(meta ->> 'username', '')));
+  base      text;
+  candidate text;
+  n         int   := 0;
 begin
-  if wanted !~ '^[a-z0-9._-]{3,20}$' then
-    raise exception 'username must be 3-20 characters of letters, digits, dot, dash or underscore'
-      using errcode = 'check_violation';
+  if typed <> '' then
+    if typed !~ '^[a-z0-9._-]{3,20}$' then
+      raise exception 'username must be 3-20 characters of letters, digits, dot, dash or underscore'
+        using errcode = 'check_violation';
+    end if;
+    candidate := typed;
+  else
+    -- A provider signup (Google) has no username: use the address's own name.
+    base := lower(coalesce(
+      nullif(split_part(coalesce(new.email, ''), '@', 1), ''),
+      nullif(meta ->> 'preferred_username', ''),
+      nullif(meta ->> 'user_name', ''),
+      nullif(meta ->> 'full_name', ''),
+      nullif(meta ->> 'name', '')
+    ));
+    base := regexp_replace(base, '[^a-z0-9._-]', '', 'g');
+    base := trim(both '._-' from base);
+    if base is null or length(base) < 3 then base := 'user'; end if;
+    base := left(base, 16);
+    candidate := base;
+    loop
+      exit when not exists (select 1 from public.profiles where lower(username) = candidate);
+      n := n + 1;
+      if n >= 1000 then
+        candidate := 'user' || substr(replace(new.id::text, '-', ''), 1, 8);
+        exit;
+      end if;
+      candidate := left(base, 16) || n::text;
+    end loop;
   end if;
-  insert into public.profiles (id, username) values (new.id, wanted)
+
+  insert into public.profiles (id, username) values (new.id, candidate)
   on conflict (id) do update set username = excluded.username;
   return new;
+exception
+  when unique_violation then
+    insert into public.profiles (id, username)
+    values (new.id, left(coalesce(base, 'user'), 12) || substr(replace(new.id::text, '-', ''), 1, 6))
+    on conflict (id) do update set username = excluded.username;
+    return new;
 end;
 $$;
 drop trigger if exists on_auth_user_created on auth.users;

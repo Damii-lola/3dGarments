@@ -1,0 +1,58 @@
+<!--
+  The "Reset password" email.
+
+  Paste this into Supabase -> Authentication -> Email Templates -> Reset password
+  (see supabase/emails/README.md). The link comes back to the account screen with
+  `?reset=1`, the page notices, and it asks for a new password instead of opening
+  the scanner.
+-->
+<div style="margin:0;padding:24px 12px;background:#0b0c10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#15181f;border:1px solid rgba(255,255,255,0.10);border-radius:16px;overflow:hidden;">
+
+    <div style="padding:22px 24px 0;">
+      <span style="display:inline-block;width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#ff5b3a,#ff2e63);vertical-align:-4px;"></span>
+      <span style="color:#eef0f4;font-size:17px;font-weight:700;letter-spacing:-0.02em;margin-left:8px;">
+        FindMy<span style="color:#ff5b3a;">Size</span>
+      </span>
+    </div>
+
+    <div style="padding:20px 24px 4px;">
+      <h1 style="margin:0 0 10px;color:#eef0f4;font-size:22px;line-height:1.25;font-weight:700;letter-spacing:-0.02em;">
+        Choose a new password
+      </h1>
+      <p style="margin:0 0 18px;color:#8b90a0;font-size:15px;line-height:1.6;">
+        Open this on the device where you want to log in. The page will ask for the
+        new password twice, and the old one stops working the moment it is saved.
+      </p>
+    </div>
+
+    <div style="padding:0 24px 8px;">
+      <a href="{{ .ConfirmationURL }}"
+         style="display:inline-block;padding:14px 22px;border-radius:12px;background:linear-gradient(180deg,#ff8a5c,#ff5b3a);color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">
+        Set a new password
+      </a>
+    </div>
+
+    <div style="padding:14px 24px 4px;">
+      <p style="margin:0;color:#5d6272;font-size:12px;line-height:1.6;">
+        The link works once, and only for an hour. If it has expired, ask for
+        another from the "Forgot password?" link on the log in form.
+      </p>
+    </div>
+
+    <div style="margin-top:20px;padding:16px 24px;border-top:1px solid rgba(255,255,255,0.10);">
+      <p style="margin:0;color:#8b90a0;font-size:13px;line-height:1.6;">
+        Your measurements are not in this email and never were. The scanner keeps
+        nothing: the video stays on the phone, and the numbers are an estimate.
+      </p>
+    </div>
+
+    <div style="padding:14px 24px 22px;">
+      <p style="margin:0;color:#5d6272;font-size:12px;line-height:1.6;">
+        If you did not ask for this, ignore it. Your password stays as it is, and
+        the link expires by itself.
+      </p>
+    </div>
+
+  </div>
+</div>
