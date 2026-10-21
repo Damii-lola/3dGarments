@@ -706,7 +706,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // is a rung, not a replacement: if it is slow or refuses, the Cloudflare ladder
   // below still answers, and the scan never notices which one did.
   const geminiFirst = geminiConfigured() && (modelOverride === 'gemini' || config.calc.provider === 'gemini');
-  const primary = modelOverride && modelOverride !== 'gemini'
+  const primary = modelOverride && modelOverride !== 'gemini' && modelOverride !== 'mistral'
     ? modelOverride
     : (config.cloudflare.textModel || config.cloudflare.visionModel);
   // The first miss is usually a queue hiccup on one worker, so the same model is
@@ -719,6 +719,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // frames and is text-only here: the same table of landmarks, the same question,
   // no image and no extra vision cost.
   const plan = [];
+  // `?calcModel=mistral` puts the text fallback first, so its numbers can be read
+  // on the same frames as the others instead of only in an emergency.
+  if (modelOverride === 'mistral' && mistralConfigured()) {
+    plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
+  }
   if (geminiFirst) plan.push({ gemini: true, model: geminiModel || config.gemini.model, timeoutMs: RECONCILE_TIMEOUT_MS });
   plan.push(
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
