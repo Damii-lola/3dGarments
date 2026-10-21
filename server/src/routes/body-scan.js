@@ -1102,6 +1102,42 @@ function addGeometryFrames(geo, aspect, frames, rejected, gender, refByFrame = [
   });
 }
 
+/**
+ * The calculation step, for both entry points.
+ *
+ * This used to live inline after the vision loop, which meant a scan measured on
+ * the phone - the path the shopper's browser actually takes - never reached it at
+ * all, and came back with no chest whenever geometry alone could not find one. The
+ * readings are the same either way: four frames of landmarks, one body.
+ */
+async function runCalculation(frames, query = {}) {
+  let calc = null;
+  let calcMeta = null;
+  // Either calculator will do: Cloudflare when its credentials are present, Gemini
+  // when its key is, and the ladder inside falls through to the other.
+  const calcConfigured = (config.cloudflare.accountId && config.cloudflare.apiToken) || geminiConfigured();
+  if (!(config.vision.reconcile && frames.length && calcConfigured)) return { calc, calcMeta };
+
+  const t0 = Date.now();
+  // `?calcPoints=8|10|14` is a test knob, not a setting: it exists so the same
+  // four frames can be shown to a model with fewer points and the shrink measured.
+  const points = Number(query.calcPoints);
+  try {
+    const reck = await reconcileWithCloudflare(frames, String(query.calcModel || ''), points === 8 || points === 10 ? points : 14);
+    calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage } : null;
+    if (reck && reck.calc) {
+      calc = reck.calc;
+      log(`  ${reck.model || 'calculation'} reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - said ${JSON.stringify(reck.calc)}`);
+      if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
+    } else {
+      log(`  calculation returned nothing usable after ${Date.now() - t0}ms${reck ? ` / ${reck.attempts} attempt(s): ${reck.error}` : ''} - measuring from the raw points`);
+    }
+  } catch (e) {
+    log(`!! calculation could not reconcile (${Date.now() - t0}ms): ${e.message} - measuring from the raw points`);
+  }
+  return { calc, calcMeta };
+}
+
 bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
   const startedAt = Date.now();
 
@@ -1147,6 +1183,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
     if (calibrated) {
       log(`  scale set from ${calibrated.what} across ${calibrated.applied} frame(s): head ruler x${calibrated.ratio}`);
     }
+    // Measured on the phone, but still only readings: the same calculation runs
+    // here as on the vision path, and it is what fills a chest the geometry alone
+    // could not find.
+    const { calc, calcMeta } = await runCalculation(frames, req.query);
     return finishScan(res, {
       frames,
       rejected,
@@ -1161,6 +1201,8 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
       chart: brand?.chart || null,
       chartName: brand?.name || '',
       chartSex: brand?.chart?.sex || null,
+      calc,
+      calcMeta,
       startedAt,
     });
   }
@@ -1308,34 +1350,10 @@ bodyScan.post('/', upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'vid
 
   log(`  all frames done in ${Date.now() - startedAt}ms (${frames.length} usable, ${rejected.length} rejected as implausible, ${failures.length} failed)`);
 
-  // The calculation step. Mistral saw the frames; a calculator now turns those
-  // readings into one consistent body. If the calculator is unreachable the scan
-  // still measures — from the points as they came in.
-  let calc = null;
-  let calcMeta = null;
-  // Either calculator will do: Cloudflare when its credentials are present, Gemini
-  // when its key is, and the ladder inside falls through to the other.
-  const calcConfigured = (config.cloudflare.accountId && config.cloudflare.apiToken) || geminiConfigured();
-  if (config.vision.provider === 'mistral' && config.vision.reconcile
-      && frames.length && calcConfigured) {
-    const t0 = Date.now();
-    // `?calcPoints=8|10|14` is a test knob, not a setting: it exists so the same
-    // four frames can be shown to a model with fewer points and the shrink measured.
-    const points = Number(req.query.calcPoints);
-    try {
-      const reck = await reconcileWithCloudflare(frames, String(req.query.calcModel || ''), points === 8 || points === 10 ? points : 14);
-      calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage } : null;
-      if (reck && reck.calc) {
-        calc = reck.calc;
-        log(`  ${reck.model || 'calculation'} reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - said ${JSON.stringify(reck.calc)}`);
-        if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
-      } else {
-        log(`  calculation returned nothing usable after ${Date.now() - t0}ms${reck ? ` / ${reck.attempts} attempt(s): ${reck.error}` : ''} - measuring from the raw points`);
-      }
-    } catch (e) {
-      log(`!! calculation could not reconcile (${Date.now() - t0}ms): ${e.message} - measuring from the raw points`);
-    }
-  }
+  // The calculation step. Whoever saw the frames, a calculator now turns those
+  // readings into one consistent body. If it is unreachable the scan still
+  // measures — from the points as they came in.
+  const { calc, calcMeta } = await runCalculation(frames, req.query);
 
   return finishScan(res, {
     frames,
