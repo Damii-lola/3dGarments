@@ -771,7 +771,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
           const u = data?.result?.usage || data?.usage || null;
           if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
         }
-      } else lastError = 'unreadable reply';
+      } else lastError = `unreadable reply: ${String(extractText(data)).slice(0, 120)}`;
     } catch (e) {
       lastError = String(e?.message || e).slice(0, 160);
       // A used-up allowance or a rejected key will read exactly the same in two
