@@ -825,7 +825,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // A reply with no usable numbers is not a calculation. Saying so keeps the rest
   // of the scan from treating an empty object as an answer.
   const mm = Object.keys(calc).length;
-  if (!mm) return { calc: null, relabelled, notes: [], attempts, waited, error: 'no measurements in the reply', model: usedModel };
+  if (!mm) return { calc: null, relabelled, notes: [], attempts, waited, error: lastError || 'no measurements in the reply', model: usedModel, reply: out };
   return { calc, relabelled, notes: Array.isArray(out.notes) ? out.notes.slice(0, 6) : [], attempts, waited, error: attempts > 1 ? lastError : null, model: usedModel, usage, reply: out };
 }
 
