@@ -1174,15 +1174,15 @@ Two faults came out of that test, both configuration rather than code:
   link said `http://localhost:3000`, so a real person clicking "Confirm and open the
   scanner" landed on a dead page. Setting Site URL to the Pages auth page and adding
   `https://damii-lola.github.io/3dGarments/**` + `http://localhost:5173/**` fixed it.
-  Proved without an inbox: `GET /auth/v1/verify?token=bogus&redirect_to=…` returns
-  **303** with `Location: https://damii-lola.github.io/3dGarments/auth/#error=…`
-  (and `/auth/?reset=1#…` for the recovery variant). Before the fix both went to
+  Proved without an inbox: `GET /auth/v1/verify?token=bogus&redirect_to=ï¿½` returns
+  **303** with `Location: https://damii-lola.github.io/3dGarments/auth/#error=ï¿½`
+  (and `/auth/?reset=1#ï¿½` for the recovery variant). Before the fix both went to
   `localhost:3000`.
 - **The code was 8 digits**, not six - see above.
 
 After the fix, on the live build: an expired link shows "That link has expired or has
-already been used…" and strips the hash; a real session arriving in the hash (minted
-with the password grant) lands on `/size/` signed in; a `?reset=1#…&type=recovery`
+already been usedï¿½" and strips the hash; a real session arriving in the hash (minted
+with the password grant) lands on `/size/` signed in; a `?reset=1#ï¿½&type=recovery`
 arrival shows "Set a new password", and submitting it opened the scanner - the new
 password then logged in (200) and the old one did not (400). The SMTP sender is now
 `"FindMySize" <findmysize.us@gmail.com>` (seen in a delivered signup mail), not
@@ -1223,13 +1223,15 @@ What was actually open, and is now closed:
   the variable is unset (the default), **401** when the header is missing or
   wrong, compared in constant time. `/health` is now just
   `{ok, service, version, uptime_s, ready}` - no key counts, models or pace.
-- **`POST /api/body-scan` was unauthenticated *and* unthrottled** (160 MB × 17
+- **`POST /api/body-scan` was unauthenticated *and* unthrottled** (160 MB ï¿½ 17
   files, disk storage): a loop could fill the temp disk and burn every vision
   token. It stays anonymous (the shopper never logs in) but now has
   `BODY_SCAN_PER_HOUR` = 20 per IP, `BODY_SCAN_CONCURRENT` = 3 in-flight
   (503 + `Retry-After`), and accepts at most `MAX_BODY_SCAN_MB` = 96 MB - a
   30 s phone clip is 30-40 MB, and the client already falls back to JPEG frames
-  on a slow uplink.
+  on a slow uplink. The same 503-and-Retry-After cap (2 in flight) now guards
+  `/api/scan`, which held two photos in RAM per request with no concurrency
+  limit at all.
 - **XSS sinks**: `auth.js` wrote the typed email into `sentNote.innerHTML`;
   it is now built with `textContent` and a `<strong>` node. `uploads/groups.js`
   interpolated the signed image URL into `style="...url('...')"` and `src`;
@@ -1272,3 +1274,10 @@ What only the dashboard owner can do (still open):
 
 Test accounts from the auth pass are listed at the end of the previous section;
 they are still there to delete.
+
+**Verified on the live deploy of `70b5386`**: `/health` answers only
+{ok, service, version, uptime_s, ready}; `/health/deep` answers **503** until
+`HEALTH_TOKEN` is set; `POST /api/body-scan` without files answers **400** with
+`RateLimit-Policy: 20;w=3600`; `/api/garments` without a token is **401**; all
+five Pages pages carry the CSP with no inline script, and in the browser the
+MediaPipe CDN and the Supabase host answer while nothing logs a CSP violation.
