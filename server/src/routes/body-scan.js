@@ -709,12 +709,14 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   const geminiFirst = geminiConfigured() && (modelOverride === 'gemini' || config.calc.provider === 'gemini');
   // `?calcModel=zai|nvidia` (or CALC_PROVIDER) puts a free OpenAI-shaped calculator
   // first. It is a rung, not a replacement: the ladder below still answers if it is
-  // slow, rate-limited or rejects the key.
-  const oaFirst = ['zai', 'nvidia'].includes(modelOverride)
-    ? modelOverride
+  // slow, rate-limited or rejects the key. A free line moves - `?calcModel=zai:glm-4.5-flash`
+  // names the model for one scan without changing what the deployment is configured for.
+  const [overrideName, overrideModel] = String(modelOverride).split(':');
+  const oaFirst = ['zai', 'nvidia'].includes(overrideName)
+    ? overrideName
     : (['zai', 'nvidia'].includes(config.calc.provider) ? config.calc.provider : '');
-  const primary = modelOverride && !['gemini', 'mistral', 'zai', 'nvidia'].includes(modelOverride)
-    ? modelOverride
+  const primary = overrideName && !['gemini', 'mistral', 'zai', 'nvidia'].includes(overrideName)
+    ? overrideName
     : (config.cloudflare.textModel || config.cloudflare.visionModel);
   // The first miss is usually a queue hiccup on one worker, so the same model is
   // asked again before the backup takes over. The backup answers fast but reads
@@ -732,7 +734,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
     plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
   }
   if (oaFirst && oaConfigured(oaFirst)) {
-    plan.push({ oa: oaFirst, model: oaModel(oaFirst), timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
+    plan.push({
+      oa: oaFirst,
+      model: (oaFirst === overrideName && overrideModel) || oaModel(oaFirst),
+      timeoutMs: RECONCILE_TIMEOUT_MS * 2,
+    });
   }
   if (geminiFirst) plan.push({ gemini: true, model: geminiModel || config.gemini.model, timeoutMs: RECONCILE_TIMEOUT_MS });
   plan.push(
