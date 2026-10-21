@@ -1013,6 +1013,31 @@ Truth for the fixed frames: **40.8 chest / 32.2 waist / 38 hips / 19 shoulder**.
   for the same one-word request when busy. The scan's 16 s cap means a busy minute
   falls through to Cloudflare.
 
+### The concurrency gate (`server/src/lib/openai-compat.js`)
+
+Z.AI allows one in-flight request, so the second was being refused with 429 and
+measured by the backup. Calls now pass through a per-provider gate: the first runs,
+the next waits up to `ZAI_QUEUE_WAIT_MS` (6 s) for the slot, up to `ZAI_MAX_QUEUE`
+(2) deep, and only past that does the scan take the next rung. The slot is released
+in a `finally`, so a 429 cannot leave the calculator blocked.
+
+Measured with two scans fired at the same instant:
+
+| when | run 1 | run 2 | who answered |
+| --- | --- | --- | --- |
+| quiet | 3.4 s | **5.2 s (waited 1,998 ms)** | both Z.AI, both M |
+| congested | 9.6 s "busy" | 13.3 s timeout | both Cloudflare |
+
+`/health` reports `integrations.calc.zai.pace` = `{ busy, waiting, last_wait_ms,
+refused, served }`. A wait that expires counts as `refused`, which is why the counter
+moves without a 429 happening.
+
+The gate cannot make Z.AI faster: when the free pool is busy a call takes 10-37 s,
+the 10 s call cap fires, and the ladder answers. That is the correct outcome, not a
+bug - but it means a congested evening measures like Cloudflare (38/32/36) rather
+than like Z.AI (40/32/38).
+
+
 
 
 
