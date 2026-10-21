@@ -46,27 +46,54 @@ async function post(body, timeoutMs) {
 }
 
 /**
- * Send the same one-line question three ways, to separate "the network is stuck"
- * from "this model ignores the thinking switch". Only ever run when asked for by
- * hand: it is three calls of quota to answer a question about the wiring.
+ * Send the same one-line question several ways, to separate "the network will not
+ * carry a POST" from "this model ignores the thinking switch". Only ever run when
+ * asked for by hand: it spends a little quota to answer a question about wiring.
+ *
+ * The GET that lists models works, and the POST that asks a question does not, so
+ * the variants walk across exactly that line: the OpenAI-shaped endpoint, the v1
+ * path, the key in a header instead of the query, and a POST to a host that is not
+ * Google at all.
  */
 export async function geminiDiagnose(timeoutMs = 12000) {
   if (!geminiConfigured()) return { ok: false, error: 'not configured' };
-  const ask = [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }];
-  const variants = [
-    { name: 'bare', body: { contents: ask } },
-    { name: 'config', body: { contents: ask, generationConfig: { temperature: 0, maxOutputTokens: 16 } } },
-    { name: 'thinking-off', body: { contents: ask, generationConfig: { temperature: 0, maxOutputTokens: 16, thinkingConfig: { thinkingBudget: 0 } } } },
-  ];
   const { apiKey, model, apiBase } = config.gemini;
-  const url = `${apiBase}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const root = apiBase.replace(/\/v1beta$/, '');
+  const ask = { contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }] };
+  const auth = { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
+  const variants = [
+    {
+      name: 'openai-compat',
+      url: `${apiBase}/openai/chat/completions`,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: { model, messages: [{ role: 'user', content: 'Reply with the single word: ready' }], max_tokens: 16 },
+    },
+    {
+      name: 'v1-path',
+      url: `${root}/v1/models/${encodeURIComponent(model)}:generateContent`,
+      headers: auth,
+      body: ask,
+    },
+    {
+      name: 'header-key',
+      url: `${apiBase}/models/${encodeURIComponent(model)}:generateContent`,
+      headers: auth,
+      body: ask,
+    },
+    {
+      name: 'other-host',
+      url: 'https://httpbin.org/post',
+      headers: { 'Content-Type': 'application/json' },
+      body: { hello: 'world' },
+    },
+  ];
   const results = [];
   for (const v of variants) {
     const t0 = Date.now();
     try {
-      const res = await fetch(url, {
+      const res = await fetch(v.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: v.headers,
         body: JSON.stringify(v.body),
         signal: AbortSignal.timeout(timeoutMs),
       });
