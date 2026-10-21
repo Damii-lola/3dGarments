@@ -929,4 +929,39 @@ POST to another host in 290 ms; the 3.8/3.7 calls simply hang until the timeout.
 asks each named model a one-line question and reports status, time and tokens;
 `?geminiModels=1` lists what the key may call.
 
+### The split by body part (`?calcSplit=1`, commit 8001aa3) - built, measured, OFF
+
+Chest and waist from Cloudflare, hips and shoulder from Gemini, both asked the whole
+question in parallel and merged by part with the provenance kept in
+`diagnostics.calcAttempts.parts`.
+
+- **Asking only for a part changes the answer.** Asked for chest and waist alone,
+  qwen said **42/34** where the full question says 40/32; asked for hips and shoulder
+  alone, Gemini returned the hips and **no shoulder at all**. So both are asked
+  everything and the split only chooses whose answer to keep.
+- **A part assigned to a provider that misses is filled by the ordinary ladder**, not
+  by the other side: when Cloudflare timed out, the chest fell through to Gemini's
+  38.5, which would have picked the size. That is now impossible.
+- **It doubles the calculation**: 1,129-1,173 input tokens per scan against 597, and
+  the scan waits for the slower of the two - 8-15 s against 2-3 s.
+- **The body changes depending on who answered.** Gemini answers deterministically
+  (38.5 / 31 / 39.5 / 16.5 / 15 twice on the same frames), so a run where it answers
+  has hips 39.5 and a shoulder, and a run where it does not has hips 36 and no
+  shoulder. Same person, same video, two bodies.
+- **The free quota does not carry a shop.** After roughly thirty calls in one
+  afternoon, 3.5 and 3.6 Flash answered `429 You exceeded your current quota` and kept
+  answering it; `gemini-3.1-flash-lite` still worked but reads chest 30 / waist 22.
+  Of three split runs: one Gemini answered, one timed out at 8 s, one 429'd.
+- **Arms, head and legs cannot be split, because nothing measures them.** The payload
+  carries 15 points from head to wrist - no knee, no ankle, no arm width - and the
+  prompt forbids inventing feet or height, so both models return `height: null`.
+  Upper arm comes from the silhouette path, not from either calculator; neck is the
+  only head-area number either one states (qwen 14, Gemini 15/15.5, no ground truth
+  to judge them by). A leg measurement would have to be invented.
+
+So the split stays behind the flag. It is worth revisiting if Gemini's quota and
+latency improve, because its hips and shoulder really are closer to truth - but a
+calculator that answers one run in three is not a calculator a shop can stand on.
+
+
 
