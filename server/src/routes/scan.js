@@ -3,6 +3,7 @@ import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { config } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
+import { capConcurrency } from '../middleware/concurrency.js';
 import { loadTemplate } from '../services/templates.js';
 import { runScan } from '../services/scan.js';
 
@@ -16,6 +17,9 @@ const limiter = rateLimit({
   windowMs: 60 * 60_000, limit: 30, keyGenerator: (req) => req.ip,
   standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many scans — try again later.' },
 });
+// Image work is CPU and memory, and the route stores both photos in RAM. Two at
+// a time keeps a burst from many addresses from pinning the free instance.
+const cap = capConcurrency(2, 'The garment lab is busy — try again in a moment.');
 
 export const scan = Router();
 
@@ -27,7 +31,7 @@ export const scan = Router();
  *   size              1024 | 2048 (default 2048)         format webp | png (default webp)
  * -> 200 { image: <base64>, mime, report }   the texture atlas for that template's UVs
  */
-scan.post('/', limiter, upload.fields([{ name: 'front', maxCount: 1 }, { name: 'back', maxCount: 1 }]), ah(async (req, res) => {
+scan.post('/', limiter, cap, upload.fields([{ name: 'front', maxCount: 1 }, { name: 'back', maxCount: 1 }]), ah(async (req, res) => {
   const front = req.files?.front?.[0]?.buffer, back = req.files?.back?.[0]?.buffer;
   if (!front) throw new HttpError(400, 'Attach the front photo as multipart field "front"');
   const size = [1024, 2048].includes(Number(req.body?.size)) ? Number(req.body.size) : 2048;

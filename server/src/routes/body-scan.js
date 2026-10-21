@@ -57,6 +57,7 @@ import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { config, visionConfigured, visionModelName } from '../config.js';
 import { HttpError, ah } from '../lib/errors.js';
+import { capConcurrency } from '../middleware/concurrency.js';
 import { framesFromVideo, MAX_FRAMES } from '../lib/videoFrames.js';
 import {
   CM_PER_IN,
@@ -127,19 +128,7 @@ const limiter = rateLimit({
   message: { error: 'Too many scans from this connection — try again later.' },
 });
 
-let inFlight = 0;
-function capConcurrency(_req, res, next) {
-  if (inFlight >= config.limits.bodyScanConcurrent) {
-    res.set('Retry-After', '30');
-    return res.status(503).json({ error: 'The scanner is busy — try again in a moment.' });
-  }
-  inFlight += 1;
-  let released = false;
-  const release = () => { if (!released) { released = true; inFlight -= 1; } };
-  res.on('finish', release);
-  res.on('close', release);
-  next();
-}
+const cap = capConcurrency(config.limits.bodyScanConcurrent, 'The scanner is busy — try again in a moment.');
 
 const log = (...args) => console.log('[body-scan]', ...args);
 
@@ -1387,7 +1376,7 @@ async function runCalculation(frames, query = {}) {
   return { calc, calcMeta };
 }
 
-bodyScan.post('/', limiter, capConcurrency, upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
+bodyScan.post('/', limiter, cap, upload.fields([{ name: 'frames', maxCount: 16 }, { name: 'video', maxCount: 1 }]), ah(async (req, res) => {
   const startedAt = Date.now();
 
   // Whatever the upload was â€” a clip, a dozen stills, or both â€” the files on
