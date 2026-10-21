@@ -33,7 +33,7 @@ health.get('/', (_req, res) => {
       // Who turns the landmarks into tape measurements. `preferred` is what the
       // deployment asks for; both keys can be present while only one is used.
       calc: {
-        preferred: config.calc.provider === 'gemini' ? 'gemini' : 'cloudflare',
+        preferred: config.calc.provider || 'cloudflare',
         cloudflare: cloudflareConfigured(),
         gemini: geminiConfigured(),
         gemini_model: config.gemini.model,

@@ -30,7 +30,11 @@ export const config = Object.freeze({
    * scan without changing the deployment the shop is using.
    */
   calc: Object.freeze({
-    provider: (process.env.CALC_PROVIDER || '').toLowerCase(),
+    // A key is the whole switch, the same way VISION_PROVIDER works: paste Z_API_KEY
+    // and Z.AI becomes the calculator, delete it and the deployment goes back to
+    // Cloudflare. CALC_PROVIDER overrides either.
+    provider: (process.env.CALC_PROVIDER
+      || (process.env.Z_API_KEY || process.env.ZAI_API_KEY ? 'zai' : '')).toLowerCase(),
   }),
   gemini: Object.freeze({
     apiKey: process.env.GEMINI_API_KEY || '',
