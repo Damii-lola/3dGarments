@@ -4,6 +4,7 @@ import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured, geminiSweep, listGeminiModels } from '../lib/gemini.js';
+import { oaConfigured, oaModels } from '../lib/openai-compat.js';
 
 const started = Date.now();
 export const health = Router();
@@ -37,6 +38,9 @@ health.get('/', (_req, res) => {
         gemini: geminiConfigured(),
         gemini_model: config.gemini.model,
         cloudflare_model: config.cloudflare.textModel || config.cloudflare.visionModel,
+        // The free OpenAI-shaped calculators. A key is the whole switch.
+        zai: { configured: oaConfigured('zai'), model: config.zai.model },
+        nvidia: { configured: oaConfigured('nvidia'), model: config.nvidia.model },
       },
     },
     missing_env: missing,
@@ -119,6 +123,15 @@ health.get('/deep', async (req, res) => {
   }
 
   const ok = Object.values(out).every((v) => v.ok);
+  // `?providers=1` lists what the free calculator keys may call. A key that can
+  // list models can still fail on a completion, so this is the cheap first
+  // question - the scan itself is the verdict.
+  if (req.query.providers === '1') {
+    out.calc_models = {};
+    for (const name of ['zai', 'nvidia']) {
+      out.calc_models[name] = oaConfigured(name) ? await oaModels(name) : { ok: false, error: 'not configured' };
+    }
+  }
   res.json({ ok, ...out }); // always 200 so the details are readable; check `ok`
 });
 

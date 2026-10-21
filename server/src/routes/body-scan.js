@@ -83,6 +83,7 @@ import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
 import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
 import { mistralChat, mistralConfigured } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured } from '../lib/gemini.js';
+import { oaChat, oaConfigured, oaModel } from '../lib/openai-compat.js';
 import { bestSize, chartFromInput, CHARTS, chartKey, columnsFromRows } from '../lib/sizing.js';
 import { measureField } from '../shared/measures.js';
 
@@ -706,7 +707,13 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // is a rung, not a replacement: if it is slow or refuses, the Cloudflare ladder
   // below still answers, and the scan never notices which one did.
   const geminiFirst = geminiConfigured() && (modelOverride === 'gemini' || config.calc.provider === 'gemini');
-  const primary = modelOverride && modelOverride !== 'gemini' && modelOverride !== 'mistral'
+  // `?calcModel=zai|nvidia` (or CALC_PROVIDER) puts a free OpenAI-shaped calculator
+  // first. It is a rung, not a replacement: the ladder below still answers if it is
+  // slow, rate-limited or rejects the key.
+  const oaFirst = ['zai', 'nvidia'].includes(modelOverride)
+    ? modelOverride
+    : (['zai', 'nvidia'].includes(config.calc.provider) ? config.calc.provider : '');
+  const primary = modelOverride && !['gemini', 'mistral', 'zai', 'nvidia'].includes(modelOverride)
     ? modelOverride
     : (config.cloudflare.textModel || config.cloudflare.visionModel);
   // The first miss is usually a queue hiccup on one worker, so the same model is
@@ -723,6 +730,9 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // on the same frames as the others instead of only in an emergency.
   if (modelOverride === 'mistral' && mistralConfigured()) {
     plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
+  }
+  if (oaFirst && oaConfigured(oaFirst)) {
+    plan.push({ oa: oaFirst, model: oaModel(oaFirst), timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
   }
   if (geminiFirst) plan.push({ gemini: true, model: geminiModel || config.gemini.model, timeoutMs: RECONCILE_TIMEOUT_MS });
   plan.push(
@@ -758,7 +768,9 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
       // does not need to know which provider answered - only `usedModel` records it.
       const data = step.gemini
         ? await geminiChat(msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs, model: step.model })
-        : await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
+        : step.oa
+          ? await oaChat(step.oa, msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs, model: step.model })
+          : await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) {
         // A reply with no number in it is not an answer, whatever shape it has.
@@ -767,7 +779,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
           out = null;
           lastError = 'no measurements in the reply';
         } else {
-          usedModel = step.gemini ? `gemini:${step.model}` : step.model;
+          usedModel = step.gemini ? `gemini:${step.model}` : step.oa ? `${step.oa}:${step.model}` : step.model;
           const u = data?.result?.usage || data?.usage || null;
           if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
         }

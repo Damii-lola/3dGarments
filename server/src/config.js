@@ -41,6 +41,24 @@ export const config = Object.freeze({
     apiBase: process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com/v1beta',
   }),
   /**
+   * Two more free calculators, both OpenAI-shaped.
+   *
+   * Z.AI's GLM Flash line is $0 per token with no card; NVIDIA's NIM is a free
+   * development tier. Neither is wired as the default: a key is the whole switch,
+   * and `?calcModel=zai|nvidia` asks for one on a single scan without changing what
+   * the shop is using.
+   */
+  zai: Object.freeze({
+    apiKey: process.env.Z_API_KEY || process.env.ZAI_API_KEY || '',
+    model: process.env.ZAI_MODEL || 'glm-4.7-flash',
+    apiBase: (process.env.ZAI_API_BASE || 'https://api.z.ai/api/paas/v4').replace(/\/$/, ''),
+  }),
+  nvidia: Object.freeze({
+    apiKey: process.env.NVIDIA_API_KEY || '',
+    model: process.env.NVIDIA_MODEL || 'qwen/qwen3-32b',
+    apiBase: (process.env.NVIDIA_API_BASE || 'https://integrate.api.nvidia.com/v1').replace(/\/$/, ''),
+  }),
+  /**
    * Who reads the frames. `mistral` when a Mistral key is present (or when
    * VISION_PROVIDER says so), otherwise Cloudflare — so pasting the key into
    * Render is the whole switch, and deleting it is the whole rollback.
