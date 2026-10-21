@@ -12,9 +12,9 @@
  *     and this page hands it over once and forgets it. There is no password
  *     column anywhere in our own tables and there must never be one.
  *   - The username rides in the signup metadata, where the database trigger
- *     (supabase/migrations/*_accounts.sql) puts it in the profile row. Google
- *     sign-ups have no username to send, so the trigger makes one from the name
- *     on the account.
+ *     (supabase/migrations/*_accounts.sql) puts it in the profile row. A signup
+ *     from a provider would have no username to send, so the trigger can make
+ *     one from the address; there is no provider button on this page for now.
  */
 import './nav.js';
 import { cloudConfig } from './services/config.js';
@@ -26,7 +26,6 @@ import {
   resendConfirmation,
   sendLoginCode,
   signIn,
-  signInWithGoogle,
   signOut,
   signUp,
   updatePassword,
@@ -76,7 +75,6 @@ const usernameState = byId('username-state');
 const statusEl = byId('auth-status');
 const localBox = byId('auth-local');
 const skipBtn = byId('auth-skip');
-const googleBtn = byId('google-btn');
 const forgotBtn = byId('forgot-btn');
 
 const codeStep = byId('auth-code');
@@ -122,7 +120,7 @@ function say(message, kind = '') {
 
 function setBusy(on, message = '') {
   busy = on;
-  for (const button of [signupSubmit, loginSubmit, codeSubmit, recoverySubmit, googleBtn, sentResend, codeResend]) {
+  for (const button of [signupSubmit, loginSubmit, codeSubmit, recoverySubmit, sentResend, codeResend]) {
     if (button) button.disabled = on || button === coolingButton;
   }
   if (message) say(message);
@@ -141,7 +139,6 @@ function friendly(error, fallback) {
   if (/token has expired|expired or is invalid|invalid.*token|otp.*expired/i.test(text)) return 'That code is wrong or has expired — ask for a new one.';
   if (/only request this after|rate limit|too many|429/i.test(text)) return 'That was a moment ago — wait a minute before asking for another email.';
   if (/signups not allowed|signup.*disabled|user not found/i.test(text)) return 'That address has no account here — sign up first.';
-  if (/provider is not enabled|unsupported provider|oauth/i.test(text)) return 'Google sign-in is not switched on for this site yet.';
   if (/database error|unexpected_failure|check_violation|duplicate key/i.test(text)) return 'That account could not be saved — try another username.';
   if (/failed to fetch|networkerror|load failed/i.test(text)) return 'No connection to the account service. Check the network and try again.';
   if (/should be at least/i.test(text)) return text;
@@ -474,18 +471,6 @@ recoveryForm.addEventListener('submit', async (event) => {
   }
 });
 
-/* ---------- Google ---------- */
-googleBtn.addEventListener('click', async () => {
-  if (busy) return;
-  setBusy(true, 'Opening Google…');
-  try {
-    await signInWithGoogle(); // navigates away
-  } catch (error) {
-    say(friendly(error, 'Google sign-in did not open.'), 'error');
-    setBusy(false);
-  }
-});
-
 /* ---------- arriving ---------- */
 
 /**
@@ -556,9 +541,9 @@ recovering = arrival.recovery;
 
 /**
  * A session can arrive without the form being touched: a confirmation link
- * signs the tab in as it loads, a Google redirect comes back with one, and if
- * the project still wants email confirmation, that link is the only way
- * through. Watch for a session turning up and open the scanner - except while
+ * signs the tab in as it loads, and if the project still wants email
+ * confirmation, that link is the only way through. Watch for a session turning
+ * up and open the scanner - except while
  * the password step holds a session it is about to give back, or while a reset
  * link is being used.
  */

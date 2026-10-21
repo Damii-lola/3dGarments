@@ -1071,7 +1071,7 @@ A congested evening still measures like Cloudflare (38/32/36) rather than like Z
 (40/32/38): when the free pool is busy a call takes 10-37 s, the 10 s cap fires, and
 the ladder answers. That is the correct outcome, not a bug.
 
-## Accounts: signup, the login code, reset, Google (21 Oct 2026)
+## Accounts: signup, the login code, reset (21 Oct 2026)
 
 ### The name
 
@@ -1106,22 +1106,37 @@ The code comes from Supabase's **Magic Link** template, which must contain
 to type - the link still works, because `detectSessionInUrl` turns it into a session
 and the page redirects.
 
-**This needs a custom SMTP.** Supabase's built-in mailer allows a handful of messages
-an hour for the whole project; every login now sends one. Resend or Brevo, free tier.
-Without it the second or third login in an hour is told to wait. This is the single
-blocking setup step, not a code problem.
+**This needs a custom SMTP, and the dashboard will not even let the templates be
+edited without one.** Supabase's built-in mailer allows a handful of messages an hour
+for the whole project; every login now sends one. Two routes that need no domain:
+Brevo (`smtp-relay.brevo.com:587`, SMTP key, a verified sender address - Gmail works
+as a sender once confirmed - 300/day) or Gmail itself (`smtp.gmail.com:587`, a
+16-character App Password under 2-Step Verification, ~500/day). The sender field must
+match the address the provider verified. Then raise Authentication -> Rate Limits ->
+*Emails sent per hour*. Without this the second or third login in an hour is told to
+wait. This is the single blocking setup step, not a code problem.
 
-### Reset and Google
+### Reset
 
 `resetPasswordForEmail` -> `?.../auth/?reset=1#access_token=...&type=recovery` -> the
 page reads the hash **before** Supabase consumes it, shows the new-password form,
 `updateUser({ password })`, then opens the scanner. A reset link outranks the
 "already signed in" bounce.
 
-Google: `signInWithOAuth({ provider: 'google' })`, back to `/auth/`. Google sends no
-username, so `20261021000000_oauth_usernames.sql` rewrites `handle_new_user` to use
-the address's own name (`sam@example.com` -> `sam`), suffixing on collision, and keeps
-the 3-20 shape. The same body is in `supabase/setup.sql`.
+### Google: cut from the page, kept in the database
+
+The button, its handler, `signInWithGoogle` and its CSS are gone (21 Oct 2026) - a
+Google OAuth client needs a published site and a verified brand, which is a step for
+later. What stayed is `20261021000000_oauth_usernames.sql`: `handle_new_user` now
+names a provider account from the address's own name (`sam@example.com` -> `sam`),
+suffixing on collision, inside the same 3-20 shape. It changes nothing for email
+signups and means the day the button returns, Google signup cannot fail inside the
+trigger. The same body is in `supabase/setup.sql`.
+
+To bring it back: `signInWithOAuth({ provider: 'google', options: { redirectTo:
+accountPageUrl() } })`, a button above the tabs, and the provider block in
+Supabase plus the callback URL in Google Cloud. `onAuthChange` already opens the
+scanner for any session that arrives without the form being touched.
 
 ### Tested, and what was not
 

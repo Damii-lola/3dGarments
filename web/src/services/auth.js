@@ -173,14 +173,3 @@ export async function updatePassword(password) {
   if (error) throw error;
   return data;
 }
-
-/** Google, in a redirect. Comes back to this page already signed in. */
-export async function signInWithGoogle() {
-  const c = await sb();
-  if (!c) throw new Error('cloud not configured');
-  const { error } = await c.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: accountPageUrl(), queryParams: { prompt: 'select_account' } },
-  });
-  if (error) throw error;
-}
