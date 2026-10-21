@@ -503,12 +503,12 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. Per frame: view, turn, missing parts, p = x,y pairs on a 0-100 grid in keys order (0,0 = absent).
+const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. k lists the point names; each frame has v (view: f front, b back, s side, t three-quarter), d (turn in degrees) and p, x,y pairs on a 0-100 grid in k order. 0,0 is absent.
 
-Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height. Give every number; null only when unsupported.
+Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent an absent point.
 
 Reply ONLY with JSON, adult inches:
-{"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
+{"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0}}`;
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
@@ -539,26 +539,19 @@ const READ_TIMEOUT_MS = Number(process.env.VISION_READ_TIMEOUT_MS || 25_000);
 const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function reconcileWithCloudflare(frames, modelOverride = '') {
-  // The point table is the measurement itself, so it cannot be dropped - but it can
-  // be written as numbers under one shared list of names instead of an object per
-  // point per frame. The calculation needs the points that decide its seven numbers
-  // (head, shoulders, armpits, waist, hips, wrists, feet, crotch); knees and elbows
-  // are read by the geometry pass and are not worth their tokens here.
-  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR',
-    'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'];
+  // The table is the measurement and it is what costs tokens, so it carries only
+  // the points the seven numbers are made of: head, shoulders, waist, hips. The
+  // armpits and the wrists are read by the geometry pass anyway, and the feet were
+  // never in this clip - a point that is absent costs two numbers to say so.
+  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR'];
   const raw = {
-    keys: WANTED,
-    frames: frames.map((f, i) => {
-      const missing = Object.entries(f.visible || {}).filter(([, v]) => v === false).map(([k]) => k);
-      return {
-        i,
-        view: f.view,
-        turn: Number.isFinite(f.turn) ? Math.round(f.turn) : null,
-        ...(missing.length ? { missing } : {}),
-        // x,y in one flat list, in the order of `keys`; 0,0 means the point is absent.
-        p: WANTED.flatMap((k) => (f.landmarks[k] ? [Math.round(f.landmarks[k].x * 100), Math.round(f.landmarks[k].y * 100)] : [0, 0])),
-      };
-    }),
+    k: WANTED,
+    f: frames.map((f) => ({
+      v: (f.view || 'front').slice(0, 1),
+      d: Number.isFinite(f.turn) ? Math.round(f.turn) : 0,
+      // x,y in one flat list, in the order of `k`; 0,0 means the point is absent.
+      p: WANTED.flatMap((k) => (f.landmarks[k] ? [Math.round(f.landmarks[k].x * 100), Math.round(f.landmarks[k].y * 100)] : [0, 0])),
+    })),
   };
 
   const primary = modelOverride || config.cloudflare.textModel || config.cloudflare.visionModel;
@@ -579,7 +572,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   if (mistralConfigured()) plan.push({ model: 'mistral', local: true, timeoutMs: RECONCILE_TIMEOUT_MS * 2 });
   const messages = [
     { role: 'system', content: RECONCILE_PROMPT },
-    { role: 'user', content: `Frames in time order:\n${JSON.stringify(raw)}` },
+    { role: 'user', content: JSON.stringify(raw) },
   ];
   // The backup answered once with the frame list and no measurements at all. If
   // the first attempt missed, say plainly that the last reply was unusable.
