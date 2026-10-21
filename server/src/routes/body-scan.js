@@ -504,12 +504,161 @@ async function callVision(b64, prompt, opts = {}) {
  * geometry as always, and where geometry still cannot produce a reading,
  * Cloudflare's own number is used if it is humanly possible.
  */
-const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into one body. k names the points; each frame has v (view), d (turn in degrees) and p = x,y pairs on a 0-100 grid in k order (0,0 = absent).
+const RECONCILE_RULES = `Turn 4 frames of ONE adult turning 360 degrees into one body. k names the points; each frame has v (view), d (turn in degrees) and p = x,y pairs on a 0-100 grid in k order (0,0 = absent).
 
-Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height. Give every number; null only when unsupported.
+Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent a missing part: no feet, no height. Give every number; null only when unsupported.`;
+
+/** Every number the calculation is allowed to state, in the order a chart reads them. */
+const CALC_PARTS = ['chest', 'waist', 'hips', 'shoulder', 'neck', 'arm', 'height'];
+
+/**
+ * The rules are the same whoever is asked and whatever is asked for; only the reply
+ * shape changes. A part call states fewer numbers but is still told to check them
+ * against the whole body, because the invariants (waist narrower than hips,
+ * shoulders at least as wide) are what stop a single point pair becoming a size.
+ */
+const calcPrompt = (parts = CALC_PARTS) => `${RECONCILE_RULES}
 
 Reply ONLY with JSON, adult inches:
-{"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
+{"measurements":{${parts.map((p) => `"${p}":${p === 'height' ? 'null' : '0'}`).join(',')}}}`;
+
+const RECONCILE_PROMPT = calcPrompt();
+
+/**
+ * The table is the measurement and it is what costs tokens, so it carries only the
+ * points the seven numbers are made of. The three sets below are the ones worth
+ * measuring: 14 is what the calculation reads best, 10 drops the wrists, and 8
+ * drops the armpits as well.
+ */
+const POINT_SETS = {
+  14: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR', 'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'],
+  10: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR', 'footL', 'footR'],
+  8: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR'],
+};
+
+function calcPayload(frames, points = 14) {
+  const WANTED = POINT_SETS[points] || POINT_SETS[14];
+  return {
+    k: WANTED,
+    f: frames.map((f) => ({
+      v: (f.view || 'front').slice(0, 1),
+      d: Number.isFinite(f.turn) ? Math.round(f.turn) : 0,
+      // x,y in one flat list, in the order of `k`; 0,0 means the point is absent.
+      p: WANTED.flatMap((k) => (f.landmarks[k] ? [Math.round(f.landmarks[k].x * 100), Math.round(f.landmarks[k].y * 100)] : [0, 0])),
+    })),
+  };
+}
+
+/** Keep only the numbers that are in inches a human body can have. */
+function numbersFrom(reply) {
+  const calc = {};
+  for (const [k, v] of Object.entries(reply?.measurements || {})) {
+    const n = Number(v);
+    const range = RANGES[k];
+    if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
+  }
+  return calc;
+}
+
+/**
+ * One call to one named provider, asking for `parts`. Returns numbers rather than
+ * an envelope, so a split can merge two replies without either knowing the other.
+ */
+async function askCalculation(provider, frames, parts, { points = 14, model = '', timeoutMs = RECONCILE_TIMEOUT_MS } = {}) {
+  const t0 = Date.now();
+  const messages = [
+    { role: 'system', content: calcPrompt(parts) },
+    { role: 'user', content: JSON.stringify(calcPayload(frames, points)) },
+  ];
+  try {
+    const data = provider === 'gemini'
+      ? await geminiChat(messages, { maxTokens: 260, json: true, temperature: 0, timeoutMs, model: model || config.gemini.model })
+      : await callModelRaw(model || config.cloudflare.textModel || config.cloudflare.visionModel, messages, { viaCloudflare: true, maxTokens: 260, json: true, temperature: 0, timeoutMs });
+    const calc = numbersFrom(parseJson(extractText(data)));
+    const u = data?.result?.usage || data?.usage || null;
+    return {
+      provider,
+      model: provider === 'gemini' ? `gemini:${model || config.gemini.model}` : (model || config.cloudflare.textModel || config.cloudflare.visionModel),
+      calc,
+      ms: Date.now() - t0,
+      usage: u ? { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null } : null,
+      error: Object.keys(calc).length ? null : 'no measurements in the reply',
+    };
+  } catch (e) {
+    return { provider, model, calc: {}, ms: Date.now() - t0, usage: null, error: String(e?.message || e).slice(0, 160) };
+  }
+}
+
+/**
+ * The split: each provider answers the numbers it reads best, in parallel.
+ *
+ * Measured on the same four frames against a 40.8 / 32.2 / 38 / 19 body, qwen reads
+ * chest and waist closer to truth and Gemini reads hips and shoulder closer, so the
+ * two calls are given different jobs rather than asked the same question twice and
+ * averaged. Both still see every point and both are still told the invariants.
+ *
+ * A part that comes back missing is filled by asking the ordinary ladder once - the
+ * split is an optimisation, and an optimisation that loses the chest is not one.
+ */
+const SPLIT_PARTS = Object.freeze({
+  cloudflare: ['chest', 'waist'],
+  gemini: ['hips', 'shoulder'],
+});
+
+async function reconcileSplit(frames, { points = 14, geminiModel = '' } = {}) {
+  const [cf, gem] = await Promise.all([
+    askCalculation('cloudflare', frames, SPLIT_PARTS.cloudflare, { points }),
+    askCalculation('gemini', frames, SPLIT_PARTS.gemini, { points, model: geminiModel }),
+  ]);
+
+  const calc = {};
+  const parts = {};
+  const take = (src, wanted) => {
+    for (const p of wanted) {
+      if (src.calc[p] != null && calc[p] == null) {
+        calc[p] = src.calc[p];
+        parts[p] = src.model;
+      }
+    }
+  };
+  take(cf, SPLIT_PARTS.cloudflare);
+  take(gem, SPLIT_PARTS.gemini);
+
+  let filled = null;
+  const missing = ['chest', 'waist', 'hips', 'shoulder'].filter((p) => calc[p] == null);
+  if (missing.length) {
+    const full = await reconcileWithCloudflare(frames, '', points, geminiModel);
+    if (full?.calc) {
+      for (const p of missing) {
+        if (full.calc[p] != null) {
+          calc[p] = full.calc[p];
+          parts[p] = `${full.model} (fill)`;
+        }
+      }
+    }
+    filled = { missing, model: full?.model || null, error: full?.error || null };
+  }
+
+  const ok = Object.keys(calc).length > 0;
+  return {
+    calc: ok ? calc : null,
+    relabelled: 0,
+    notes: [],
+    attempts: 2 + (filled ? 1 : 0),
+    waited: Math.max(cf.ms, gem.ms),
+    error: ok ? null : (cf.error || gem.error || 'no measurements in either reply'),
+    model: 'split',
+    usage: {
+      in: (cf.usage?.in || 0) + (gem.usage?.in || 0),
+      out: (cf.usage?.out || 0) + (gem.usage?.out || 0),
+      cloudflare: cf.usage,
+      gemini: gem.usage,
+    },
+    parts,
+    sides: { cloudflare: { ms: cf.ms, error: cf.error, said: cf.calc }, gemini: { ms: gem.ms, error: gem.error, said: gem.calc } },
+    filled,
+  };
+}
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
@@ -540,26 +689,7 @@ const READ_TIMEOUT_MS = Number(process.env.VISION_READ_TIMEOUT_MS || 25_000);
 const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, geminiModel = '') {
-  // The table is the measurement and it is what costs tokens, so it carries only
-  // the points the seven numbers are made of. The three sets below are the ones
-  // worth measuring: 14 is what the calculation reads best, 10 drops the wrists,
-  // and 8 drops the armpits as well - each one was tried on the same four frames
-  // and cost about two inches of chest, which is why 14 is the default.
-  const POINT_SETS = {
-    14: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'armpitL', 'armpitR', 'waistL', 'waistR', 'hipL', 'hipR', 'wristL', 'wristR', 'footL', 'footR'],
-    10: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR', 'footL', 'footR'],
-    8: ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR'],
-  };
-  const WANTED = POINT_SETS[points] || POINT_SETS[14];
-  const raw = {
-    k: WANTED,
-    f: frames.map((f) => ({
-      v: (f.view || 'front').slice(0, 1),
-      d: Number.isFinite(f.turn) ? Math.round(f.turn) : 0,
-      // x,y in one flat list, in the order of `k`; 0,0 means the point is absent.
-      p: WANTED.flatMap((k) => (f.landmarks[k] ? [Math.round(f.landmarks[k].x * 100), Math.round(f.landmarks[k].y * 100)] : [0, 0])),
-    })),
-  };
+  const raw = calcPayload(frames, points);
 
   // `?calcModel=gemini` and CALC_PROVIDER=gemini both mean "ask Gemini first". It
   // is a rung, not a replacement: if it is slow or refuses, the Cloudflare ladder
@@ -657,12 +787,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
   // The calculation now states measurements only.
   const relabelled = 0;
 
-  const calc = {};
-  for (const [k, v] of Object.entries(out.measurements || {})) {
-    const n = Number(v);
-    const range = RANGES[k];
-    if (range && Number.isFinite(n) && n >= range[0] && n <= range[1]) calc[k] = round1(n);
-  }
+  const calc = numbersFrom(out);
   // A reply with no usable numbers is not a calculation. Saying so keeps the rest
   // of the scan from treating an empty object as an answer.
   const mm = Object.keys(calc).length;
@@ -1122,17 +1247,67 @@ async function runCalculation(frames, query = {}) {
   // `?calcPoints=8|10|14` is a test knob, not a setting: it exists so the same
   // four frames can be shown to a model with fewer points and the shrink measured.
   const points = Number(query.calcPoints);
+  const pts = points === 8 || points === 10 ? points : 14;
+  const geminiModel = String(query.geminiModel || '');
   try {
-    const reck = await reconcileWithCloudflare(
-      frames,
-      String(query.calcModel || ''),
-      points === 8 || points === 10 ? points : 14,
-      String(query.geminiModel || ''),
-    );
-    calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage } : null;
+    // `?calcSplit=1` asks Cloudflare for chest and waist and Gemini for hips and
+    // shoulder, in parallel. `?calcBoth=1` asks both the whole question and keeps
+    // both answers for the diagnostics - the measurement that decides which parts
+    // belong to whom, and the only way to answer "what about arms, head, legs"
+    // with numbers instead of an opinion.
+    if (String(query.calcBoth || '') === '1') {
+      const [cf, gem] = await Promise.all([
+        askCalculation('cloudflare', frames, CALC_PARTS, { points: pts }),
+        askCalculation('gemini', frames, CALC_PARTS, { points: pts, model: geminiModel }),
+      ]);
+      const merged = { ...(cf.calc || {}), ...(gem.calc || {}) };
+      const used = Object.keys(cf.calc || {}).length ? cf.calc : gem.calc;
+      const reck = {
+        calc: Object.keys(used).length ? used : null,
+        notes: [],
+        attempts: 2,
+        waited: Math.max(cf.ms, gem.ms),
+        error: Object.keys(used).length ? null : (cf.error || gem.error || null),
+        model: 'both',
+        usage: {
+          in: (cf.usage?.in || 0) + (gem.usage?.in || 0),
+          out: (cf.usage?.out || 0) + (gem.usage?.out || 0),
+          cloudflare: cf.usage,
+          gemini: gem.usage,
+        },
+        sides: {
+          cloudflare: { model: cf.model, ms: cf.ms, error: cf.error, said: cf.calc },
+          gemini: { model: gem.model, ms: gem.ms, error: gem.error, said: gem.calc },
+        },
+        compare: merged,
+      };
+      calcMeta = { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage, sides: reck.sides };
+      if (reck.calc) {
+        calc = reck.calc;
+        log(`  both calculators answered in ${Date.now() - t0}ms - cloudflare ${JSON.stringify(cf.calc)} | gemini ${JSON.stringify(gem.calc)}`);
+      } else {
+        log(`  neither calculator answered after ${Date.now() - t0}ms - measuring from the raw points`);
+      }
+      return { calc, calcMeta };
+    }
+
+    const reck = String(query.calcSplit || '') === '1'
+      ? await reconcileSplit(frames, { points: pts, geminiModel })
+      : await reconcileWithCloudflare(frames, String(query.calcModel || ''), pts, geminiModel);
+    calcMeta = reck ? {
+      attempts: reck.attempts,
+      waitedMs: reck.waited,
+      error: reck.error,
+      model: reck.model,
+      tokens: reck.usage,
+      ...(reck.parts ? { parts: reck.parts } : {}),
+      ...(reck.sides ? { sides: reck.sides } : {}),
+      ...(reck.filled ? { filled: reck.filled } : {}),
+    } : null;
     if (reck && reck.calc) {
       calc = reck.calc;
       log(`  ${reck.model || 'calculation'} reconciled ${frames.length} frame(s) in ${Date.now() - t0}ms (${reck.attempts} attempt(s)) - said ${JSON.stringify(reck.calc)}`);
+      if (reck.parts) log(`  parts: ${Object.entries(reck.parts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
       if (reck.notes.length) log(`  notes: ${reck.notes.join(' | ')}`);
     } else {
       log(`  calculation returned nothing usable after ${Date.now() - t0}ms${reck ? ` / ${reck.attempts} attempt(s): ${reck.error}` : ''} - measuring from the raw points`);
