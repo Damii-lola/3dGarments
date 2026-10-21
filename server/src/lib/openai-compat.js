@@ -20,7 +20,7 @@ import { aiErrorMessage, classifyAiError, recordVision } from './cloudflare.js';
 const PROVIDERS = () => ({
   zai: {
     apiBase: config.zai.apiBase,
-    apiKey: config.zai.apiKey,
+    keys: config.zai.apiKeys,
     model: config.zai.model,
     queueWaitMs: config.zai.queueWaitMs,
     maxQueue: config.zai.maxQueue,
@@ -28,7 +28,7 @@ const PROVIDERS = () => ({
   },
   nvidia: {
     apiBase: config.nvidia.apiBase,
-    apiKey: config.nvidia.apiKey,
+    keys: config.nvidia.apiKey ? [config.nvidia.apiKey] : [],
     model: config.nvidia.model,
     queueWaitMs: config.nvidia.queueWaitMs,
     maxQueue: config.nvidia.maxQueue,
@@ -36,98 +36,110 @@ const PROVIDERS = () => ({
   },
 });
 
-export const oaConfigured = (name) => Boolean(PROVIDERS()[name]?.apiKey);
+export const oaConfigured = (name) => (PROVIDERS()[name]?.keys?.length || 0) > 0;
+export const oaKeyCount = (name) => PROVIDERS()[name]?.keys?.length || 0;
 export const oaModel = (name) => PROVIDERS()[name]?.model || '';
 
+/* ------------------------------ the key pool ------------------------------ */
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * One request at a time, per provider.
+ * Several keys, one queue per key.
  *
- * Z.AI's free tier allows a single in-flight request; a second one is refused with
- * 429 rather than queued by them. Refusing is the wrong answer for a shopper who is
- * already standing in front of a mirror, so the second call waits here for the first
- * to finish - about the length of one calculation - and only falls through to the
- * next rung if that wait runs out. The gate is per provider and per process: it never
- * delays a Cloudflare call.
+ * A Z.AI free key allows a single in-flight request; a second is refused with 429
+ * rather than queued by them. Refusing is the wrong answer for a shopper standing in
+ * front of a mirror, so each key gets one slot. A call takes the first key that is
+ * free and not cooling down; if every key is busy it waits - for about the length of
+ * one calculation - and only then falls through to the next rung.
+ *
+ * A 429 puts that key away for a while instead of failing the scan: the other keys
+ * are tried first, and the cooling key rejoins the pool when its sentence is served.
+ * This is why more keys are not "more tokens" but "more shoppers at once" - the limit
+ * being worked around is concurrency, which is per key.
  */
-const gates = new Map();
-const gate = (name) => {
-  if (!gates.has(name)) gates.set(name, { busy: false, waiters: [], lastWaitMs: 0, refused: 0, served: 0 });
-  return gates.get(name);
+const pools = new Map();
+const pool = (name) => {
+  if (!pools.has(name)) {
+    pools.set(name, { busy: new Set(), cooling: new Map(), waiting: 0, lastWaitMs: 0, refused: 0, served: 0 });
+  }
+  return pools.get(name);
 };
 
-function release(name) {
-  const g = gate(name);
-  const next = g.waiters.shift();
-  if (next) {
-    clearTimeout(next.timer);
-    g.lastWaitMs = Date.now() - next.at;
-    next.resolve(() => release(name));
-  } else {
-    g.busy = false;
-  }
-}
+const keyReady = (p, key) => !p.busy.has(key) && (p.cooling.get(key) || 0) <= Date.now();
 
-function acquire(name, waitMs, maxQueue) {
-  const g = gate(name);
-  if (!g.busy && !g.waiters.length) {
-    g.busy = true;
-    g.served += 1;
-    return Promise.resolve(() => release(name));
-  }
-  if (g.waiters.length >= maxQueue) {
-    g.refused += 1;
-    const e = new Error(`${name} is busy and the queue is full`);
-    e.kind = 'queue';
-    return Promise.reject(e);
-  }
+const busyError = (name) => {
+  const err = new HttpError(503, 'The measuring service is busy right now. Please try again in a moment.');
+  err.upstream = { status: 0, kind: 'capacity', message: `${name} has no free key` };
+  return err;
+};
+
+async function acquire(name, keys, waitMs, maxQueue) {
+  const p = pool(name);
   const at = Date.now();
-  return new Promise((resolve, reject) => {
-    const waiter = { resolve, reject, timer: null, at };
-    waiter.timer = setTimeout(() => {
-      const i = g.waiters.indexOf(waiter);
-      if (i >= 0) g.waiters.splice(i, 1);
-      g.refused += 1;
-      const e = new Error(`${name} did not free up within ${waitMs} ms`);
-      e.kind = 'queue';
-      reject(e);
-    }, waitMs);
-    g.waiters.push(waiter);
-  });
-}
+  const pick = () => keys.find((k) => keyReady(p, k));
 
-/** What the gate has been doing - shown by /health so a wait is not a mystery. */
-export const oaPace = (name) => {
-  const g = gate(name);
-  return { busy: g.busy, waiting: g.waiters.length, last_wait_ms: g.lastWaitMs, refused: g.refused, served: g.served };
-};
-
-export async function oaChat(name, messages, { maxTokens = 260, json = true, temperature = 0, timeoutMs = 20_000, model = '', waitMs = null } = {}) {
-  const p = PROVIDERS()[name];
-  if (!p) throw new HttpError(400, `Unknown calculator "${name}"`);
-  if (!p.apiKey) throw new HttpError(503, `${name} is not configured`);
-
-  let releaseSlot = null;
-  try {
-    releaseSlot = await acquire(name, waitMs ?? p.queueWaitMs ?? 0, p.maxQueue ?? 0);
-  } catch (e) {
-    const err = new HttpError(503, 'The measuring service is busy right now. Please try again in a moment.');
-    err.upstream = { status: 0, kind: 'capacity', message: e.message };
-    throw err;
+  let key = pick();
+  if (key) {
+    p.busy.add(key);
+    p.served += 1;
+    return { key, release: () => p.busy.delete(key) };
   }
 
-  try {
+  // Every key is busy or cooling. If the soonest one is beyond this call's patience,
+  // say so now rather than making the shopper wait for an answer that is not coming.
+  const soonest = Math.min(...keys.map((k) => (p.busy.has(k) ? at + 1 : (p.cooling.get(k) || 0))));
+  if (soonest - at > waitMs || p.waiting >= maxQueue) {
+    p.refused += 1;
+    throw busyError(name);
+  }
 
-  const send = async (extras) => {
-    const body = {
-      model: model || p.model,
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-      ...extras,
-    };
+  p.waiting += 1;
+  try {
+    for (;;) {
+      key = pick();
+      if (key) {
+        p.busy.add(key);
+        p.served += 1;
+        p.lastWaitMs = Date.now() - at;
+        return { key, release: () => p.busy.delete(key) };
+      }
+      if (Date.now() - at >= waitMs) {
+        p.refused += 1;
+        throw busyError(name);
+      }
+      await sleep(120);
+    }
+  } finally {
+    p.waiting -= 1;
+  }
+}
+
+/** What the pool has been doing - shown by /health so a wait is not a mystery. */
+export const oaPace = (name) => {
+  const p = pool(name);
+  const now = Date.now();
+  return {
+    keys: oaKeyCount(name),
+    busy: p.busy.size,
+    waiting: p.waiting,
+    cooling: [...p.cooling.values()].filter((t) => t > now).length,
+    last_wait_ms: p.lastWaitMs,
+    refused: p.refused,
+    served: p.served,
+  };
+};
+
+/* ------------------------------- the calls -------------------------------- */
+
+async function send(p, key, { model, maxTokens, json, temperature, timeoutMs, messages }) {
+  const extras = { ...(json ? { response_format: { type: 'json_object' } } : {}), ...p.noThink };
+  const base = { model: model || p.model, messages, max_tokens: maxTokens, temperature };
+
+  const once = async (body) => {
     const res = await fetch(`${p.apiBase}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -137,31 +149,61 @@ export async function oaChat(name, messages, { maxTokens = 260, json = true, tem
     return { res, text, parsed };
   };
 
-  const extras = { ...(json ? { response_format: { type: 'json_object' } } : {}), ...p.noThink };
-  let { res, text, parsed } = await send(extras);
-
+  let out = await once({ ...base, ...extras });
   // A rejected extra field is a naming difference, not an outage. Try the plain
   // request once before giving up, because the prompt already asks for JSON.
-  if (!res.ok && res.status === 400 && Object.keys(extras).length) {
-    ({ res, text, parsed } = await send({}));
+  if (!out.res.ok && out.res.status === 400 && Object.keys(extras).length) {
+    out = await once(base);
   }
 
-  if (!res.ok) {
-    const msg = parsed?.error?.message || parsed?.message || text.slice(0, 300) || res.statusText;
-    const kind = classifyAiError(res.status, msg);
-    recordVision(false, { status: res.status, kind, message: String(msg).slice(0, 300) });
+  if (!out.res.ok) {
+    const msg = out.parsed?.error?.message || out.parsed?.message || out.text.slice(0, 300) || out.res.statusText;
+    const kind = classifyAiError(out.res.status, msg);
+    recordVision(false, { status: out.res.status, kind, message: String(msg).slice(0, 300) });
     const err = new HttpError(502, aiErrorMessage(kind));
-    err.upstream = { status: res.status, kind, message: String(msg).slice(0, 500) };
+    err.upstream = {
+      status: out.res.status,
+      kind,
+      message: String(msg).slice(0, 500),
+      retryAfter: Number(out.res.headers.get('retry-after')) || 0,
+    };
     throw err;
   }
 
-  recordVision(true);
-  return { result: parsed };
-  } finally {
-    // The slot is given back even when the call failed: a 429 that never released
-    // the gate would turn one bad minute into a permanently blocked calculator.
-    if (releaseSlot) releaseSlot();
+  return out.parsed;
+}
+
+export async function oaChat(name, messages, { maxTokens = 260, json = true, temperature = 0, timeoutMs = 20_000, model = '', waitMs = null } = {}) {
+  const p = PROVIDERS()[name];
+  if (!p) throw new HttpError(400, `Unknown calculator "${name}"`);
+  if (!p.keys.length) throw new HttpError(503, `${name} is not configured`);
+
+  const patience = waitMs ?? p.queueWaitMs ?? 0;
+  let lastErr = null;
+
+  // One attempt per key: a 429 on one key is a reason to try the next, not to fail.
+  for (let attempt = 0; attempt < p.keys.length; attempt += 1) {
+    const slot = await acquire(name, p.keys, patience, p.maxQueue ?? 0);
+    try {
+      const parsed = await send(p, slot.key, { model, maxTokens, json, temperature, timeoutMs, messages });
+      recordVision(true);
+      return { result: parsed };
+    } catch (e) {
+      lastErr = e;
+      if (e?.upstream?.status === 429) {
+        // Put this key away for as long as it asked, or half a minute if it did not
+        // say. The next attempt takes another key, or this one when it comes back.
+        const wait = Math.min(300_000, (e.upstream.retryAfter || 30) * 1000);
+        pool(name).cooling.set(slot.key, Date.now() + wait);
+        continue;
+      }
+      throw e;
+    } finally {
+      slot.release();
+    }
   }
+
+  throw lastErr;
 }
 
 /**
@@ -169,16 +211,18 @@ export async function oaChat(name, messages, { maxTokens = 260, json = true, tem
  *
  * Free tiers publish a number and enforce another. The headers on a real reply are
  * the only description of what this key is actually allowed, so they travel with the
- * probe instead of being discarded.
+ * probe instead of being discarded. `?index=2` probes the second key without ever
+ * printing one.
  */
-export async function oaProbe(name, { model = '', timeoutMs = 30_000 } = {}) {
+export async function oaProbe(name, { model = '', timeoutMs = 30_000, index = 0 } = {}) {
   const p = PROVIDERS()[name];
-  if (!p?.apiKey) return { ok: false, error: 'not configured' };
+  const key = p?.keys?.[index];
+  if (!key) return { ok: false, error: index ? `no key #${index + 1}` : 'not configured' };
   const t0 = Date.now();
   try {
     const res = await fetch(`${p.apiBase}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: model || p.model,
         messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
@@ -191,6 +235,7 @@ export async function oaProbe(name, { model = '', timeoutMs = 30_000 } = {}) {
     const text = await res.text();
     return {
       ok: res.ok,
+      key_index: index + 1,
       model: model || p.model,
       status: res.status,
       ms: Date.now() - t0,
@@ -198,16 +243,18 @@ export async function oaProbe(name, { model = '', timeoutMs = 30_000 } = {}) {
       body: text.slice(0, 400),
     };
   } catch (e) {
-    return { ok: false, model: model || p.model, ms: Date.now() - t0, error: e.message };
+    return { ok: false, key_index: index + 1, model: model || p.model, ms: Date.now() - t0, error: e.message };
   }
 }
 
-/** `GET /models` - what this key may call, without spending a completion. */export async function oaModels(name) {
+/** `GET /models` - what this key may call, without spending a completion. */
+export async function oaModels(name) {
   const p = PROVIDERS()[name];
-  if (!p?.apiKey) return { ok: false, error: 'not configured' };
+  const key = p?.keys?.[0];
+  if (!key) return { ok: false, error: 'not configured' };
   try {
     const res = await fetch(`${p.apiBase}/models`, {
-      headers: { Authorization: `Bearer ${p.apiKey}` },
+      headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(20_000),
     });
     const text = await res.text();

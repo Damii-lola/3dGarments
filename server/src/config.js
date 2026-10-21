@@ -1,6 +1,24 @@
 const list = (v, fallback) =>
   (v ?? fallback).split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
 
+/**
+ * Every free Z.AI key, in the order they were numbered.
+ *
+ * Z_API_KEY_1, Z_API_KEY_2, Z_API_KEY_3, ... plus the older single Z_API_KEY. The
+ * scan is by name, not by a fixed count, so adding Z_API_KEY_4 on Render is the whole
+ * change - no deploy, no code. Duplicates are collapsed: pasting the same key twice
+ * would buy nothing, because the limit being worked around is per key.
+ */
+const zaiKeys = (() => {
+  const numbered = Object.keys(process.env)
+    .filter((k) => /^(?:Z|ZAI)_API_KEY_\d+$/.test(k))
+    .sort((a, b) => Number(a.split('_').pop()) - Number(b.split('_').pop()))
+    .map((k) => (process.env[k] || '').trim())
+    .filter(Boolean);
+  const legacy = [(process.env.Z_API_KEY || '').trim(), (process.env.ZAI_API_KEY || '').trim()].filter(Boolean);
+  return [...new Set([...legacy, ...numbered])];
+})();
+
 export const config = Object.freeze({
   env: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 8787,
@@ -33,8 +51,7 @@ export const config = Object.freeze({
     // A key is the whole switch, the same way VISION_PROVIDER works: paste Z_API_KEY
     // and Z.AI becomes the calculator, delete it and the deployment goes back to
     // Cloudflare. CALC_PROVIDER overrides either.
-    provider: (process.env.CALC_PROVIDER
-      || (process.env.Z_API_KEY || process.env.ZAI_API_KEY ? 'zai' : '')).toLowerCase(),
+    provider: (process.env.CALC_PROVIDER || (zaiKeys.length ? 'zai' : '')).toLowerCase(),
   }),
   gemini: Object.freeze({
     apiKey: process.env.GEMINI_API_KEY || '',
@@ -53,12 +70,15 @@ export const config = Object.freeze({
    * the shop is using.
    */
   zai: Object.freeze({
-    apiKey: process.env.Z_API_KEY || process.env.ZAI_API_KEY || '',
+    // The pool. `apiKey` stays as the first key so the older single-key paths keep
+    // working; the calculator itself reads `apiKeys` and gives each key its own slot.
+    apiKeys: zaiKeys,
+    apiKey: zaiKeys[0] || '',
     model: process.env.ZAI_MODEL || 'glm-4.5-flash',
     apiBase: (process.env.ZAI_API_BASE || 'https://api.z.ai/api/paas/v4').replace(/\/$/, ''),
-    // The free tier allows one request at a time, so the second shopper waits for
-    // the first instead of collecting a 429. Past this wait the scan is better off
-    // taking the next rung than standing in a queue.
+    // A key allows one request at a time, so the next shopper waits for a free key
+    // instead of collecting a 429. Past this wait the scan is better off taking the
+    // next rung than standing in a queue.
     queueWaitMs: Math.max(0, Number(process.env.ZAI_QUEUE_WAIT_MS || 6_000)),
     maxQueue: Math.max(0, Number(process.env.ZAI_MAX_QUEUE || 2)),
   }),

@@ -1013,29 +1013,40 @@ Truth for the fixed frames: **40.8 chest / 32.2 waist / 38 hips / 19 shoulder**.
   for the same one-word request when busy. The scan's 16 s cap means a busy minute
   falls through to Cloudflare.
 
-### The concurrency gate (`server/src/lib/openai-compat.js`)
+### The key pool (`server/src/lib/openai-compat.js`)
 
-Z.AI allows one in-flight request, so the second was being refused with 429 and
-measured by the backup. Calls now pass through a per-provider gate: the first runs,
-the next waits up to `ZAI_QUEUE_WAIT_MS` (6 s) for the slot, up to `ZAI_MAX_QUEUE`
-(2) deep, and only past that does the scan take the next rung. The slot is released
-in a `finally`, so a 429 cannot leave the calculator blocked.
+Z.AI's limit is **concurrency, per key**: one in-flight request. So the fix is not
+more tokens, it is more keys. `Z_API_KEY_1`, `Z_API_KEY_2`, `Z_API_KEY_3`, ... are
+scanned by name and sorted numerically (`Z_API_KEY_4` needs no code change); the older
+single `Z_API_KEY` / `ZAI_API_KEY` still counts as one, and duplicates are collapsed.
 
-Measured with two scans fired at the same instant:
+Each key has its own slot. A call takes the first key that is free and not cooling
+down; if every key is busy it waits up to `ZAI_QUEUE_WAIT_MS` (6 s), up to
+`ZAI_MAX_QUEUE` (2) deep, and only then takes the next rung. The slot is released in a
+`finally`, so a failed call cannot leave the calculator blocked.
 
-| when | run 1 | run 2 | who answered |
+**A 429 no longer costs the shopper anything.** The key goes into a cool-down
+(`retry-after`, else 30 s, capped at 5 min) and the same call immediately retries on
+another key. With three keys, three shoppers are measured at the same instant.
+
+Measured against a stubbed endpoint (3 keys, a forced 429 on key 1):
+
+| | run 1 | run 2 | run 3 |
 | --- | --- | --- | --- |
-| quiet | 3.4 s | **5.2 s (waited 1,998 ms)** | both Z.AI, both M |
-| congested | 9.6 s "busy" | 13.3 s timeout | both Cloudflare |
+| time | 406 ms | 406 ms | 935 ms (retried after the 429) |
+| keys used | key-2 | key-3 | key-1 (429) then key-2 |
 
-`/health` reports `integrations.calc.zai.pace` = `{ busy, waiting, last_wait_ms,
-refused, served }`. A wait that expires counts as `refused`, which is why the counter
-moves without a 429 happening.
+No key served two calls at once; `cooling: 1`, `refused: 0`, all three succeeded.
+The single-key gate measured earlier (one shopper waited 1,998 ms for the slot) is
+what happens now only when the pool has no free key.
 
-The gate cannot make Z.AI faster: when the free pool is busy a call takes 10-37 s,
-the 10 s call cap fires, and the ladder answers. That is the correct outcome, not a
-bug - but it means a congested evening measures like Cloudflare (38/32/36) rather
-than like Z.AI (40/32/38).
+`/health` reports `integrations.calc.zai` = `{ configured, model, keys, pace }` where
+`pace` = `{ keys, busy, waiting, cooling, last_wait_ms, refused, served }`.
+`/health/deep?oa=zai&index=2` probes the third key without printing it.
+
+A congested evening still measures like Cloudflare (38/32/36) rather than like Z.AI
+(40/32/38): when the free pool is busy a call takes 10-37 s, the 10 s cap fires, and
+the ladder answers. That is the correct outcome, not a bug.
 
 
 
