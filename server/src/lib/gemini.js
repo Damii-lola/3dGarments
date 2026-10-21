@@ -63,6 +63,12 @@ export async function geminiDiagnose(timeoutMs = 12000) {
   const auth = { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
   const variants = [
     {
+      name: 'get-model',
+      method: 'GET',
+      url: `${apiBase}/models/${encodeURIComponent(model)}`,
+      headers: auth,
+    },
+    {
       name: 'openai-compat',
       url: `${apiBase}/openai/chat/completions`,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -90,17 +96,23 @@ export async function geminiDiagnose(timeoutMs = 12000) {
   const results = [];
   for (const v of variants) {
     const t0 = Date.now();
+    let phase = 'connect';
     try {
       const res = await fetch(v.url, {
-        method: 'POST',
+        method: v.method || 'POST',
         headers: v.headers,
-        body: JSON.stringify(v.body),
+        ...(v.body ? { body: JSON.stringify(v.body) } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });
+      const msHeaders = Date.now() - t0;
+      phase = 'body';
       const text = await res.text();
-      results.push({ variant: v.name, status: res.status, ms: Date.now() - t0, body: text.slice(0, 400) });
+      // Where the time went matters here: a request that never connects is a
+      // network refusal, one whose headers arrive and whose body never ends is a
+      // different animal entirely.
+      results.push({ variant: v.name, status: res.status, msHeaders, ms: Date.now() - t0, bytes: text.length, body: text.slice(0, 300) });
     } catch (e) {
-      results.push({ variant: v.name, ms: Date.now() - t0, error: String(e?.message || e) });
+      results.push({ variant: v.name, phase, ms: Date.now() - t0, error: String(e?.message || e) });
     }
   }
   return { ok: true, model, results };
