@@ -98,7 +98,16 @@ health.get('/deep', async (req, res) => {
           temperature: 0,
         }, { timeoutMs: Number(req.query.timeout || 20_000) });
       const text = wantsGemini ? reply?.result?.choices?.[0]?.message?.content : reply?.response;
-      out.calc = { ok: true, model, ms: Date.now() - t0, reply: String(text ?? '').slice(0, 60), tokens: wantsGemini ? reply?.result?.usage : null };
+      out.calc = {
+        ok: true,
+        model,
+        ms: Date.now() - t0,
+        reply: String(text ?? '').slice(0, 60),
+        tokens: wantsGemini ? reply?.result?.usage : null,
+        // `?raw=1` returns the whole envelope: a model that answers somewhere the
+        // text extractor does not look is indistinguishable from one that says nothing.
+        ...(req.query.raw === '1' ? { raw: reply } : {}),
+      };
     } catch (e) {
       out.calc = { ok: false, model, ms: Date.now() - t0, error: String(e.message || e).slice(0, 200) };
     }
