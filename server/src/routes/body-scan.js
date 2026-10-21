@@ -737,7 +737,11 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
     plan.push({
       oa: oaFirst,
       model: (oaFirst === overrideName && overrideModel) || oaModel(oaFirst),
-      timeoutMs: RECONCILE_TIMEOUT_MS * 2,
+      // A free tier that allows one request at a time needs two budgets, not one:
+      // the wait for the slot and the call itself. Ten seconds of call plus six of
+      // waiting is the point past which the next rung is the better answer.
+      waitMs: config.zai.queueWaitMs,
+      timeoutMs: Math.round(RECONCILE_TIMEOUT_MS * 1.25),
     });
   }
   if (geminiFirst) plan.push({ gemini: true, model: geminiModel || config.gemini.model, timeoutMs: RECONCILE_TIMEOUT_MS });
@@ -775,7 +779,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, 
       const data = step.gemini
         ? await geminiChat(msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs, model: step.model })
         : step.oa
-          ? await oaChat(step.oa, msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs, model: step.model })
+          ? await oaChat(step.oa, msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs, model: step.model, waitMs: step.waitMs })
           : await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) {

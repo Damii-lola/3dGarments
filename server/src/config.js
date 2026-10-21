@@ -56,6 +56,11 @@ export const config = Object.freeze({
     apiKey: process.env.Z_API_KEY || process.env.ZAI_API_KEY || '',
     model: process.env.ZAI_MODEL || 'glm-4.5-flash',
     apiBase: (process.env.ZAI_API_BASE || 'https://api.z.ai/api/paas/v4').replace(/\/$/, ''),
+    // The free tier allows one request at a time, so the second shopper waits for
+    // the first instead of collecting a 429. Past this wait the scan is better off
+    // taking the next rung than standing in a queue.
+    queueWaitMs: Math.max(0, Number(process.env.ZAI_QUEUE_WAIT_MS || 6_000)),
+    maxQueue: Math.max(0, Number(process.env.ZAI_MAX_QUEUE || 2)),
   }),
   nvidia: Object.freeze({
     apiKey: process.env.NVIDIA_API_KEY || '',

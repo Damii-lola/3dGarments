@@ -35,10 +35,83 @@ const PROVIDERS = () => ({
 export const oaConfigured = (name) => Boolean(PROVIDERS()[name]?.apiKey);
 export const oaModel = (name) => PROVIDERS()[name]?.model || '';
 
-export async function oaChat(name, messages, { maxTokens = 260, json = true, temperature = 0, timeoutMs = 20_000, model = '' } = {}) {
+/**
+ * One request at a time, per provider.
+ *
+ * Z.AI's free tier allows a single in-flight request; a second one is refused with
+ * 429 rather than queued by them. Refusing is the wrong answer for a shopper who is
+ * already standing in front of a mirror, so the second call waits here for the first
+ * to finish - about the length of one calculation - and only falls through to the
+ * next rung if that wait runs out. The gate is per provider and per process: it never
+ * delays a Cloudflare call.
+ */
+const gates = new Map();
+const gate = (name) => {
+  if (!gates.has(name)) gates.set(name, { busy: false, waiters: [], lastWaitMs: 0, refused: 0, served: 0 });
+  return gates.get(name);
+};
+
+function release(name) {
+  const g = gate(name);
+  const next = g.waiters.shift();
+  if (next) {
+    clearTimeout(next.timer);
+    g.lastWaitMs = Date.now() - next.at;
+    next.resolve(() => release(name));
+  } else {
+    g.busy = false;
+  }
+}
+
+function acquire(name, waitMs, maxQueue) {
+  const g = gate(name);
+  if (!g.busy && !g.waiters.length) {
+    g.busy = true;
+    g.served += 1;
+    return Promise.resolve(() => release(name));
+  }
+  if (g.waiters.length >= maxQueue) {
+    g.refused += 1;
+    const e = new Error(`${name} is busy and the queue is full`);
+    e.kind = 'queue';
+    return Promise.reject(e);
+  }
+  const at = Date.now();
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, timer: null, at };
+    waiter.timer = setTimeout(() => {
+      const i = g.waiters.indexOf(waiter);
+      if (i >= 0) g.waiters.splice(i, 1);
+      g.refused += 1;
+      const e = new Error(`${name} did not free up within ${waitMs} ms`);
+      e.kind = 'queue';
+      reject(e);
+    }, waitMs);
+    g.waiters.push(waiter);
+  });
+}
+
+/** What the gate has been doing - shown by /health so a wait is not a mystery. */
+export const oaPace = (name) => {
+  const g = gate(name);
+  return { busy: g.busy, waiting: g.waiters.length, last_wait_ms: g.lastWaitMs, refused: g.refused, served: g.served };
+};
+
+export async function oaChat(name, messages, { maxTokens = 260, json = true, temperature = 0, timeoutMs = 20_000, model = '', waitMs = null } = {}) {
   const p = PROVIDERS()[name];
   if (!p) throw new HttpError(400, `Unknown calculator "${name}"`);
   if (!p.apiKey) throw new HttpError(503, `${name} is not configured`);
+
+  let releaseSlot = null;
+  try {
+    releaseSlot = await acquire(name, waitMs ?? p.queueWaitMs ?? 0, p.maxQueue ?? 0);
+  } catch (e) {
+    const err = new HttpError(503, 'The measuring service is busy right now. Please try again in a moment.');
+    err.upstream = { status: 0, kind: 'capacity', message: e.message };
+    throw err;
+  }
+
+  try {
 
   const send = async (extras) => {
     const body = {
@@ -80,6 +153,11 @@ export async function oaChat(name, messages, { maxTokens = 260, json = true, tem
 
   recordVision(true);
   return { result: parsed };
+  } finally {
+    // The slot is given back even when the call failed: a 429 that never released
+    // the gate would turn one bad minute into a permanently blocked calculator.
+    if (releaseSlot) releaseSlot();
+  }
 }
 
 /**

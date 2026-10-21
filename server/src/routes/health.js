@@ -4,7 +4,7 @@ import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured, geminiSweep, listGeminiModels } from '../lib/gemini.js';
-import { oaConfigured, oaModels, oaProbe } from '../lib/openai-compat.js';
+import { oaConfigured, oaModels, oaPace, oaProbe } from '../lib/openai-compat.js';
 
 const started = Date.now();
 export const health = Router();
@@ -39,7 +39,7 @@ health.get('/', (_req, res) => {
         gemini_model: config.gemini.model,
         cloudflare_model: config.cloudflare.textModel || config.cloudflare.visionModel,
         // The free OpenAI-shaped calculators. A key is the whole switch.
-        zai: { configured: oaConfigured('zai'), model: config.zai.model },
+        zai: { configured: oaConfigured('zai'), model: config.zai.model, pace: oaPace('zai') },
         nvidia: { configured: oaConfigured('nvidia'), model: config.nvidia.model },
       },
     },
