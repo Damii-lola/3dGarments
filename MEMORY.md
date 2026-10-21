@@ -994,6 +994,26 @@ Truth for the fixed frames: **40.8 chest / 32.2 waist / 38 hips / 19 shoulder**.
   calculators state ~40 (a girth) and `RANGES.shoulder` is [14, 26], so it is dropped.
   That is the next accuracy problem, and no provider fixes it.
 
+### What Z.AI's free tier actually allows (measured, not quoted)
+
+- **Published**: `glm-4.5-flash` and `glm-4.7-flash` are $0 for input, cached input
+  and output. No numeric token allowance is published at all; the limits are
+  per-account and per-model and are shown only in the console
+  (`z.ai/manage-apikey/rate-limits`). Free tier is **one concurrent request**.
+- **No rate-limit headers come back** on any reply (checked on a live 200), so the
+  remaining allowance cannot be read from the response - the console is the only
+  source.
+- **A scan costs 556 in + 39 out = 595 tokens.** 1,000 scans is ~595k tokens, so the
+  commonly quoted 1M tokens/day would be ~1,680 scans/day. Unverified by the vendor,
+  and irrelevant next to the request limit.
+- **The binding limit is requests, not tokens.** Three at the same instant gave one
+  instant `429 code 1302 Rate limit reached for requests` and two that never answered
+  inside 40 s. After the burst the key stayed 429 for about a minute, then recovered.
+- **Latency is the free tier's real tax**: 2.4-4.7 s when quiet, 14.5 s / 28 s / 37 s
+  for the same one-word request when busy. The scan's 16 s cap means a busy minute
+  falls through to Cloudflare.
+
+
 
 
 
