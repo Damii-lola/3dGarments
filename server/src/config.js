@@ -34,7 +34,10 @@ export const config = Object.freeze({
   }),
   gemini: Object.freeze({
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    // 3.8 and 3.7 Flash will not answer at all at the time of writing (they hang
+    // until the deadline, or 503). 3.5 answers in ~2.5 s and is the one the numbers
+    // in MEMORY.md were measured on, so it is the name a deployment gets by default.
+    model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     apiBase: process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com/v1beta',
   }),
   /**
