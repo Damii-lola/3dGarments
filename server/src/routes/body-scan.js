@@ -539,7 +539,7 @@ const READ_TIMEOUT_MS = Number(process.env.VISION_READ_TIMEOUT_MS || 25_000);
  */
 const RECONCILE_BACKUP_MODEL = process.env.CF_TEXT_MODEL_BACKUP || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
-async function reconcileWithCloudflare(frames, modelOverride = '', points = 14) {
+async function reconcileWithCloudflare(frames, modelOverride = '', points = 14, geminiModel = '') {
   // The table is the measurement and it is what costs tokens, so it carries only
   // the points the seven numbers are made of. The three sets below are the ones
   // worth measuring: 14 is what the calculation reads best, 10 drops the wrists,
@@ -578,7 +578,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14) 
   // frames and is text-only here: the same table of landmarks, the same question,
   // no image and no extra vision cost.
   const plan = [];
-  if (geminiFirst) plan.push({ gemini: true, timeoutMs: RECONCILE_TIMEOUT_MS });
+  if (geminiFirst) plan.push({ gemini: true, model: geminiModel || config.gemini.model, timeoutMs: RECONCILE_TIMEOUT_MS });
   plan.push(
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
     { model: primary, timeoutMs: RECONCILE_TIMEOUT_MS },
@@ -611,7 +611,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14) 
       // Gemini takes the same messages and returns the same envelope, so the loop
       // does not need to know which provider answered - only `usedModel` records it.
       const data = step.gemini
-        ? await geminiChat(msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs })
+        ? await geminiChat(msgs, { maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs, model: step.model })
         : await callModelRaw(step.model, msgs, { ...(step.local ? {} : { viaCloudflare: true }), maxTokens: 260, json: true, temperature: 0, timeoutMs: step.timeoutMs });
       out = parseJson(extractText(data));
       if (out) {
@@ -621,7 +621,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '', points = 14) 
           out = null;
           lastError = 'no measurements in the reply';
         } else {
-          usedModel = step.gemini ? 'gemini' : step.model;
+          usedModel = step.gemini ? `gemini:${step.model}` : step.model;
           const u = data?.result?.usage || data?.usage || null;
           if (u) usage = { in: u.prompt_tokens ?? u.input_tokens ?? null, out: u.completion_tokens ?? u.output_tokens ?? null };
         }
@@ -1123,7 +1123,12 @@ async function runCalculation(frames, query = {}) {
   // four frames can be shown to a model with fewer points and the shrink measured.
   const points = Number(query.calcPoints);
   try {
-    const reck = await reconcileWithCloudflare(frames, String(query.calcModel || ''), points === 8 || points === 10 ? points : 14);
+    const reck = await reconcileWithCloudflare(
+      frames,
+      String(query.calcModel || ''),
+      points === 8 || points === 10 ? points : 14,
+      String(query.geminiModel || ''),
+    );
     calcMeta = reck ? { attempts: reck.attempts, waitedMs: reck.waited, error: reck.error, model: reck.model, tokens: reck.usage } : null;
     if (reck && reck.calc) {
       calc = reck.calc;
