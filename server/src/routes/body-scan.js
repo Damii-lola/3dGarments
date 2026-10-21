@@ -508,7 +508,7 @@ const RECONCILE_PROMPT = `Turn 4 frames of ONE adult turning 360 degrees into on
 Widest shoulder span is the front or back frame, narrowest is the profile. Shoulders at least as wide as hips; waist narrower than both. The head is the same length in every frame. Never invent an absent point.
 
 Reply ONLY with JSON, adult inches:
-{"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0}}`;
+{"measurements":{"chest":0,"waist":0,"hips":0,"shoulder":0,"neck":0,"arm":0,"height":null}}`;
 
 /**
  * The deadline is deliberately short. Workers AI shares GPUs and a busy minute
