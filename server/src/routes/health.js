@@ -134,6 +134,20 @@ health.get('/deep', async (req, res) => {
     for (const m of models) {
       probes.push(await oaProbe(name, { model: m, timeoutMs: Number(req.query.timeout || 30_000) }));
     }
+    // `&burst=3` asks for N at the same instant. The free tier's published limit is
+    // concurrency, not tokens, so this is the number that decides whether two
+    // shoppers can scan together.
+    if (Number(req.query.burst) > 0) {
+      const n = Math.min(6, Number(req.query.burst));
+      const at = Date.now();
+      const together = await Promise.all([...Array(n)].map(() => oaProbe(name, { model: models[0], timeoutMs: Number(req.query.timeout || 30_000) })));
+      out.burst = {
+        n,
+        wall_ms: Date.now() - at,
+        statuses: together.map((p) => p.status ?? p.error),
+        ok: together.filter((p) => p.ok).length,
+      };
+    }
     out.oa = { ok: probes.every((p) => p.ok), name, probes };
   }
 

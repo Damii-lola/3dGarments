@@ -100,8 +100,9 @@ export async function oaProbe(name, { model = '', timeoutMs = 30_000 } = {}) {
       body: JSON.stringify({
         model: model || p.model,
         messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
-        max_tokens: 8,
+        max_tokens: 16,
         temperature: 0,
+        ...p.noThink,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
