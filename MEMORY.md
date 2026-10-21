@@ -870,3 +870,63 @@ With that chart the scan answers **S**, because its own S row is a 45.5" finishe
 chest. A chart of real girths (36/40/44/48) answers M for the same body. If the
 merchant meant body girths, the table needs real ones.
 
+---
+
+## Gemini as the calculator (2026-10-21, commits 1a9bc83..887b06f)
+
+**The on-device path never ran the calculation at all.** The step sat inline after
+the vision loop, and a scan measured on the phone (`source: 'pose'`) returns from
+`finishScan` before reaching it - so the path the shopper's browser actually takes
+was measuring from raw points alone. On the fixed frames it came back with **no
+chest at all** (the one number a size cannot do without). It is now one function,
+`runCalculation`, called by both entry points. This also made the calculation
+testable without a vision pass: save one scan's `diagnostics.frames`, send them
+back as `source: 'pose'`, and only the model changes between runs.
+
+**Availability is the first finding.** Of the models the key lists:
+
+| model | result |
+|---|---|
+| gemini-3.8-flash (the default name) | never returns headers; 503 "high demand" when it does answer |
+| gemini-3.7-flash | same |
+| gemini-flash-latest | same |
+| **gemini-3.6-flash** | answers, 3.9 s for one word |
+| **gemini-3.5-flash** | answers, 2.5 s for one word |
+| gemini-3.1-flash-lite | answers, but reads chest 30 / waist 22 |
+| gemini-2.5-flash | 404 - "no longer available to new users" |
+
+The POST was never the problem: GET `/models` answers in 150 ms from Render, and
+POST to another host in 290 ms; the 3.8/3.7 calls simply hang until the timeout.
+
+**Numbers on the same four fixed frames (truth 40.8 / 32.2 / 38 / 19):**
+
+| calculator | points | in/out | chest | waist | hips | shoulder | calc time | size |
+|---|---|---|---|---|---|---|---|---|
+| Cloudflare qwen-27b | 14 | 597/76 | **40** (3/3) | **32** (3/3) | 36 (3/3) | 15.1 | 2.3-3.1 s | M |
+| Gemini 3.6 Flash | 14 | 574/51 | 38.5 | 31 | 39.5 | 17.5 | 3.2 s | S |
+| Gemini 3.5 Flash | 14 | 574/51 | 38.5 | 31 | 39 | 17.5 | 2.0 s | S |
+| Gemini 3.5 Flash | 8 | 434/51 | 38.5 (3/3) | 30-31 | 39-39.5 | 17.5 | 4.9-7.9 s | S |
+| Cloudflare | 8 | 453/76 | 42 (4/5) | 34 (4/5) | 38 (4/5) | 15.1 | 2.3-5.1 s | M |
+
+- **Gemini is better on hips and shoulder, worse on chest and waist, and the chest
+  is what picks the size** - it would have sold this L/XL body an S. Cloudflare
+  stays primary; Gemini stays wired as a rung (`?calcModel=gemini&geminiModel=...`,
+  or `CALC_PROVIDER=gemini`) and is not the default.
+- **Token counts are not comparable across providers.** The same payload is 574
+  tokens to Gemini and 597 to qwen, because the tokenizers differ; Gemini's shorter
+  reply (51 vs 76) is because it returns five numbers where qwen returns four plus
+  the neck. At this size the difference is cents per thousand scans either way.
+- **A Gemini 503 mid-scan silently hands the answer to Cloudflare**, and the two
+  disagree by ~2" of chest - so a deployment with `CALC_PROVIDER=gemini` would size
+  the same body differently run to run. One primary, watched, is the safe shape.
+- **8 points is not the free lunch the older note implies.** With the current
+  prompt, Cloudflare at 8 points read 42/34/38 on four of five runs and 40/32/36 on
+  the fifth - as close to truth as 14 points and 144 input tokens cheaper, but not
+  stable. The earlier "8 points reads two inches small" measurement predates the
+  current prompt and could not be reproduced today; 14 remains the default.
+
+`/health` now reports which calculator is configured; `/health/deep?geminiSweep=a,b,c`
+asks each named model a one-line question and reports status, time and tokens;
+`?geminiModels=1` lists what the key may call.
+
+
