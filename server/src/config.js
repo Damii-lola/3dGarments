@@ -35,10 +35,11 @@ export const config = Object.freeze({
     provider: (process.env.VISION_PROVIDER
       || (process.env.MISTRAL_API_KEY ? 'mistral' : 'cloudflare')).toLowerCase(),
     concurrency: Number(process.env.VISION_CONCURRENCY || 4),
-    // How many times each frame is read. Three is the smallest number that can
-    // outvote a wrong reading; two would only tie it. VISION_READS=1 returns to
-    // one pass per frame.
-    reads: Math.max(1, Math.round(Number(process.env.VISION_READS) || 3)),
+    // How many times each frame is read. One pass: the calculation step is what
+    // reconciles the frames into one body, and a second and third opinion per frame
+    // buy precision it never uses while tripling the wall clock and the vision bill.
+    // VISION_READS=3 asks for three reads per frame again.
+    reads: Math.max(1, Math.round(Number(process.env.VISION_READS) || 1)),
     // After the frames are read, hand the readings to Workers AI to be turned
     // into one consistent body (the calculation step). VISION_RECONCILE=0 keeps
     // the raw points as they came in.
