@@ -797,7 +797,34 @@ Measured on the fixed four frames in `%TEMP%\opencode\frames4` (same clip, feet 
 | compact prompt, object points | 1241 | 100 | ~1340 |
 | flat number table, 18 points | 901 | 100 | ~1000 |
 | flat number table, 14 points | 902 | 100 | ~1000 |
-| **flat table, 14 points, terse rules, measurements-only reply (now)** | **632** | **76** | **~708** |
+| **flat table, 14 points, terse rules, measurements-only reply** | **632** | **76** | **~708** |
+| **one-letter fields (k/f/v/d), same rules (now)** | **598** | **76** | **~674** |
+
+**Can the input get to 200 tokens? No - about 600 is the floor, and here is the
+arithmetic from the measurements, not from a guess:**
+
+- A coordinate costs about **2.8 tokens** (the digits, the comma, sometimes a split).
+  14 points x 2 numbers x 4 frames = 112 numbers = **~310 tokens** before any words.
+- The rules that hold the numbers are **~130 tokens**; the chat wrapper and the JSON
+  structure are another **~60**. 310 + 130 + 60 = 500, and the measured figure is 598.
+- **Every cut below that was tried and measured on the same four frames:**
+  - 8 points (head, chin, shoulders, waist, hips): **450 in / 37 out**, but the body
+    read **chest 38, waist 30, hips 34-36** - two inches small in every direction.
+  - 10 points (no armpits, no wrists): 495 in, same two-inch shortage.
+  - Removing the feet did not change it; removing the armpits did not change it; asking
+    for the height again did not change it. **14 points with the short prompt still read
+    38/30/36.**
+  - The two sentences that fix it are *"Never invent a missing part: no feet, no height"*
+    and *"Give every number; null only when unsupported."* Put them back and the same
+    payload reads **chest 40-42, waist 32-34, hips 36-38**. They are not decoration.
+- So a 200-token calculation is four frames of six numbers: three points, no waist or
+  no shoulders. It cannot measure the body it is being asked about.
+
+**Each frame is now read once (VISION_READS defaults to 1).** Three reads existed to
+outvote a wandering landmark, but the calculation is what reconciles the frames now and
+never used the extra precision. A scan sends **4 Mistral calls instead of 12**: vision
+**9-20 s**, whole scan **14-22 s**. `VISION_READS=3` restores the old behaviour without a
+deploy.
 
 - The **output is 76 tokens** once the reply stopped echoing the frames back. Echoing
   `{"i","view","turn"}` per frame cost ~130 tokens of answer and bought nothing.
