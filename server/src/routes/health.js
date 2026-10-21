@@ -124,20 +124,28 @@ health.get('/deep', async (req, res) => {
 
   // `?oa=zai|nvidia` asks a free calculator one word and shows the whole envelope.
   // A timeout is not a diagnosis: the status line and the body say whether the key,
-  // the model name or the pace is the problem.
+  // the model name or the pace is the problem. `&models=a,b,c` sweeps names, because
+  // a provider's free line moves and `/models` does not always list it.
   if (req.query.oa) {
     const name = String(req.query.oa);
-    const t0 = Date.now();
-    try {
-      const reply = await oaChat(name, [{ role: 'user', content: 'Reply with the single word: ready' }], {
-        maxTokens: 16,
-        json: false,
-        timeoutMs: Number(req.query.timeout || 30_000),
-      });
-      out.oa = { ok: true, name, ms: Date.now() - t0, raw: reply?.result };
-    } catch (e) {
-      out.oa = { ok: false, name, ms: Date.now() - t0, error: String(e?.message || e).slice(0, 300), upstream: e?.upstream || null };
+    const list = String(req.query.models || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const models = list.length ? list : [''];
+    const probes = [];
+    for (const m of models) {
+      const t0 = Date.now();
+      try {
+        const reply = await oaChat(name, [{ role: 'user', content: 'Reply with the single word: ready' }], {
+          maxTokens: 16,
+          json: false,
+          timeoutMs: Number(req.query.timeout || 30_000),
+          model: m,
+        });
+        probes.push({ model: m || '(default)', ok: true, ms: Date.now() - t0, raw: reply?.result });
+      } catch (e) {
+        probes.push({ model: m || '(default)', ok: false, ms: Date.now() - t0, error: String(e?.message || e).slice(0, 300), upstream: e?.upstream || null });
+      }
     }
+    out.oa = { ok: probes.every((p) => p.ok), name, probes };
   }
 
   const ok = Object.values(out).every((v) => v.ok);
