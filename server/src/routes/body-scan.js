@@ -543,7 +543,7 @@ async function reconcileWithCloudflare(frames, modelOverride = '') {
   // the points the seven numbers are made of: head, shoulders, waist, hips. The
   // armpits and the wrists are read by the geometry pass anyway, and the feet were
   // never in this clip - a point that is absent costs two numbers to say so.
-  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR'];
+  const WANTED = ['headTop', 'chin', 'shoulderL', 'shoulderR', 'waistL', 'waistR', 'hipL', 'hipR', 'footL', 'footR'];
   const raw = {
     k: WANTED,
     f: frames.map((f) => ({
