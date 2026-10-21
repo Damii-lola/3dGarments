@@ -1040,6 +1040,29 @@ No key served two calls at once; `cooling: 1`, `refused: 0`, all three succeeded
 The single-key gate measured earlier (one shopper waited 1,998 ms for the slot) is
 what happens now only when the pool has no free key.
 
+**Keys from the same account are not extra slots.** Three keys created on one Z.AI
+account, fired at together, still produced one `429 code 1302` and a 1.3-1.5 s wait
+(3.06 / 3.06 / 4.93 s), then all three keys were refused together and recovered about
+a minute later. Whatever is counted per key, the ceiling that matters is the account's.
+
+**Three keys from three accounts are.** Measured in production on `main` with
+`Z_API_KEY_1..3` on Render, three scans fired at the same instant:
+
+| keys | scans | times | pool |
+| --- | --- | --- | --- |
+| 3 accounts | 3 | **3.27 / 3.27 / 3.31 s** | served 0→3, refused 0, last_wait **0** |
+| 3 accounts | 4 | 3.03 / 3.82 / 5.12 / 5.54 s | served 3→7, refused 0, last_wait **1,562 ms** |
+
+Three identical times is the proof there was no queueing: three requests in flight at
+once, each paying only the model's own ~3.3 s. The fourth shopper waited 1.56 s for a
+key and still got Z.AI - `served` rose by exactly the number of scans, so no call
+needed a retry and nothing fell through to Cloudflare.
+
+So: concurrency = number of **accounts**, not number of keys. Three accounts carry
+three shoppers; the fourth queues for about one calculation. The per-minute request
+window is also per account - when it closes, every key on that account answers
+`429 1302` in under a second, and the pool moves to another account's key.
+
 `/health` reports `integrations.calc.zai` = `{ configured, model, keys, pace }` where
 `pace` = `{ keys, busy, waiting, cooling, last_wait_ms, refused, served }`.
 `/health/deep?oa=zai&index=2` probes the third key without printing it.
