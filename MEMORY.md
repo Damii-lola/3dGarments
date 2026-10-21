@@ -963,5 +963,37 @@ So the split stays behind the flag. It is worth revisiting if Gemini's quota and
 latency improve, because its hips and shoulder really are closer to truth - but a
 calculator that answers one run in three is not a calculator a shop can stand on.
 
+### The free calculators, measured (Oct 2026)
+
+Truth for the fixed frames: **40.8 chest / 32.2 waist / 38 hips / 19 shoulder**.
+
+| calculator | chest | waist | hips | shoulder | tokens in/out | time | answers |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Z.AI `glm-4.5-flash`** | **40** | **32** | **38** | none stated | 556 / 39 | 2.4-4.7 s | 9 of 9 warm |
+| Z.AI `glm-4.7-flash` | - | - | - | - | - | 2.2 s | echoes the empty template (0/0/0), or 429 |
+| NVIDIA `deepseek-ai/deepseek-v4.1-flash` | - | - | - | - | - | 2.8-4 s | echoes the empty template |
+| NVIDIA `gemma-4-31b-it` | - | - | - | - | - | >16 s | timeout |
+| NVIDIA `nemotron-3-super-120b-a12b` | - | - | - | - | - | 7 s | wrong shape `{"body":{...}}` |
+| NVIDIA `mistral-large-2-instruct` | - | - | - | - | - | 4 s | wrong shape `{"body":{...}}` |
+| NVIDIA `qwen/qwen3-32b`, `kimi-k2.6` | - | - | - | - | - | 50 ms | not on the account (404) |
+| Cloudflare `qwen3.8-27b` | 40 | 32 | 36 | none stated | 597 / 76 | 2.2 s | deterministic |
+| OVH `Qwen3.8-27B` (keyless) | 38-42 | 28-34 | 32-38 | 40-44 | 597 / 76 | 2-28 s | noisy, 2 RPM |
+
+- **Z.AI wins on the number that matters most.** Its hips are exact on every run;
+  Cloudflare reads them two inches small, which is the error that picks a size. Chest
+  and waist are as good as Cloudflare's, and it spends 41 fewer input tokens.
+- **`glm-4.7-flash` is not usable**, despite being the name the free-tier docs give:
+  it is either `429 service temporarily overloaded` or it answers the schema back with
+  zeros. `glm-4.5-flash` is the working name and is now the default.
+- **NVIDIA is out.** Of 83 models on the key, the only one that answered in-schema
+  echoed the empty template; the rest were 404, timed out, or answered with a
+  `{"body":{"head":...}}` description - the same wrong shape Mistral produces.
+- **Z.AI still fails under congestion**: one run in ten took the full 16 s and fell
+  through to Cloudflare, and 4.7-flash was 429 for a stretch. The ladder stays.
+- **The shoulder is still geometry's 15.1** against a 19" truth, because both
+  calculators state ~40 (a girth) and `RANGES.shoulder` is [14, 26], so it is dropped.
+  That is the next accuracy problem, and no provider fixes it.
+
+
 
 
