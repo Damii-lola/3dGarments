@@ -23,8 +23,8 @@ const textOf = (json) => (json?.candidates?.[0]?.content?.parts || [])
   .join('')
   .trim();
 
-async function post(body, timeoutMs) {
-  const { apiKey, model, apiBase } = config.gemini;
+async function post(body, timeoutMs, model = config.gemini.model) {
+  const { apiKey, apiBase } = config.gemini;
   const url = `${apiBase}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -46,82 +46,43 @@ async function post(body, timeoutMs) {
 }
 
 /**
- * Send the same one-line question several ways, to separate "the network will not
- * carry a POST" from "this model ignores the thinking switch". Only ever run when
- * asked for by hand: it spends a little quota to answer a question about wiring.
- *
- * The GET that lists models works, and the POST that asks a question never even
- * returns headers, so the variants walk across exactly that line: a streaming
- * POST (which other people's servers report working when plain generateContent
- * hangs), and the same POST wearing a browser user agent, in case something on
- * the way is holding requests it does not like the look of.
+ * Ask several model names the same one-line question and report which ones answer,
+ * how fast, and how many tokens it took. Gemini's model list is long and half of it
+ * is image or speech models, so the only reliable way to find one that will do the
+ * calculation is to ask it something and see. Run by hand, never by a scan.
  */
-export async function geminiDiagnose(timeoutMs = 12000) {
+export async function geminiSweep(models, { prompt = 'Reply with the single word: ready', maxTokens = 32, timeoutMs = 12000 } = {}) {
   if (!geminiConfigured()) return { ok: false, error: 'not configured' };
-  const { apiKey, model, apiBase } = config.gemini;
-  const ask = { contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }] };
-  const auth = { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
-  const variants = [
-    {
-      name: 'get-model',
-      method: 'GET',
-      url: `${apiBase}/models/${encodeURIComponent(model)}`,
-      headers: auth,
-    },
-    {
-      name: 'stream-sse',
-      url: `${apiBase}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
-      headers: auth,
-      body: ask,
-    },
-    {
-      name: 'ua-browser',
-      url: `${apiBase}/models/${encodeURIComponent(model)}:generateContent`,
-      headers: {
-        ...auth,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-        Origin: 'https://3dgarments.com',
-      },
-      body: ask,
-    },
-    {
-      name: 'other-host',
-      url: 'https://httpbin.org/post',
-      headers: { 'Content-Type': 'application/json' },
-      body: { hello: 'world' },
-    },
-  ];
+  const list = (Array.isArray(models) ? models : String(models || '').split(','))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!list.length) return { ok: false, error: 'no models named' };
   const results = [];
-  for (const v of variants) {
+  for (const model of list) {
     const t0 = Date.now();
-    let phase = 'connect';
     try {
-      const res = await fetch(v.url, {
-        method: v.method || 'POST',
-        headers: v.headers,
-        ...(v.body ? { body: JSON.stringify(v.body) } : {}),
-        signal: AbortSignal.timeout(timeoutMs),
+      const r = await geminiChat([{ role: 'user', content: prompt }], { model, maxTokens, json: false, temperature: 0, timeoutMs });
+      results.push({
+        model,
+        ok: true,
+        ms: Date.now() - t0,
+        text: String(r?.result?.choices?.[0]?.message?.content ?? '').slice(0, 200),
+        usage: r?.result?.usage || null,
       });
-      const msHeaders = Date.now() - t0;
-      phase = 'body';
-      const text = await res.text();
-      // Where the time went matters here: a request that never connects is a
-      // network refusal, one whose headers arrive and whose body never ends is a
-      // different animal entirely.
-      results.push({ variant: v.name, status: res.status, msHeaders, ms: Date.now() - t0, bytes: text.length, body: text.slice(0, 300) });
     } catch (e) {
-      results.push({ variant: v.name, phase, ms: Date.now() - t0, error: String(e?.message || e) });
+      results.push({ model, ok: false, ms: Date.now() - t0, error: String(e?.message || e).slice(0, 200) });
     }
   }
-  return { ok: true, model, results };
+  return { ok: true, results };
 }
 
 /**
  * One chat turn. `messages` is the same [{role, content}] the Workers AI path
  * builds; only the system message is separate here, which is where Gemini wants it.
  */
-export async function geminiChat(messages, { maxTokens = 260, json = true, temperature = 0, timeoutMs = 8000 } = {}) {
+export async function geminiChat(messages, { maxTokens = 260, json = true, temperature = 0, timeoutMs = 8000, model = '' } = {}) {
   if (!geminiConfigured()) throw new HttpError(503, 'Gemini is not configured (set GEMINI_API_KEY)');
+  const useModel = model || config.gemini.model;
 
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
   const turns = messages.filter((m) => m.role !== 'system');
@@ -138,13 +99,13 @@ export async function geminiChat(messages, { maxTokens = 260, json = true, tempe
 
   let json2;
   try {
-    json2 = await post(body, timeoutMs);
+    json2 = await post(body, timeoutMs, useModel);
   } catch (e) {
     // A model that insists on thinking rejects the budget instead of ignoring it.
     // The answer is still worth having without the flag; it just costs a little more.
     if (e?.status === 400 && /think/i.test(String(e.message))) {
       delete body.generationConfig.thinkingConfig;
-      json2 = await post(body, timeoutMs);
+      json2 = await post(body, timeoutMs, useModel);
     } else {
       throw e;
     }
