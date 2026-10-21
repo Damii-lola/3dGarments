@@ -628,15 +628,34 @@ async function reconcileSplit(frames, { points = 14, geminiModel = '' } = {}) {
   // in front, because it is the one that answers when the other does not.
   take(cf, SPLIT_PARTS.cloudflare, 'cloudflare');
   take(gem, SPLIT_PARTS.gemini, 'gemini');
-  take(cf, CALC_PARTS, 'cloudflare');
-  take(gem, CALC_PARTS, 'gemini');
+  const rest = CALC_PARTS.filter((p) => !SPLIT_PARTS.cloudflare.includes(p) && !SPLIT_PARTS.gemini.includes(p));
+  take(cf, rest, 'cloudflare');
+  take(gem, rest, 'gemini');
+
+  // A part that was assigned to a provider and did not come back is filled by the
+  // ordinary ladder, not by the other side: a Cloudflare miss must not quietly turn
+  // the chest into Gemini's, which reads it two inches small and would pick the size.
+  let filled = null;
+  const missing = [...SPLIT_PARTS.cloudflare, ...SPLIT_PARTS.gemini].filter((p) => calc[p] == null);
+  if (missing.length) {
+    const full = await reconcileWithCloudflare(frames, '', points, geminiModel);
+    if (full?.calc) {
+      for (const p of missing) {
+        if (full.calc[p] != null) {
+          calc[p] = full.calc[p];
+          parts[p] = `${full.model} (fill)`;
+        }
+      }
+    }
+    filled = { missing, model: full?.model || null, error: full?.error || null };
+  }
 
   const ok = Object.keys(calc).length > 0;
   return {
     calc: ok ? calc : null,
     relabelled: 0,
     notes: [],
-    attempts: 2,
+    attempts: 2 + (filled ? 1 : 0),
     waited: Math.max(cf.ms, gem.ms),
     error: ok ? null : (cf.error || gem.error || 'no measurements in either reply'),
     model: 'split',
@@ -648,6 +667,7 @@ async function reconcileSplit(frames, { points = 14, geminiModel = '' } = {}) {
     },
     parts,
     sides: { cloudflare: { ms: cf.ms, error: cf.error, said: cf.calc }, gemini: { ms: gem.ms, error: gem.error, said: gem.calc } },
+    filled,
   };
 }
 
