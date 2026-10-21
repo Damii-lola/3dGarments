@@ -552,7 +552,7 @@ const onTheLine = bestSize('male', { chest: 38.0, waist: 30.2, hips: 41.8 });
 checkTrue('a body squarely in one row takes that row', bestSize('male', { chest: 36.2, waist: 30.1, hips: 38.2 }).sizeKey === 'S', bestSize('male', { chest: 36.2, waist: 30.1, hips: 38.2 }).sizeKey);
 checkTrue('the live 38" chest is scored against the waist AND the hips', onTheLine.misfit > 3.7 && onTheLine.misfit < 3.9, `worst row disagreement ${onTheLine.misfit.toFixed(2)} in`);
 checkTrue('and the same body with the survey waist picks the larger size', bestSize('male', { chest: 38.0, waist: 32.4, hips: 41.8 }).sizeKey === 'M', `${bestSize('male', { chest: 38.0, waist: 32.4, hips: 41.8 }).sizeKey} - his waist reads 2" narrow, and that is the whole reason the two rules disagree here`);
-checkTrue('a chest-only measurement is still the nearest nominal', bestSize('male', { chest: 38.0 }).sizeKey === 'S' && bestSize('male', { chest: 41.5 }).sizeKey === 'M', `${bestSize('male', { chest: 38.0 }).sizeKey} / ${bestSize('male', { chest: 41.5 }).sizeKey}`);
+checkTrue('a chest-only measurement that lands between two rows takes the larger', bestSize('male', { chest: 38.0 }).sizeKey === 'M' && bestSize('male', { chest: 41.5 }).sizeKey === 'M', `${bestSize('male', { chest: 38.0 }).sizeKey} / ${bestSize('male', { chest: 41.5 }).sizeKey}`);
 checkTrue('women are scored on the bust column, waist and hips', bestSize('female', { chest: 36.0, waist: 28.0, hips: 38.0 }).sizeKey === 'M' && bestSize('female', { chest: 39.0, waist: 31.0, hips: 41.0 }).sizeKey === 'L', `${bestSize('female', { chest: 39, waist: 31, hips: 41 }).sizeKey}`);
 checkTrue('no chest means no size', bestSize('male', { waist: 30, hips: 38 }) === null);
 checkTrue('a size row can be read back for the chart the page shows', bestSize('male', { chest: 40, waist: 34, hips: 40 }).row.chest === 40);
@@ -591,7 +591,7 @@ checkTrue('a row that cannot be scored is dropped, and the others survive', (() 
 })());
 checkTrue('two rows with one label are one size', Object.keys(chartFromInput({ columns: [{ id: 'c1', label: 'Chest', measure: 'chest' }], rows: [{ key: 'M', c1: 40 }, { key: 'M', c1: 44 }] }).rows).length === 1);
 checkTrue('an empty or unreadable chart is null, never an empty table', chartFromInput(null) === null && chartFromInput({ rows: [] }) === null && chartFromInput({ rows: [{ key: 'M', c1: 40 }] }) === null);
-checkTrue('a store chart answers a tie with the row typed first', on({ chest: 39 }, chartFromInput({ columns: [{ id: 'c1', label: 'Chest', measure: 'chest' }], rows: [{ key: 'S', c1: 38 }, { key: 'M', c1: 40 }] })).sizeKey === 'S', on({ chest: 39 }, chartFromInput({ columns: [{ id: 'c1', label: 'Chest', measure: 'chest' }], rows: [{ key: 'S', c1: 38 }, { key: 'M', c1: 40 }] }))?.sizeKey);
+checkTrue('a store chart answers a tie with the larger row', on({ chest: 39 }, chartFromInput({ columns: [{ id: 'c1', label: 'Chest', measure: 'chest' }], rows: [{ key: 'S', c1: 38 }, { key: 'M', c1: 40 }] })).sizeKey === 'M', on({ chest: 39 }, chartFromInput({ columns: [{ id: 'c1', label: 'Chest', measure: 'chest' }], rows: [{ key: 'S', c1: 38 }, { key: 'M', c1: 40 }] }))?.sizeKey);
 
 console.log('\n== the chart\'s own columns decide what is scored ==');
 // The store names its own columns, and adding one is the point: a shoulder that
