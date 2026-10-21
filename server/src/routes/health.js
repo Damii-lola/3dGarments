@@ -4,7 +4,7 @@ import { db, supabaseConfigured } from '../lib/supabase.js';
 import { cloudflareConfigured, runModel, tokenDiagnostics, verifyCloudflare, visionStatus } from '../lib/cloudflare.js';
 import { mistralConfigured, mistralPace, verifyMistral } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured, geminiSweep, listGeminiModels } from '../lib/gemini.js';
-import { oaConfigured, oaChat, oaModels } from '../lib/openai-compat.js';
+import { oaConfigured, oaModels, oaProbe } from '../lib/openai-compat.js';
 
 const started = Date.now();
 export const health = Router();
@@ -132,18 +132,7 @@ health.get('/deep', async (req, res) => {
     const models = list.length ? list : [''];
     const probes = [];
     for (const m of models) {
-      const t0 = Date.now();
-      try {
-        const reply = await oaChat(name, [{ role: 'user', content: 'Reply with the single word: ready' }], {
-          maxTokens: 16,
-          json: false,
-          timeoutMs: Number(req.query.timeout || 30_000),
-          model: m,
-        });
-        probes.push({ model: m || '(default)', ok: true, ms: Date.now() - t0, raw: reply?.result });
-      } catch (e) {
-        probes.push({ model: m || '(default)', ok: false, ms: Date.now() - t0, error: String(e?.message || e).slice(0, 300), upstream: e?.upstream || null });
-      }
+      probes.push(await oaProbe(name, { model: m, timeoutMs: Number(req.query.timeout || 30_000) }));
     }
     out.oa = { ok: probes.every((p) => p.ok), name, probes };
   }

@@ -82,8 +82,44 @@ export async function oaChat(name, messages, { maxTokens = 260, json = true, tem
   return { result: parsed };
 }
 
-/** `GET /models` - what this key may call, without spending a completion. */
-export async function oaModels(name) {
+/**
+ * One tiny completion, with the rate-limit headers kept.
+ *
+ * Free tiers publish a number and enforce another. The headers on a real reply are
+ * the only description of what this key is actually allowed, so they travel with the
+ * probe instead of being discarded.
+ */
+export async function oaProbe(name, { model = '', timeoutMs = 30_000 } = {}) {
+  const p = PROVIDERS()[name];
+  if (!p?.apiKey) return { ok: false, error: 'not configured' };
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`${p.apiBase}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model || p.model,
+        messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+        max_tokens: 8,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await res.text();
+    return {
+      ok: res.ok,
+      model: model || p.model,
+      status: res.status,
+      ms: Date.now() - t0,
+      rate_headers: Object.fromEntries([...res.headers].filter(([k]) => /rate|limit|quota|retry|reset|remaining/i.test(k))),
+      body: text.slice(0, 400),
+    };
+  } catch (e) {
+    return { ok: false, model: model || p.model, ms: Date.now() - t0, error: e.message };
+  }
+}
+
+/** `GET /models` - what this key may call, without spending a completion. */export async function oaModels(name) {
   const p = PROVIDERS()[name];
   if (!p?.apiKey) return { ok: false, error: 'not configured' };
   try {
