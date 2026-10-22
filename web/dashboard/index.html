@@ -92,17 +92,6 @@
       </section>
 
       <section class="section" id="dash-in" hidden>
-        <div class="tile">
-          <div class="dash-head">
-            <div>
-              <p class="eyebrow eyebrow-faint">Signed in</p>
-              <p class="dash-name" id="dash-name">&mdash;</p>
-              <p class="dash-mail" id="dash-mail">&mdash;</p>
-            </div>
-            <button class="btn-ghost" id="dash-out" type="button">Log out</button>
-          </div>
-        </div>
-
         <!-- Quick numbers: how many garments, how many sizes, when the last one
              landed. Gives the store a sense of the library at a glance. -->
         <div class="stats" id="dash-stats" hidden>
@@ -174,12 +163,10 @@
               <button class="btn-ghost" id="chart-add-col" type="button">+ Add a column</button>
             </div>
             <p class="chart-hint">
-              One column for each thing your chart prints. The first column this
-              app can measure decides the size &mdash; chest or bust for a top,
-              waist for trousers &mdash; and the other measured columns are checked
-              against the shopper too. A column it cannot read off a body, such as
-              a body length, is shown to the shopper beside their size and never
-              changes the answer.
+              One column per measurement your chart prints. The first measurable
+              column decides the size; other measurable columns are checked too.
+              Columns that can't be read off a body (e.g. length) are shown beside
+              the size but never change it.
             </p>
             <div class="chart-columns" id="chart-columns"></div>
           </div>

@@ -730,8 +730,8 @@ function paint(session) {
   howSection.hidden = !account;
   if (!account) return;
 
-  nameEl.textContent = session.user.user_metadata?.username || 'Your account';
-  mailEl.textContent = session.user.email || '';
+  if (nameEl) nameEl.textContent = session.user.user_metadata?.username || 'Your account';
+  if (mailEl) mailEl.textContent = session.user.email || '';
   refresh();
 }
 
