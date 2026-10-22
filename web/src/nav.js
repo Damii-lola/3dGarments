@@ -86,7 +86,7 @@ function paint(session) {
   const account = isAccount(session);
   const name = account ? session.user.user_metadata?.username || session.user.email : '';
 
-  panelName.textContent = account ? name : 'Not signed in';
+  if (panelName) panelName.textContent = account ? name : 'Not signed in';
   panelNote.textContent = account
     ? session.user.email || ''
     : 'The scanner asks who it is measuring before it opens the camera.';
