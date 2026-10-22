@@ -31,18 +31,18 @@ const DEMO_EMAIL = 'findmysize.us@gmail.com';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const button = document.getElementById('open-camera');
-const cta = button.querySelector('.cam-cta');
+const cta = button ? button.querySelector('.cam-cta') : null;
 
 /** `promise`, or `fallback` if it has not settled within `ms`. */
 function within(promise, ms, fallback) {
   return Promise.race([promise, new Promise((r) => setTimeout(() => r(fallback), ms))]);
 }
 
-button.addEventListener('click', async () => {
+if (button) button.addEventListener('click', async () => {
   if (button.disabled) return;
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
-  cta.textContent = 'Opening';
+  if (cta) cta.textContent = 'Opening';
 
   let session = null;
   try {
@@ -55,7 +55,7 @@ button.addEventListener('click', async () => {
   setTimeout(() => {
     button.disabled = false;
     button.removeAttribute('aria-busy');
-    cta.textContent = 'Click to Record';
+    if (cta) cta.textContent = 'Click to Record';
   }, 5000);
 
   location.assign(isAccount(session) ? SCANNER : ACCOUNT);
