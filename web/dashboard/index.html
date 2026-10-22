@@ -212,36 +212,93 @@
       </section>
 
       <section class="section" id="dash-how" hidden>
-        <h2 class="section-title">How it reaches a shopper</h2>
-        <div class="grid grid-wide">
-          <div class="tile">
-            <p class="eyebrow eyebrow-faint">On your product page</p>
-            <h3>Paste the popup code</h3>
-            <p>
-              Every chart card has a snippet. Drop it once onto the product page
-              and a <b>Find my size</b> button appears there. Pressing it opens the
-              size finder in a popup over your page &mdash; no new tab, no basket
-              left behind.
-            </p>
-          </div>
-          <div class="tile">
-            <p class="eyebrow eyebrow-faint">Anywhere else</p>
-            <h3>Or just use the link</h3>
-            <p>
-              The link on its own works too: put it in a product description, an
-              Instagram bio, an order-confirmation email. It opens the same size
-              finder, and it still knows which garment it is for.
-            </p>
-          </div>
-          <div class="tile">
-            <p class="eyebrow eyebrow-faint">What the shopper does</p>
-            <h3>One slow turn, one size</h3>
-            <p>
-              They record a 360&deg; video on their phone, say who it is of, and
-              are shown their measurements, their size in <em>your</em> chart, and
-              the numbers that size was read from.
-            </p>
-          </div>
+        <h2 class="section-title">How to add "Find My Size" to your site</h2>
+        <p class="section-lead">
+          One line of HTML per garment. No install, no build step, no account for
+          your customers.
+        </p>
+
+        <div class="tile">
+          <h3>Step 1 &mdash; Copy the code</h3>
+          <p>
+            Each garment card above has a box labelled <b>Popup code for your
+            product page</b>. Click inside it, then <b>Copy</b> (or press
+            Ctrl/Cmd+C). It looks like this:
+          </p>
+          <pre class="chart-snippet-box" style="margin: 0.6rem 0;">&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE"&gt;&lt;/script&gt;</pre>
+          <p class="chart-hint">
+            That single line is the entire integration. You only need the
+            <code>data-chart</code> part; everything else is optional.
+          </p>
+        </div>
+
+        <div class="tile">
+          <h3>Step 2 &mdash; Paste it into your product page</h3>
+          <p>
+            Open your product page's HTML (or your platform's "Custom HTML",
+            "Additional scripts", or "Code injection" box) and paste that line
+            once per garment.
+          </p>
+          <ul style="margin: 0.5rem 0 0.5rem 1.2rem; line-height: 1.7;">
+            <li><b>In the &lt;body&gt;</b> (e.g. under the size selector): the button appears exactly where you pasted it.</li>
+            <li><b>In the &lt;head&gt;</b>: there's no visible spot, so the button floats in the bottom-right corner automatically.</li>
+          </ul>
+          <p class="chart-hint">
+            Paste it once per garment. A page selling three garments gets three
+            lines (or three buttons).
+          </p>
+        </div>
+
+        <div class="tile">
+          <h3>Step 3 &mdash; Test it first</h3>
+          <p>
+            Before publishing, click <b>Preview the popup</b> on the garment card.
+            A real popup opens over the dashboard running the exact same code your
+            customers will get. If it looks right here, it'll look right on your site.
+          </p>
+        </div>
+
+        <div class="tile">
+          <h3>Step 4 &mdash; Customise (all optional)</h3>
+          <p>Add any of these to the same line:</p>
+          <ul style="margin: 0.5rem 0 0.5rem 1.2rem; line-height: 1.7;">
+            <li><b>Button text:</b> <code>data-label="Find my fit"</code></li>
+            <li><b>Colour:</b> <code>data-color="#2563eb"</code> (any CSS colour)</li>
+            <li><b>Corner pin:</b> <code>data-float="1"</code></li>
+          </ul>
+          <p class="chart-hint">
+            Example: a green floating button that says "Find My Size":
+          </p>
+          <pre class="chart-snippet-box" style="margin: 0.4rem 0 0;">&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE" data-color="#16a34a" data-float="1"&gt;&lt;/script&gt;</pre>
+        </div>
+
+        <div class="tile">
+          <h3>Or just use the link</h3>
+          <p>
+            The <b>The link</b> field on each card works on its own &mdash; drop it
+            into a product description, an Instagram bio, or an order-confirmation
+            email. It opens the same size finder and still knows which garment it
+            is for. No button, no code.
+          </p>
+        </div>
+
+        <div class="tile">
+          <h3>What the shopper does</h3>
+          <p>
+            They click the button, a popup opens over your page (no new tab, basket
+            untouched), they record one slow 360&deg; turn on their phone, and they
+            are shown their measurements and which size of <em>your</em> garment to
+            buy. Nothing is saved &mdash; their video never leaves their phone.
+          </p>
+        </div>
+
+        <div class="tile tile-alert" style="margin-top: 0.5rem;">
+          <h3>If the button doesn't appear</h3>
+          <ul style="margin: 0.5rem 0 0 1.2rem; line-height: 1.7;">
+            <li>Paste as <b>HTML / code</b>, not into a visual text editor that strips <code>&lt;script&gt;</code> tags.</li>
+            <li>Shopify / WordPress / Squarespace: use their "Custom HTML", "Additional scripts", or "Code injection" box.</li>
+            <li>If your site has a strict Content-Security-Policy, allow <code>https://damii-lola.github.io</code> in <code>script-src</code> and <code>frame-src</code>.</li>
+          </ul>
         </div>
       </section>
     </main>
