@@ -42,6 +42,12 @@ const statUpdated = document.getElementById('stat-updated');
 const searchInput = document.getElementById('chart-search');
 const sortSelect = document.getElementById('chart-sort');
 const toastEl = document.getElementById('dash-toast');
+const pcOverlay = document.getElementById('pc-overlay');
+const pcLeft = document.getElementById('pc-left');
+const pcRight = document.getElementById('pc-right');
+const pcIframe = document.getElementById('pc-iframe');
+const pcClose = document.getElementById('pc-close');
+const pcSave = document.getElementById('pc-save');
 const form = document.getElementById('chart-form');
 const formTitle = document.getElementById('chart-form-title');
 const nameInput = document.getElementById('chart-name');
@@ -519,7 +525,7 @@ function card(chart) {
   const actions = document.createElement('div');
   actions.className = 'actions';
   const buttons = [
-    ['preview', 'Preview the popup', 'btn-primary'],
+    ['preview', 'Preview & Customise Popup', 'btn-primary'],
     ['copy-embed', 'Copy the popup code', 'btn-ghost'],
     ['copy-link', 'Copy the link', 'btn-ghost'],
     ['edit', 'Edit this chart', 'btn-ghost'],
@@ -604,6 +610,320 @@ async function refresh() {
     listEl.replaceChildren(listMessage(`Could not load your clothing: ${err.message}`));
   }
 }
+
+/* ---------- popup customiser ---------- */
+
+let pcChart = null;
+let pcConfig = null;
+
+const PC_DEFAULTS = {
+  global: {
+    logo: '', primaryColor: '#ff6a4a', secondaryColor: '#ff8a5c', accentColor: '#ff5b3a',
+    backgroundColor: '#15181f', overlayBlur: 6, borderRadius: 1.35, fontFamily: 'system-ui',
+    textSize: 1, mode: 'dark',
+  },
+  phase1: {
+    headline: { text: 'Find your size', color: '#eef0f4', size: 1.5, weight: 650 },
+    instruction: { text: 'Record a 360° video of yourself, turning slowly all the way around: stand still, whole body in frame, arms a hand\\u2019s width from your sides.', color: '#8b90a0', size: 1, lineHeight: 1.5 },
+    productPill: { bg: '#1d212a', color: '#eef0f4', size: 0.9, radius: 0.8, border: 'rgba(255,255,255,0.1)' },
+    recordButton: { bg: '#ff6a4a', color: '#fff', size: 1, radius: 0.8, hover: '#f04a29' },
+    cameraIcon: { color: '#fff', size: 1.05 },
+    privacyBox: { bg: 'rgba(0,0,0,0.2)', border: 'rgba(255,255,255,0.1)', color: '#8b90a0', size: 0.78, iconColor: '#8b90a0' },
+    closeButton: { color: '#eef0f4', size: 1.2, hover: '#fff' },
+  },
+  phase2: {
+    resultsHeadline: { text: 'Your size', color: '#eef0f4', size: 1.5, weight: 650 },
+    recommendedSize: { color: '#3ddc97', size: 2.7, weight: 700 },
+    secondaryText: { color: '#8b90a0', size: 0.85 },
+    primaryCta: { bg: '#ff6a4a', color: '#fff', size: 1, radius: 0.8, hover: '#f04a29' },
+    secondaryButton: { bg: 'transparent', color: '#eef0f4', size: 1, border: 'rgba(255,255,255,0.16)' },
+  },
+};
+
+function deepMerge(base, over) {
+  if (!over || typeof over !== 'object' || Array.isArray(over)) return base;
+  const out = Array.isArray(base) ? base.slice() : { ...base };
+  for (const k of Object.keys(over)) {
+    out[k] = (base && typeof base[k] === 'object' && !Array.isArray(base[k]))
+      ? deepMerge(base[k], over[k])
+      : over[k];
+  }
+  return out;
+}
+
+function openCustomizer(chart) {
+  pcChart = chart;
+  pcConfig = deepMerge(PC_DEFAULTS, chart.popup || {});
+  if (!pcOverlay) return;
+  pcOverlay.hidden = false;
+  document.body.style.overflow = 'hidden';
+  buildPcPanels();
+  loadPcIframe();
+}
+
+function closeCustomizer() {
+  if (pcOverlay) pcOverlay.hidden = true;
+  document.body.style.overflow = '';
+  pcChart = null;
+}
+
+function loadPcIframe() {
+  if (!pcIframe || !pcChart) return;
+  pcIframe.src = `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
+  pcIframe.addEventListener('load', () => applyPcToIframe(), { once: true });
+}
+
+/* ---------- panel builders ---------- */
+
+function pcField(parent, label, control) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pc-field';
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  wrap.append(lab, control);
+  parent.append(wrap);
+  return wrap;
+}
+
+function pcColor(parent, label, get, set) {
+  const inp = document.createElement('input');
+  inp.type = 'color';
+  inp.value = get();
+  inp.addEventListener('input', () => { set(inp.value); applyPcToIframe(); });
+  pcField(parent, label, inp);
+}
+
+function pcText(parent, label, get, set) {
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = get();
+  inp.addEventListener('input', () => { set(inp.value); applyPcToIframe(); });
+  pcField(parent, label, inp);
+}
+
+function pcNumber(parent, label, get, set, { min = 0, max = 4, step = 0.05 } = {}) {
+  const inp = document.createElement('input');
+  inp.type = 'range';
+  inp.min = min; inp.max = max; inp.step = step;
+  inp.value = get();
+  const val = document.createElement('span');
+  val.className = 'pc-val';
+  val.textContent = Number(get()).toFixed(2);
+  inp.addEventListener('input', () => { set(Number(inp.value)); val.textContent = Number(inp.value).toFixed(2); applyPcToIframe(); });
+  const row = document.createElement('div');
+  row.className = 'pc-row';
+  row.append(inp, val);
+  pcField(parent, label, row);
+}
+
+function pcSelect(parent, label, get, set, options) {
+  const sel = document.createElement('select');
+  for (const [v, t] of options) {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    sel.append(o);
+  }
+  sel.value = get();
+  sel.addEventListener('change', () => { set(sel.value); applyPcToIframe(); });
+  pcField(parent, label, sel);
+}
+
+function pcSection(parent, title) {
+  const h = document.createElement('h4');
+  h.className = 'pc-section';
+  h.textContent = title;
+  parent.append(h);
+}
+
+function buildPcPanels() {
+  if (!pcLeft || !pcRight) return;
+  pcLeft.replaceChildren();
+  pcRight.replaceChildren();
+
+  // ---- Left: global styles ----
+  const g = pcConfig.global;
+  pcSection(pcLeft, 'Global styles');
+  pcText(pcLeft, 'Logo URL', () => g.logo, (v) => { g.logo = v; });
+  pcColor(pcLeft, 'Primary colour', () => g.primaryColor, (v) => { g.primaryColor = v; });
+  pcColor(pcLeft, 'Secondary colour', () => g.secondaryColor, (v) => { g.secondaryColor = v; });
+  pcColor(pcLeft, 'Accent colour', () => g.accentColor, (v) => { g.accentColor = v; });
+  pcColor(pcLeft, 'Background colour', () => g.backgroundColor, (v) => { g.backgroundColor = v; });
+  pcNumber(pcLeft, 'Overlay blur', () => g.overlayBlur, (v) => { g.overlayBlur = v; }, { min: 0, max: 20, step: 1 });
+  pcNumber(pcLeft, 'Border radius', () => g.borderRadius, (v) => { g.borderRadius = v; }, { min: 0, max: 3, step: 0.05 });
+  pcText(pcLeft, 'Font family', () => g.fontFamily, (v) => { g.fontFamily = v; });
+  pcNumber(pcLeft, 'Overall text size', () => g.textSize, (v) => { g.textSize = v; }, { min: 0.7, max: 1.4, step: 0.05 });
+  pcSelect(pcLeft, 'Mode', () => g.mode, (v) => { g.mode = v; }, [['dark', 'Dark'], ['light', 'Light']]);
+
+  // ---- Right: element-by-element with phase switcher ----
+  const switcher = document.createElement('div');
+  switcher.className = 'pc-phase-switcher';
+  const b1 = document.createElement('button'); b1.textContent = 'Phase 1 (Recording)';
+  const b2 = document.createElement('button'); b2.textContent = 'Phase 2 (Results)';
+  switcher.append(b1, b2);
+  pcRight.append(switcher);
+
+  const phase1 = document.createElement('div');
+  const phase2 = document.createElement('div');
+  phase2.hidden = true;
+  pcRight.append(phase1, phase2);
+
+  function showPhase(n) {
+    phase1.hidden = n !== 1;
+    phase2.hidden = n !== 2;
+    b1.classList.toggle('active', n === 1);
+    b2.classList.toggle('active', n === 2);
+  }
+  b1.addEventListener('click', () => showPhase(1));
+  b2.addEventListener('click', () => showPhase(2));
+  showPhase(1);
+
+  // Phase 1
+  const p1 = pcConfig.phase1;
+  pcSection(phase1, 'Headline');
+  pcText(phase1, 'Text', () => p1.headline.text, (v) => { p1.headline.text = v; });
+  pcColor(phase1, 'Text colour', () => p1.headline.color, (v) => { p1.headline.color = v; });
+  pcNumber(phase1, 'Text size', () => p1.headline.size, (v) => { p1.headline.size = v; }, { min: 0.8, max: 3, step: 0.05 });
+  pcSelect(phase1, 'Font weight', () => String(p1.headline.weight), (v) => { p1.headline.weight = Number(v); }, [['400','400'],['500','500'],['600','600'],['650','650'],['700','700']]);
+
+  pcSection(phase1, 'Instruction paragraph');
+  pcText(phase1, 'Text', () => p1.instruction.text, (v) => { p1.instruction.text = v; });
+  pcColor(phase1, 'Text colour', () => p1.instruction.color, (v) => { p1.instruction.color = v; });
+  pcNumber(phase1, 'Text size', () => p1.instruction.size, (v) => { p1.instruction.size = v; }, { min: 0.7, max: 1.6, step: 0.05 });
+  pcNumber(phase1, 'Line height', () => p1.instruction.lineHeight, (v) => { p1.instruction.lineHeight = v; }, { min: 1, max: 2, step: 0.05 });
+
+  pcSection(phase1, 'Product pill');
+  pcColor(phase1, 'Background', () => p1.productPill.bg, (v) => { p1.productPill.bg = v; });
+  pcColor(phase1, 'Text colour', () => p1.productPill.color, (v) => { p1.productPill.color = v; });
+  pcNumber(phase1, 'Text size', () => p1.productPill.size, (v) => { p1.productPill.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
+  pcNumber(phase1, 'Border radius', () => p1.productPill.radius, (v) => { p1.productPill.radius = v; }, { min: 0, max: 2, step: 0.05 });
+  pcText(phase1, 'Border colour', () => p1.productPill.border, (v) => { p1.productPill.border = v; });
+
+  pcSection(phase1, 'Record button');
+  pcColor(phase1, 'Background', () => p1.recordButton.bg, (v) => { p1.recordButton.bg = v; });
+  pcColor(phase1, 'Text colour', () => p1.recordButton.color, (v) => { p1.recordButton.color = v; });
+  pcNumber(phase1, 'Text size', () => p1.recordButton.size, (v) => { p1.recordButton.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
+  pcNumber(phase1, 'Border radius', () => p1.recordButton.radius, (v) => { p1.recordButton.radius = v; }, { min: 0, max: 2, step: 0.05 });
+  pcColor(phase1, 'Hover colour', () => p1.recordButton.hover, (v) => { p1.recordButton.hover = v; });
+
+  pcSection(phase1, 'Camera icon');
+  pcColor(phase1, 'Colour', () => p1.cameraIcon.color, (v) => { p1.cameraIcon.color = v; });
+  pcNumber(phase1, 'Size', () => p1.cameraIcon.size, (v) => { p1.cameraIcon.size = v; }, { min: 0.5, max: 2, step: 0.05 });
+
+  pcSection(phase1, 'Privacy box');
+  pcColor(phase1, 'Background', () => p1.privacyBox.bg, (v) => { p1.privacyBox.bg = v; });
+  pcText(phase1, 'Border colour', () => p1.privacyBox.border, (v) => { p1.privacyBox.border = v; });
+  pcColor(phase1, 'Text colour', () => p1.privacyBox.color, (v) => { p1.privacyBox.color = v; });
+  pcNumber(phase1, 'Text size', () => p1.privacyBox.size, (v) => { p1.privacyBox.size = v; }, { min: 0.6, max: 1.2, step: 0.05 });
+  pcColor(phase1, 'Icon colour', () => p1.privacyBox.iconColor, (v) => { p1.privacyBox.iconColor = v; });
+
+  pcSection(phase1, 'Close button (X)');
+  pcColor(phase1, 'Colour', () => p1.closeButton.color, (v) => { p1.closeButton.color = v; });
+  pcNumber(phase1, 'Size', () => p1.closeButton.size, (v) => { p1.closeButton.size = v; }, { min: 0.8, max: 2, step: 0.05 });
+  pcColor(phase1, 'Hover colour', () => p1.closeButton.hover, (v) => { p1.closeButton.hover = v; });
+
+  // Phase 2
+  const p2 = pcConfig.phase2;
+  pcSection(phase2, 'Results headline');
+  pcText(phase2, 'Text', () => p2.resultsHeadline.text, (v) => { p2.resultsHeadline.text = v; });
+  pcColor(phase2, 'Colour', () => p2.resultsHeadline.color, (v) => { p2.resultsHeadline.color = v; });
+  pcNumber(phase2, 'Size', () => p2.resultsHeadline.size, (v) => { p2.resultsHeadline.size = v; }, { min: 0.8, max: 3, step: 0.05 });
+  pcSelect(phase2, 'Weight', () => String(p2.resultsHeadline.weight), (v) => { p2.resultsHeadline.weight = Number(v); }, [['400','400'],['500','500'],['600','600'],['650','650'],['700','700']]);
+
+  pcSection(phase2, 'Recommended size');
+  pcColor(phase2, 'Colour', () => p2.recommendedSize.color, (v) => { p2.recommendedSize.color = v; });
+  pcNumber(phase2, 'Size', () => p2.recommendedSize.size, (v) => { p2.recommendedSize.size = v; }, { min: 1.5, max: 4, step: 0.05 });
+  pcSelect(phase2, 'Weight', () => String(p2.recommendedSize.weight), (v) => { p2.recommendedSize.weight = Number(v); }, [['400','400'],['500','500'],['600','600'],['700','700'],['800','800']]);
+
+  pcSection(phase2, 'Secondary text');
+  pcColor(phase2, 'Colour', () => p2.secondaryText.color, (v) => { p2.secondaryText.color = v; });
+  pcNumber(phase2, 'Size', () => p2.secondaryText.size, (v) => { p2.secondaryText.size = v; }, { min: 0.6, max: 1.4, step: 0.05 });
+
+  pcSection(phase2, 'Primary CTA button');
+  pcColor(phase2, 'Background', () => p2.primaryCta.bg, (v) => { p2.primaryCta.bg = v; });
+  pcColor(phase2, 'Text colour', () => p2.primaryCta.color, (v) => { p2.primaryCta.color = v; });
+  pcNumber(phase2, 'Text size', () => p2.primaryCta.size, (v) => { p2.primaryCta.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
+  pcNumber(phase2, 'Border radius', () => p2.primaryCta.radius, (v) => { p2.primaryCta.radius = v; }, { min: 0, max: 2, step: 0.05 });
+  pcColor(phase2, 'Hover colour', () => p2.primaryCta.hover, (v) => { p2.primaryCta.hover = v; });
+
+  pcSection(phase2, 'Secondary button');
+  pcColor(phase2, 'Background', () => p2.secondaryButton.bg, (v) => { p2.secondaryButton.bg = v; });
+  pcColor(phase2, 'Text colour', () => p2.secondaryButton.color, (v) => { p2.secondaryButton.color = v; });
+  pcNumber(phase2, 'Text size', () => p2.secondaryButton.size, (v) => { p2.secondaryButton.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
+  pcText(phase2, 'Border colour', () => p2.secondaryButton.border, (v) => { p2.secondaryButton.border = v; });
+}
+
+function applyPcToIframe() {
+  if (!pcIframe || !pcIframe.contentDocument) return;
+  const doc = pcIframe.contentDocument;
+  const g = pcConfig.global;
+  const p1 = pcConfig.phase1;
+  const p2 = pcConfig.phase2;
+  let css = '';
+  // global
+  css += `:root { --pc-primary:${g.primaryColor}; --pc-secondary:${g.secondaryColor}; --pc-accent:${g.accentColor}; --pc-bg:${g.backgroundColor}; --pc-radius:${g.borderRadius}rem; --pc-text-scale:${g.textSize}; }\n`;
+  css += `body { background:${g.backgroundColor}; font-family:${g.fontFamily},system-ui,sans-serif; font-size:calc(100% * ${g.textSize}); }\n`;
+  css += `.threeDG-overlay { backdrop-filter: blur(${g.overlayBlur}px); -webkit-backdrop-filter: blur(${g.overlayBlur}px); }\n`;
+  // phase 1
+  css += `.intro h1 { color:${p1.headline.color}; font-size:${p1.headline.size}rem; font-weight:${p1.headline.weight}; }\n`;
+  if (p1.headline.text) css += `.intro h1::before { content: "${p1.headline.text}"; }\n`; // not ideal but visual
+  css += `.intro .lead { color:${p1.instruction.color}; font-size:${p1.instruction.size}rem; line-height:${p1.instruction.lineHeight}; }\n`;
+  css += `.garment { background:${p1.productPill.bg}; color:${p1.productPill.color}; font-size:${p1.productPill.size}rem; border-radius:${p1.productPill.radius}rem; border-color:${p1.productPill.border}; }\n`;
+  css += `#open-camera, .open-camera { background:${p1.recordButton.bg}; color:${p1.recordButton.color}; font-size:${p1.recordButton.size}rem; border-radius:${p1.recordButton.radius}rem; }\n`;
+  css += `#open-camera:hover, .open-camera:hover { background:${p1.recordButton.hover}; }\n`;
+  css += `#open-camera svg, .open-camera svg { color:${p1.cameraIcon.color}; width:${p1.cameraIcon.size}rem; height:${p1.cameraIcon.size}rem; }\n`;
+  css += `#privacy, .privacy { background:${p1.privacyBox.bg}; border-color:${p1.privacyBox.border}; color:${p1.privacyBox.color}; font-size:${p1.privacyBox.size}rem; }\n`;
+  css += `#privacy svg, .privacy svg { color:${p1.privacyBox.iconColor}; }\n`;
+  css += `.threeDG-close { color:${p1.closeButton.color}; font-size:${p1.closeButton.size}rem; }\n`;
+  css += `.threeDG-close:hover { color:${p1.closeButton.hover}; }\n`;
+  // phase 2
+  css += `.verdict-eyebrow { color:${p2.resultsHeadline.color}; font-size:${p2.resultsHeadline.size}rem; font-weight:${p2.resultsHeadline.weight}; }\n`;
+  css += `.verdict-size { color:${p2.recommendedSize.color}; font-size:${p2.recommendedSize.size}rem; font-weight:${p2.recommendedSize.weight}; }\n`;
+  css += `.verdict-row, .verdict-note { color:${p2.secondaryText.color}; font-size:${p2.secondaryText.size}rem; }\n`;
+  // inject
+  let style = doc.getElementById('pc-injected');
+  if (!style) {
+    style = doc.createElement('style');
+    style.id = 'pc-injected';
+    (doc.head || doc.documentElement).appendChild(style);
+  }
+  style.textContent = css;
+  // apply headline text
+  const h1 = doc.querySelector('.intro h1');
+  if (h1 && p1.headline.text) h1.textContent = p1.headline.text;
+  const lead = doc.querySelector('.intro .lead');
+  if (lead && p1.instruction.text) lead.textContent = p1.instruction.text;
+  const eyebrow = doc.querySelector('.verdict-eyebrow');
+  if (eyebrow && p2.resultsHeadline.text) eyebrow.textContent = p2.resultsHeadline.text;
+}
+
+async function savePc() {
+  if (!pcChart) return;
+  pcSave.disabled = true;
+  pcSave.textContent = 'Saving…';
+  try {
+    const saved = await saveChart({
+      id: pcChart.id,
+      name: pcChart.name,
+      sex: pcChart.sex,
+      unit: pcChart.unit,
+      columns: pcChart.columns,
+      rows: pcChart.rows,
+      popup: pcConfig,
+    });
+    pcChart.popup = saved.popup || pcConfig;
+    await refresh();
+    showToast('Popup customization saved', 'ok');
+  } catch (err) {
+    showToast(err.message || 'Could not save', 'error');
+  } finally {
+    pcSave.disabled = false;
+    pcSave.textContent = 'Save customization';
+  }
+}
+
+/* ---------- popup customizer wiring ---------- */
+pcClose?.addEventListener('click', closeCustomizer);
+pcSave?.addEventListener('click', savePc);
 
 /* ---------- the wiring ---------- */
 
@@ -702,14 +1022,7 @@ listEl.addEventListener('click', async (event) => {
 
   switch (button.dataset.act) {
     case 'preview': {
-      button.disabled = true;
-      await embedReady;
-      button.disabled = false;
-      if (!window.ThreeDG) {
-        setStatus('The popup script did not load, so it cannot be previewed here — open the link instead.', 'error');
-        return;
-      }
-      window.ThreeDG.open({ code: chart.code, name: chart.name });
+      openCustomizer(chart);
       break;
     }
     case 'copy-embed':

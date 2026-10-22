@@ -306,6 +306,19 @@
     <!-- Transient toast for copy/save/delete feedback. -->
     <div class="toast" id="dash-toast" role="status" aria-live="polite" hidden></div>
 
+    <!-- Popup customiser: left = global styles, centre = live popup, right = element styles. -->
+    <div class="pc-overlay" id="pc-overlay" hidden>
+      <div class="pc-left" id="pc-left"></div>
+      <div class="pc-center">
+        <iframe id="pc-iframe" title="Popup preview"></iframe>
+      </div>
+      <div class="pc-right" id="pc-right"></div>
+      <div class="pc-toolbar">
+        <button class="btn-ghost" id="pc-close" type="button">Close</button>
+        <button class="btn-primary" id="pc-save" type="button">Save customization</button>
+      </div>
+    </div>
+
     <footer class="foot">
       <div class="foot-inner">
         <span class="brand">

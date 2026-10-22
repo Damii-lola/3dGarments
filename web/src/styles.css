@@ -1717,6 +1717,75 @@ a.btn-ghost {
 .chart-status.error { color: #ff5470; }
 .chart-status.ok { color: var(--good); }
 
+/* ---------- popup customiser overlay ---------- */
+.pc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  grid-template-columns: 18rem 1fr 20rem;
+  gap: 0;
+  background: rgba(6, 7, 10, 0.92);
+  backdrop-filter: blur(6px);
+}
+.pc-overlay[hidden] { display: none; }
+.pc-left, .pc-right {
+  padding: 1rem;
+  overflow-y: auto;
+  background: rgba(20, 22, 28, 0.9);
+  border-right: 1px solid var(--line);
+}
+.pc-right { border-right: none; border-left: 1px solid var(--line); }
+.pc-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0,0,0,0.3);
+}
+.pc-center iframe {
+  width: min(27.5rem, 100%);
+  height: min(48rem, 90vh);
+  border: 0;
+  border-radius: 1.35rem;
+  background: #15181f;
+  box-shadow: 0 2rem 5rem rgba(0,0,0,0.6);
+}
+.pc-toolbar {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.6rem;
+  z-index: 2147483001;
+}
+.pc-field { margin-bottom: 0.7rem; }
+.pc-field label { display: block; color: var(--faint); font-size: 0.6rem; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.25rem; }
+.pc-field input, .pc-field select {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--line-2);
+  border-radius: 0.5rem;
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+}
+.pc-field input[type="color"] { height: 2.2rem; padding: 0.2rem; cursor: pointer; }
+.pc-row { display: flex; align-items: center; gap: 0.5rem; }
+.pc-row input[type="range"] { flex: 1; }
+.pc-val { font-size: 0.7rem; color: var(--muted); min-width: 2.5rem; text-align: right; }
+.pc-section { margin: 1rem 0 0.5rem; font-size: 0.72rem; color: var(--accent-2); letter-spacing: 0.08em; text-transform: uppercase; }
+.pc-phase-switcher { display: flex; gap: 0.4rem; margin-bottom: 0.8rem; }
+.pc-phase-switcher button { flex: 1; padding: 0.4rem; border: 1px solid var(--line-2); border-radius: 0.5rem; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.78rem; }
+.pc-phase-switcher button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+@media (max-width: 1100px) {
+  .pc-overlay { grid-template-columns: 1fr; }
+  .pc-left, .pc-right { max-height: 40vh; }
+  .pc-center { min-height: 50vh; }
+}
+
 /* ---------- the charts already saved ---------- */
 .charts { display: grid; gap: 1rem; width: 100%; }
 .chart-card {
