@@ -35,3 +35,5 @@ services:
         sync: false
       - key: CLOUDFLARE_API_TOKEN
         sync: false
+      - key: HEALTH_TOKEN
+        sync: false
