@@ -72,7 +72,7 @@ export async function listCharts() {
   if (!client) return [];
   const { data, error } = await client
     .from('size_charts')
-    .select('id, code, name, sex, unit, columns, rows, popup, created_at, updated_at')
+    .select('id, code, name, sex, unit, columns, rows, created_at, updated_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data || [];
@@ -84,10 +84,10 @@ export async function listCharts() {
  * moment the row lands; a collision (essentially impossible, but a unique index
  * is a unique index) is answered by asking for another code once.
  */
-export async function saveChart({ id, name, sex, unit, columns, rows, popup }) {
+export async function saveChart({ id, name, sex, unit, columns, rows }) {
   const client = await supabaseClient();
   if (!client) throw new Error('cloud not configured');
-  const row = { name: name.trim().slice(0, 60), sex, unit, columns, rows, popup: popup || {} };
+  const row = { name: name.trim().slice(0, 60), sex, unit, columns, rows };
   if (id) {
     const { data, error } = await client.from('size_charts').update(row).eq('id', id).select().single();
     if (error) throw error;
@@ -156,6 +156,5 @@ export async function chartByCode(code) {
     unit: row.unit === 'cm' ? 'cm' : 'in',
     columns: Array.isArray(row.columns) ? row.columns : [],
     rows: Array.isArray(row.rows) ? row.rows : [],
-    popup: row.popup && typeof row.popup === 'object' && !Array.isArray(row.popup) ? row.popup : {},
   };
 }

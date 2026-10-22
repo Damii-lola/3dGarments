@@ -42,18 +42,6 @@ const statUpdated = document.getElementById('stat-updated');
 const searchInput = document.getElementById('chart-search');
 const sortSelect = document.getElementById('chart-sort');
 const toastEl = document.getElementById('dash-toast');
-const popupModal = document.getElementById('popup-modal');
-const popupModalBackdrop = document.getElementById('popup-modal-backdrop');
-const popupModalFor = document.getElementById('popup-modal-for');
-const popupLabel = document.getElementById('popup-label');
-const popupColor = document.getElementById('popup-color');
-const popupTextSize = document.getElementById('popup-textsize');
-const popupTheme = document.getElementById('popup-theme');
-const popupShowMeas = document.getElementById('popup-showmeas');
-const popupSave = document.getElementById('popup-save');
-const popupPreview = document.getElementById('popup-preview');
-const popupClose = document.getElementById('popup-close');
-const popupStatus = document.getElementById('popup-status');
 const form = document.getElementById('chart-form');
 const formTitle = document.getElementById('chart-form-title');
 const nameInput = document.getElementById('chart-name');
@@ -112,21 +100,6 @@ function detectMeasure(label) {
   if (s.includes('arm')) return 'arm';
   if (s.includes('height')) return 'height';
   return '';
-}
-
-/** The defaults a popup gets when a store has not chosen otherwise. */
-const DEFAULT_POPUP = { label: 'Find My Size', color: '#ff6a4a', textSize: 'md', theme: 'dark', showMeasurements: true };
-
-/** Fill in any popup setting a store left blank, so the rest of the code never
- *  has to guess. */
-function normalizePopup(p) {
-  const out = { ...DEFAULT_POPUP, ...(p && typeof p === 'object' && !Array.isArray(p) ? p : {}) };
-  if (!['sm', 'md', 'lg'].includes(out.textSize)) out.textSize = 'md';
-  if (!['dark', 'light'].includes(out.theme)) out.theme = 'dark';
-  if (typeof out.showMeasurements !== 'boolean') out.showMeasurements = true;
-  if (typeof out.label !== 'string' || !out.label.trim()) out.label = DEFAULT_POPUP.label;
-  if (typeof out.color !== 'string' || !out.color.trim()) out.color = DEFAULT_POPUP.color;
-  return out;
 }
 
 /** The three columns a chart starts with: the torso, the waist, the seat. */
@@ -531,8 +504,7 @@ function card(chart) {
   const snippetLabel = document.createElement('p');
   snippetLabel.className = 'chart-snippet-label';
   snippetLabel.textContent = 'Popup code for your product page';
-  const popupCfg = normalizePopup(chart.popup);
-  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}" data-label="${popupCfg.label.replace(/"/g, '&quot;')}" data-color="${popupCfg.color}"></script>`;
+  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}"></script>`;
   const snippetBox = document.createElement('textarea');
   snippetBox.className = 'chart-snippet-box';
   snippetBox.readOnly = true;
@@ -548,7 +520,6 @@ function card(chart) {
   actions.className = 'actions';
   const buttons = [
     ['preview', 'Preview the popup', 'btn-primary'],
-    ['customize', 'Customize popup', 'btn-ghost'],
     ['copy-embed', 'Copy the popup code', 'btn-ghost'],
     ['copy-link', 'Copy the link', 'btn-ghost'],
     ['edit', 'Edit this chart', 'btn-ghost'],
@@ -632,67 +603,6 @@ async function refresh() {
     renderList([]);
     listEl.replaceChildren(listMessage(`Could not load your clothing: ${err.message}`));
   }
-}
-
-/** Which chart the popup customizer is currently editing. */
-let customizingChart = null;
-
-function openPopupCustomizer(chart) {
-  customizingChart = chart;
-  const cfg = normalizePopup(chart.popup);
-  popupModalFor.textContent = `For: ${chart.name}`;
-  popupLabel.value = cfg.label;
-  popupColor.value = cfg.color;
-  popupTextSize.value = cfg.textSize;
-  popupTheme.value = cfg.theme;
-  popupShowMeas.checked = cfg.showMeasurements;
-  popupStatus.textContent = '';
-  popupModal.hidden = false;
-}
-
-async function savePopupCustomization() {
-  if (!customizingChart) return;
-  const cfg = normalizePopup({
-    label: popupLabel.value.trim(),
-    color: popupColor.value,
-    textSize: popupTextSize.value,
-    theme: popupTheme.value,
-    showMeasurements: popupShowMeas.checked,
-  });
-  setPopupBusy(true);
-  popupStatus.textContent = 'Saving…';
-  try {
-    const saved = await saveChart({
-      id: customizingChart.id,
-      name: customizingChart.name,
-      sex: customizingChart.sex,
-      unit: customizingChart.unit,
-      columns: customizingChart.columns,
-      rows: customizingChart.rows,
-      popup: cfg,
-    });
-    // Update the in-memory chart and the card's snippet (re-render list).
-    customizingChart.popup = saved.popup || cfg;
-    customizingChart = { ...customizingChart, popup: customizingChart.popup };
-    await refresh();
-    popupStatus.textContent = 'Saved.';
-    showToast('Popup customization saved', 'ok');
-  } catch (err) {
-    popupStatus.textContent = err.message || 'Could not save.';
-    popupStatus.className = 'chart-status error';
-  } finally {
-    setPopupBusy(false);
-  }
-}
-
-function setPopupBusy(busy) {
-  popupSave.disabled = busy;
-  popupSave.textContent = busy ? 'Saving…' : 'Save customization';
-}
-
-function closePopupCustomizer() {
-  popupModal.hidden = true;
-  customizingChart = null;
 }
 
 /* ---------- the wiring ---------- */
@@ -799,12 +709,7 @@ listEl.addEventListener('click', async (event) => {
         setStatus('The popup script did not load, so it cannot be previewed here — open the link instead.', 'error');
         return;
       }
-      const popupCfg = normalizePopup(chart.popup);
-      window.ThreeDG.open({ code: chart.code, name: chart.name, label: popupCfg.label, color: popupCfg.color });
-      break;
-    }
-    case 'customize': {
-      openPopupCustomizer(chart);
+      window.ThreeDG.open({ code: chart.code, name: chart.name });
       break;
     }
     case 'copy-embed':
@@ -834,30 +739,6 @@ listEl.addEventListener('click', async (event) => {
     default:
       break;
   }
-});
-
-/* ---------- popup customizer ---------- */
-popupSave?.addEventListener('click', savePopupCustomization);
-popupPreview?.addEventListener('click', async () => {
-  if (!customizingChart) return;
-  await embedReady;
-  if (!window.ThreeDG) {
-    popupStatus.textContent = 'Popup script did not load.';
-    return;
-  }
-  const cfg = normalizePopup({
-    label: popupLabel.value.trim(),
-    color: popupColor.value,
-    textSize: popupTextSize.value,
-    theme: popupTheme.value,
-    showMeasurements: popupShowMeas.checked,
-  });
-  window.ThreeDG.open({ code: customizingChart.code, name: customizingChart.name, label: cfg.label, color: cfg.color });
-});
-popupClose?.addEventListener('click', closePopupCustomizer);
-popupModalBackdrop?.addEventListener('click', closePopupCustomizer);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && popupModal && !popupModal.hidden) closePopupCustomizer();
 });
 
 /* ---------- search, sort, toast ---------- */

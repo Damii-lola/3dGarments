@@ -306,50 +306,6 @@
     <!-- Transient toast for copy/save/delete feedback. -->
     <div class="toast" id="dash-toast" role="status" aria-live="polite" hidden></div>
 
-    <!-- Popup customization dialog. One per dashboard, reused for every card. -->
-    <div class="popup-modal" id="popup-modal" hidden>
-      <div class="popup-modal-backdrop" id="popup-modal-backdrop"></div>
-      <div class="popup-modal-panel" role="dialog" aria-modal="true" aria-labelledby="popup-modal-title">
-        <h3 id="popup-modal-title">Customize the popup</h3>
-        <p class="chart-hint" id="popup-modal-for"></p>
-        <div class="chart-fields">
-          <label class="chart-field">
-            <span>Button text</span>
-            <input id="popup-label" type="text" maxlength="40" placeholder="Find My Size" />
-          </label>
-          <label class="chart-field">
-            <span>Accent colour</span>
-            <input id="popup-color" type="color" value="#ff6a4a" />
-          </label>
-          <label class="chart-field">
-            <span>Text size in popup</span>
-            <select id="popup-textsize">
-              <option value="sm">Small</option>
-              <option value="md">Normal</option>
-              <option value="lg">Large</option>
-            </select>
-          </label>
-          <label class="chart-field">
-            <span>Popup theme</span>
-            <select id="popup-theme">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </label>
-        </div>
-        <label class="chart-field" style="margin-top: 0.6rem;">
-          <span>Show measurements to shopper</span>
-          <input id="popup-showmeas" type="checkbox" checked />
-        </label>
-        <div class="actions" style="margin-top: 1rem;">
-          <button class="btn-primary" id="popup-save" type="button">Save customization</button>
-          <button class="btn-ghost" id="popup-preview" type="button">Preview</button>
-          <button class="btn-ghost" id="popup-close" type="button">Close</button>
-        </div>
-        <p class="chart-status" id="popup-status" role="status" aria-live="polite"></p>
-      </div>
-    </div>
-
     <footer class="foot">
       <div class="foot-inner">
         <span class="brand">
