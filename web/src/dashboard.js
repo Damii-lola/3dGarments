@@ -512,7 +512,7 @@ function card(chart) {
   snippetBox.addEventListener('focus', () => snippetBox.select());
   const snippetNote = document.createElement('p');
   snippetNote.className = 'chart-hint';
-  snippetNote.textContent = 'That one line is the whole integration. Paste it anywhere on the product page — head or body, it works in both — and a "Find my size" button opens the size finder in a popup over your page. Nothing else on your site is touched. Want different button text? Add data-label="Your text". Want it pinned to a corner? Add data-float="1".';
+  snippetNote.textContent = 'That one line is the whole integration. Paste it anywhere on the product page — head or body, it works in both — and a "Find My Size" button opens the size finder in a popup over your page. Nothing else on your site is touched. Change the button text with data-label="…", its colour with data-color="#1a2b3c", or pin it to a corner with data-float="1".';
   snippet.append(summary, snippetBox, snippetNote);
 
   const actions = document.createElement('div');

@@ -47,6 +47,19 @@
     try { return new URL('./', script.src).origin; } catch (e) { return location.origin; }
   }
 
+  /** Turn a colour into a matching soft shadow. Hex colours get a real rgba
+   *  shadow; anything else falls back to a neutral one. */
+  function shadowFor(color) {
+    var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color).trim());
+    if (!m) return 'rgba(0,0,0,.25)';
+    var hex = m[1];
+    if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+    var r = parseInt(hex.slice(0, 2), 16);
+    var g = parseInt(hex.slice(2, 4), 16);
+    var b = parseInt(hex.slice(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',.28)';
+  }
+
   var STYLE_ID = 'threeDG-embed-style';
   var CSS = [
     '.threeDG-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(6,7,10,.74);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:threeDG-fade .2s ease-out}',
@@ -55,7 +68,7 @@
     '.threeDG-frame{flex:1;min-height:0;width:100%;display:block;border:0;background:#15181f}',
     '.threeDG-close{position:absolute;top:.55rem;right:.55rem;z-index:2;width:2.15rem;height:2.15rem;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:.7rem;background:rgba(12,13,17,.86);color:#eef0f4;font:400 1.2rem/1 system-ui,sans-serif;cursor:pointer}',
     '.threeDG-close:hover{background:rgba(255,255,255,.14);color:#fff}',
-    '.threeDG-button{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.1rem;border:0;border-radius:.8rem;background:linear-gradient(180deg,#ff6a4a,#f04a29);color:#fff;font:650 .95rem/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:-.01em;cursor:pointer;box-shadow:0 .5rem 1.4rem rgba(240,74,41,.28)}',
+    '.threeDG-button{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.1rem;border:0;border-radius:.8rem;background:var(--threeDG-accent,linear-gradient(180deg,#ff6a4a,#f04a29));color:#fff;font:650 .95rem/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:-.01em;cursor:pointer;box-shadow:0 .5rem 1.4rem var(--threeDG-shadow,rgba(240,74,41,.28))}',
     '.threeDG-button:hover{filter:brightness(1.06)}',
     '.threeDG-button svg{width:1.05rem;height:1.05rem;flex:0 0 auto}',
     '@keyframes threeDG-fade{from{opacity:0}to{opacity:1}}',
@@ -63,7 +76,7 @@
     '@media (max-width:520px){.threeDG-overlay{padding:0}.threeDG-panel{width:100%;height:100%;border:0;border-radius:0}}',
     '@media (prefers-reduced-motion:reduce){.threeDG-overlay,.threeDG-panel{animation:none}}',
     '.threeDG-float{position:fixed;right:1.1rem;bottom:1.1rem;z-index:2147482000}',
-    '.threeDG-float .threeDG-button{box-shadow:0 .7rem 2rem rgba(0,0,0,.35),0 .5rem 1.4rem rgba(240,74,41,.3)}',
+    '.threeDG-float .threeDG-button{box-shadow:0 .7rem 2rem rgba(0,0,0,.35),0 .5rem 1.4rem var(--threeDG-shadow,rgba(240,74,41,.3))}',
   ].join('');
 
   function ensureStyles() {
@@ -171,6 +184,12 @@
     button.type = 'button';
     button.className = 'threeDG-button';
     if (opts && opts.name) button.title = opts.name;
+    // A store can recolour the button with data-color="#1a2b3c" (or any CSS
+    // colour). The default is the brand orange; everything else stays the same.
+    if (opts && opts.color) {
+      button.style.setProperty('--threeDG-accent', opts.color);
+      button.style.setProperty('--threeDG-shadow', shadowFor(opts.color));
+    }
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
@@ -179,7 +198,7 @@
     path.setAttribute('fill', 'currentColor');
     svg.appendChild(path);
     var label = document.createElement('span');
-    label.textContent = (opts && opts.label) || 'Find my size';
+    label.textContent = (opts && opts.label) || 'Find My Size';
     button.appendChild(svg);
     button.appendChild(label);
     button.addEventListener('click', function () { open(opts); });
@@ -220,8 +239,9 @@
     mount(null, {
       code: code,
       name: spec.name || '',
-      label: spec.label || 'Find my size',
+      label: spec.label || 'Find My Size',
       base: spec.base || '',
+      color: spec.color || spec.accent || '',
       float: spec.float === '1' || spec.float === 'true',
     });
   }
