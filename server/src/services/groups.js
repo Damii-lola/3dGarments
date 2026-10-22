@@ -10,6 +10,7 @@
  */
 import sharp from 'sharp';
 import { config } from '../config.js';
+import { inputSharp, pixelLimitMessage } from '../lib/image.js';
 import { db, bucket } from '../lib/supabase.js';
 import { cloudflareConfigured, describeForWardrobe, groupWithAI } from '../lib/cloudflare.js';
 import { processGarmentPixels } from '../shared/silhouette.js';
@@ -21,7 +22,7 @@ const running = new Set();
 /** decode → cut out → measure → colour signature (no AI) */
 export async function cutPhoto(buffer) {
   const N = config.processingSize;
-  const { data, info } = await sharp(buffer, { failOn: 'none' })
+  const { data, info } = await inputSharp(buffer, { failOn: 'none' })
     .rotate()
     .resize({ width: N, height: N, fit: 'inside', withoutEnlargement: true })
     .toColourspace('srgb').ensureAlpha().raw()
@@ -87,7 +88,7 @@ export async function processGroup({ groupId, userId }) {
     if (ue) throw new Error(ue.message);
     log(`ready ${groupId}: ${photos.length} photos → ${items.length} garments${ai ? '' : ' (no AI)'} in ${Date.now() - t0}ms`);
   } catch (err) {
-    await fail(err.message).catch(() => {});
+    await fail(pixelLimitMessage(err) || err.message).catch(() => {});
   } finally {
     running.delete(groupId);
   }

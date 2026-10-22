@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { config } from '../config.js';
+import { inputSharp } from '../lib/image.js';
 import { db, bucket } from '../lib/supabase.js';
 import { describeGarment, cloudflareConfigured } from '../lib/cloudflare.js';
 import { processGarmentPixels, resolveCategory } from '../shared/silhouette.js';
@@ -15,7 +16,7 @@ export const paths = (userId, garmentId) => ({
 /** Decode → cut out → measure → describe. Pure function of the image bytes. */
 export async function analyzeImage(buffer) {
   const N = config.processingSize;
-  const { data, info } = await sharp(buffer, { failOn: 'none' })
+  const { data, info } = await inputSharp(buffer, { failOn: 'none' })
     .rotate()
     .resize({ width: N, height: N, fit: 'inside', withoutEnlargement: true })
     .toColourspace('srgb')
@@ -58,7 +59,7 @@ export async function processGarment({ garmentId, userId, buffer }) {
       if (error) throw new Error(`Original image missing: ${error.message}`);
       buffer = Buffer.from(await data.arrayBuffer());
     } else {
-      const original = await sharp(buffer, { failOn: 'none' }).rotate()
+      const original = await inputSharp(buffer, { failOn: 'none' }).rotate()
         .resize({ width: 1800, height: 1800, fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 88, mozjpeg: true }).toBuffer();
       const up = await bucket().upload(p.original, original, { contentType: 'image/jpeg', upsert: true });

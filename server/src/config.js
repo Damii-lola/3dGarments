@@ -129,6 +129,10 @@ export const config = Object.freeze({
     bodyScanBytes: Number(process.env.MAX_BODY_SCAN_MB || 96) * 1024 * 1024,
     bodyScanPerHour: Number(process.env.BODY_SCAN_PER_HOUR || 20),
     bodyScanConcurrent: Number(process.env.BODY_SCAN_CONCURRENT || 3),
+    // Ceiling on pixels decoded from any uploaded picture. A small file can
+    // claim an enormous canvas; without this a "15 MB photo" can ask sharp for
+    // more memory than the instance has.
+    maxInputPixels: Number(process.env.MAX_INPUT_PIXELS || 50_000_000),
   }),
   // /health/deep can call paid providers and shows internals. It answers only to
   // this header, and only when the variable is set - empty means it is off.

@@ -4,6 +4,7 @@
  */
 import { parentPort } from 'node:worker_threads';
 import sharp from 'sharp';
+import { inputSharp, pixelLimitMessage } from '../lib/image.js';
 import { aiMask } from './segment.js';
 import { scanAtlas } from '../shared/scan-core.js';
 
@@ -11,7 +12,7 @@ const MAX_SIDE = 1024;
 
 /** decode an uploaded photo (any format sharp reads, EXIF orientation applied) to RGBA + the AI garment matte */
 async function decode(buf) {
-  const { data, info } = await sharp(buf, { failOn: 'none' }).rotate().resize(MAX_SIDE, MAX_SIDE, { fit: 'inside', withoutEnlargement: false })
+  const { data, info } = await inputSharp(buf, { failOn: 'none' }).rotate().resize(MAX_SIDE, MAX_SIDE, { fit: 'inside', withoutEnlargement: false })
     .flatten({ background: '#ffffff' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
   const { mask, alpha } = await aiMask(rgba, info.width, info.height);
@@ -29,6 +30,6 @@ parentPort.on('message', async (job) => {
     const image = job.format === 'png' ? await raw.png({ compressionLevel: 9 }).toBuffer() : await raw.webp({ quality: 90 }).toBuffer();
     parentPort.postMessage({ id: job.id, ok: true, image, mime: job.format === 'png' ? 'image/png' : 'image/webp', report: { ...res.report, cutoutMs: tCut, totalMs: Date.now() - t0 } });
   } catch (e) {
-    parentPort.postMessage({ id: job.id, ok: false, error: e.message || String(e) });
+    parentPort.postMessage({ id: job.id, ok: false, error: pixelLimitMessage(e) || e.message || String(e) });
   }
 });

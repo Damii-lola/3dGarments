@@ -28,6 +28,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import { inputSharp } from './image.js';
 
 const run = promisify(execFile);
 
@@ -294,7 +295,7 @@ async function probeDuration(filePath) {
  */
 async function isBlank(buffer) {
   try {
-    const { channels } = await sharp(buffer).stats();
+    const { channels } = await inputSharp(buffer).stats();
     const mean = channels[0]?.mean ?? 0;
     const deviation = channels[0]?.stdev ?? 0;
     return mean < 6 && deviation < 4;
@@ -370,7 +371,7 @@ async function gridPng(w, h) {
 
 async function withGrid(buffer) {
   try {
-    const image = sharp(buffer);
+    const image = inputSharp(buffer);
     const { width, height } = await image.metadata();
     if (!width || !height) return buffer;
     return await image
