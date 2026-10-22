@@ -35,7 +35,13 @@ const setupEl = document.getElementById('dash-setup');
 const listSection = document.getElementById('dash-list-section');
 const howSection = document.getElementById('dash-how');
 const listEl = document.getElementById('dash-list');
-
+const statsEl = document.getElementById('dash-stats');
+const statGarments = document.getElementById('stat-garments');
+const statSizes = document.getElementById('stat-sizes');
+const statUpdated = document.getElementById('stat-updated');
+const searchInput = document.getElementById('chart-search');
+const sortSelect = document.getElementById('chart-sort');
+const toastEl = document.getElementById('dash-toast');
 const form = document.getElementById('chart-form');
 const formTitle = document.getElementById('chart-form-title');
 const nameInput = document.getElementById('chart-name');
@@ -95,7 +101,20 @@ let columns = defaultColumns('male');
 let editingId = null;
 /** The charts on screen, by code, so a button can find its own row. */
 let shown = [];
+/** Search + sort state for the garment list. */
+let searchQuery = '';
+let sortBy = 'name';
+/** Toast timer. */
+let toastTimer = null;
 
+function showToast(message, kind = '') {
+  if (!toastEl) return;
+  toastEl.textContent = message;
+  toastEl.className = `toast${kind ? ' toast-' + kind : ''}`;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2600);
+}
 /* ---------- the chart editor ---------- */
 
 function input(className, { value = '', placeholder = '', label, mode = 'decimal' } = {}) {
@@ -399,10 +418,12 @@ const copyText = async (text, what) => {
   try {
     await navigator.clipboard.writeText(text);
     setStatus(`${what} copied.`, 'ok');
+    showToast(`${what} copied to clipboard`, 'ok');
   } catch {
     // A browser that refuses the clipboard still lets a person select the text
     // that is already on screen, so say that rather than failing silently.
     setStatus(`Your browser would not copy for you — select the ${what.toLowerCase()} in the box and copy it.`, 'error');
+    showToast('Could not copy — select and copy manually', 'error');
   }
 };
 
@@ -500,26 +521,59 @@ function listMessage(text) {
   return tile;
 }
 
+function filterAndSort(charts) {
+  const q = searchQuery.trim().toLowerCase();
+  let out = q
+    ? charts.filter((c) => String(c.name || '').toLowerCase().includes(q) || String(c.sex || '').toLowerCase().includes(q))
+    : charts.slice();
+  if (sortBy === 'name') out.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  else if (sortBy === 'newest') out.sort((a, b) => (b.id || 0) - (a.id || 0));
+  else if (sortBy === 'sizes') out.sort((a, b) => (Array.isArray(b.rows) ? b.rows.length : 0) - (Array.isArray(a.rows) ? a.rows.length : 0));
+  return out;
+}
+
 function renderList(charts) {
   shown = charts;
   listEl.replaceChildren();
+  const visible = filterAndSort(charts);
   if (!charts.length) {
     listEl.append(listMessage('No clothing yet. Add a garment above and it will appear here with its link.'));
     return;
   }
-  for (const chart of charts) listEl.append(card(chart));
+  if (!visible.length) {
+    listEl.append(listMessage(`No garments match "${searchQuery}".`));
+    return;
+  }
+  for (const chart of visible) listEl.append(card(chart));
+}
+
+function updateStats(charts) {
+  if (!statsEl) return;
+  if (!charts.length) { statsEl.hidden = true; return; }
+  statsEl.hidden = false;
+  statGarments.textContent = charts.length;
+  statSizes.textContent = charts.reduce((n, c) => n + (Array.isArray(c.rows) ? c.rows.length : 0), 0);
+  const latest = charts.reduce((acc, c) => {
+    const t = c.updated_at || c.created_at;
+    return t && (!acc || String(t) > String(acc)) ? t : acc;
+  }, null);
+  statUpdated.textContent = latest ? new Date(latest).toLocaleDateString() : '—';
 }
 
 async function refresh() {
   try {
-    renderList(await listCharts());
+    const charts = await listCharts();
+    updateStats(charts);
+    renderList(charts);
   } catch (err) {
     if (notSetUp(err)) {
       setupEl.hidden = false;
+      updateStats([]);
       renderList([]);
       listEl.replaceChildren(listMessage('Your charts will be listed here once the size-chart table is in your project — see the note above.'));
       return;
     }
+    updateStats([]);
     renderList([]);
     listEl.replaceChildren(listMessage(`Could not load your clothing: ${err.message}`));
   }
@@ -592,6 +646,7 @@ form.addEventListener('submit', async (event) => {
     setStatus(wasEditing
       ? 'Saved. The link is unchanged — it is below.'
       : `Saved. Your link is ready below: it ends in ${saved.code}.`, 'ok');
+    showToast(wasEditing ? 'Chart updated' : 'Garment saved', 'ok');
   } catch (err) {
     if (notSetUp(err)) {
       setupEl.hidden = false;
@@ -642,6 +697,7 @@ listEl.addEventListener('click', async (event) => {
         await refresh();
         if (editingId === chart.id) resetForm();
         setStatus(`${chart.name} deleted.`, 'ok');
+        showToast(`${chart.name} deleted`, 'ok');
       } catch (err) {
         button.disabled = false;
         setStatus(err.message || 'Could not delete that.', 'error');
@@ -651,6 +707,17 @@ listEl.addEventListener('click', async (event) => {
     default:
       break;
   }
+});
+
+/* ---------- search, sort, toast ---------- */
+searchInput?.addEventListener('input', () => {
+  searchQuery = searchInput.value;
+  // Re-render from the last loaded set without refetching.
+  renderList(shown);
+});
+sortSelect?.addEventListener('change', () => {
+  sortBy = sortSelect.value;
+  renderList(shown);
 });
 
 /* ---------- who is signed in ---------- */

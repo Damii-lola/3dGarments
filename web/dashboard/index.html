@@ -103,6 +103,23 @@
           </div>
         </div>
 
+        <!-- Quick numbers: how many garments, how many sizes, when the last one
+             landed. Gives the store a sense of the library at a glance. -->
+        <div class="stats" id="dash-stats" hidden>
+          <div class="stat">
+            <p class="stat-value" id="stat-garments">0</p>
+            <p class="stat-label">Garments</p>
+          </div>
+          <div class="stat">
+            <p class="stat-value" id="stat-sizes">0</p>
+            <p class="stat-label">Sizes total</p>
+          </div>
+          <div class="stat">
+            <p class="stat-value" id="stat-updated">&mdash;</p>
+            <p class="stat-label">Last saved</p>
+          </div>
+        </div>
+
         <!-- Shown only when the project has not had the SQL run on it yet. It
              says which file and which step, because that is the whole fix. -->
         <div class="tile tile-alert" id="dash-setup" hidden>
@@ -182,11 +199,29 @@
       </section>
 
       <section class="section" id="dash-list-section" hidden>
-        <h2 class="section-title">Your size charts</h2>
-        <p class="section-lead">
-          Each one has a link of its own. Follow it to check it yourself: it is
-          exactly what a shopper sees.
-        </p>
+        <div class="list-head">
+          <div>
+            <h2 class="section-title">Your size charts</h2>
+            <p class="section-lead">
+              Each one has a link of its own. Follow it to check it yourself: it is
+              exactly what a customer sees.
+            </p>
+          </div>
+          <div class="list-toolbar">
+            <label class="chart-field list-search">
+              <span class="visually-hidden">Search garments</span>
+              <input id="chart-search" type="search" placeholder="Search garments…" />
+            </label>
+            <label class="chart-field list-sort">
+              <span class="visually-hidden">Sort</span>
+              <select id="chart-sort">
+                <option value="name">Name A–Z</option>
+                <option value="newest">Newest first</option>
+                <option value="sizes">Most sizes</option>
+              </select>
+            </label>
+          </div>
+        </div>
         <div class="charts" id="dash-list"></div>
         <p class="chart-honest">
           A chart is the garment's numbers, never anybody's. A shopper's clip is
@@ -230,6 +265,9 @@
         </div>
       </section>
     </main>
+
+    <!-- Transient toast for copy/save/delete feedback. -->
+    <div class="toast" id="dash-toast" role="status" aria-live="polite" hidden></div>
 
     <footer class="foot">
       <div class="foot-inner">
