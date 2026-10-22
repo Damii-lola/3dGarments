@@ -503,7 +503,7 @@ function card(chart) {
   snippet.className = 'chart-snippet';
   const summary = document.createElement('summary');
   summary.textContent = 'Popup code for your product page';
-  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}" data-name="${chart.name.replace(/"/g, '&quot;')}" data-label="Find my size"></script>`;
+  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}"></script>`;
   const snippetBox = document.createElement('textarea');
   snippetBox.className = 'chart-snippet-box';
   snippetBox.readOnly = true;
