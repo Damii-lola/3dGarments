@@ -1281,3 +1281,9 @@ they are still there to delete.
 `RateLimit-Policy: 20;w=3600`; `/api/garments` without a token is **401**; all
 five Pages pages carry the CSP with no inline script, and in the browser the
 MediaPipe CDN and the Supabase host answer while nothing logs a CSP violation.
+
+**Second deploy, `aa5f526` / `09e0791`**: the API now also caps `/api/scan`
+at 2 in flight (same middleware, `server/src/middleware/concurrency.js`), and
+the web build ships no source maps - `assets/landing-*.js.map` answers **404** on
+Pages while the bundle loads. The `/health` version string is the commit, so
+checking it is how the deploy is confirmed.
