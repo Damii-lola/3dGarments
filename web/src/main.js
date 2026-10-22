@@ -108,6 +108,21 @@ const statusEl = document.getElementById('status');
 
 const log = (...args) => console.log('[3dg]', ...args);
 
+/** Apply a store's popup styling to this page (colour, text size, theme). */
+function applyPopupTheme(popup) {
+  if (!popup || typeof popup !== 'object') return;
+  const root = document.documentElement;
+  if (typeof popup.color === 'string' && popup.color.trim()) {
+    root.style.setProperty('--popup-accent', popup.color.trim());
+  }
+  const sizeMap = { sm: '0.92', md: '1', lg: '1.12' };
+  if (sizeMap[popup.textSize]) root.style.setProperty('--popup-text-scale', sizeMap[popup.textSize]);
+  if (popup.theme === 'light') document.body.classList.add('popup-light');
+  else document.body.classList.remove('popup-light');
+  if (popup.showMeasurements === false) document.body.classList.add('hide-measurements');
+  else document.body.classList.remove('hide-measurements');
+}
+
 /* ---------- the garment in a store's link ---------- */
 /**
  * ?g=CODE — the size chart of the garment this shopper followed a link to.
@@ -130,6 +145,7 @@ let garment = null;
 if (chartCode) {
   garmentPromise.then((chart) => {
     garment = chart;
+    if (chart && chart.popup) applyPopupTheme(chart.popup);
     applyChartSex(chart);
     if (!garmentEl) return;
     garmentEl.hidden = false;
