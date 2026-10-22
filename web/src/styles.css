@@ -1665,7 +1665,7 @@ a.btn-ghost {
   opacity: 0.7;
   text-transform: none;
 }
-.chart-head .col-head { display: flex; flex-direction: column; gap: 0.22rem; min-width: 0; }
+.chart-head .col-head { display: flex; flex-direction: column; gap: 0.18rem; min-width: 0; }
 .chart-head .col-label {
   width: 100%;
   padding: 0.32rem 0.35rem;
@@ -1685,25 +1685,7 @@ a.btn-ghost {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(255, 91, 58, 0.16);
 }
-.chart-head .col-head-bottom { display: flex; align-items: center; gap: 0.2rem; min-width: 0; }
-.chart-head .col-measure {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0.24rem 0.28rem;
-  border: 1px solid var(--line-2);
-  border-radius: 0.45rem;
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.6rem;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.chart-head .col-measure:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.chart-head .col-del { flex: none; width: 1.35rem; height: 1.75rem; font-size: 0.9rem; }
+.chart-head .col-del { align-self: flex-end; width: 1.35rem; height: 1.5rem; font-size: 0.85rem; }
 .chart-key, .chart-num { text-align: center; }
 .chart-key { font-weight: 650; }
 .chart-row-del, .chart-del {
@@ -1964,7 +1946,6 @@ a.btn-ghost {
   .chart-row-del { width: 1.5rem; height: 1.8rem; font-size: 0.9rem; }
   .chart-head { font-size: 0.5rem; }
   .chart-head .col-label { padding: 0.26rem 0.25rem; font-size: 0.64rem; }
-  .chart-head .col-measure { padding: 0.2rem 0.18rem; font-size: 0.52rem; }
   .chart-head .col-del { width: 1.15rem; height: 1.55rem; font-size: 0.78rem; }
   .chart-status { font-size: 0.66rem; }
   .chart-card { gap: 0.55rem; padding: 0.8rem 0.85rem; border-radius: 0.85rem; }

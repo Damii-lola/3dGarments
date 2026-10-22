@@ -84,6 +84,24 @@ const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 /** A column's measurement, when this app can read it off a body. Null = printed only. */
 const fieldOf = (column) => (MEASURES.some((m) => m.id === column.measure) ? column.measure : null);
 
+/**
+ * Read the measurement group off a column name, so the store never has to pick
+ * it from a list: "Chest" is the chest, "Body length" is not. A name that
+ * matches no measurement is carried and shown, never scored.
+ */
+function detectMeasure(label) {
+  const s = String(label || '').toLowerCase();
+  if (!s.trim()) return '';
+  if (s.includes('bust') || s.includes('chest')) return 'chest';
+  if (s.includes('waist')) return 'waist';
+  if (s.includes('hip') || s.includes('seat')) return 'hips';
+  if (s.includes('shoulder')) return 'shoulder';
+  if (s.includes('neck')) return 'neck';
+  if (s.includes('arm')) return 'arm';
+  if (s.includes('height')) return 'height';
+  return '';
+}
+
 /** The three columns a chart starts with: the torso, the waist, the seat. */
 function defaultColumns(sex) {
   return [
@@ -165,13 +183,17 @@ function paintHead() {
 
     const label = input('col-label', {
       value: column.label,
-      placeholder: column.measure ? 'Chest' : 'Body length',
+      placeholder: 'Chest',
       label: `Column ${index + 1} name`,
       mode: null,
     });
     label.maxLength = 24;
     label.addEventListener('input', () => {
       column.label = label.value;
+      // The name says what the column measures, so the measurement group is
+      // read off it: "Chest" scores on the chest, "Body length" is shown only.
+      // That is why there is no second control to keep in step.
+      column.measure = detectMeasure(label.value);
       // Number cells already carry the column's name for a screen reader; keep
       // that name in step without rebuilding the header under the cursor.
       for (const cell of rowsEl.querySelectorAll('.chart-num')) {
@@ -181,37 +203,11 @@ function paintHead() {
       }
     });
 
-    const measure = document.createElement('select');
-    measure.className = 'col-measure';
-    measure.setAttribute('aria-label', `What column ${index + 1} measures`);
-    for (const m of MEASURES) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.label;
-      measure.append(opt);
-    }
-    const other = document.createElement('option');
-    other.value = '';
-    other.textContent = 'Other \u2014 shown only';
-    measure.append(other);
-    measure.value = fieldOf(column) || '';
-    measure.addEventListener('change', () => {
-      column.measure = measure.value;
-      // A column the store has not named takes the name of what it measures, so
-      // a fresh column is not left headless. A name the store typed is theirs.
-      if (!label.value.trim()) {
-        label.value = MEASURES.find((m) => m.id === measure.value)?.label || 'Measurement';
-        column.label = label.value;
-      }
-    });
-
-    const bottom = document.createElement('div');
-    bottom.className = 'col-head-bottom';
+    // measurement group is read from the name (see detectMeasure), so no dropdown
     const del = deleteButton('Remove this column', () => removeColumn(column));
     del.classList.add('col-del');
-    bottom.append(measure, del);
 
-    wrap.append(label, bottom);
+    wrap.append(label, del);
     cells.push(wrap);
   });
 
