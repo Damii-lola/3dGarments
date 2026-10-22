@@ -12,7 +12,10 @@ export default defineConfig({
   server: { port: 5173, fs: { allow: ['..'] } },
   build: {
     target: 'es2022',
-    sourcemap: true,
+    // No .map files on the deployed site. They would hand every visitor the
+    // unminified source of the scanner, including the shared engine, which is
+    // the one thing publishing the built site should not do.
+    sourcemap: false,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       // Five real pages rather than one page pretending: the home page (the way
