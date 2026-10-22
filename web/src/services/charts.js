@@ -20,6 +20,7 @@
  * rows.
  */
 import { supabaseClient } from './auth.js';
+import { api } from './api.js';
 
 /**
  * A link code: 12 characters, lowercase, from an alphabet with no `l` and no
@@ -102,6 +103,32 @@ export async function saveChart({ id, name, sex, unit, columns, rows }) {
     if (String(error.code) !== '23505') throw error;
   }
   throw new Error('could not find a free link code — please try again');
+}
+
+/**
+ * Ask the server to read a chart's column names the way a shopper would: is each
+ * one spelt correctly, and does it say what it measures? A bare "length" does
+ * not, and a name nobody can parse is a column nobody can trust.
+ *
+ * `{ ok: false, problem }` is the only answer that stops a save. A checker that
+ * cannot run — no Cloudflare key, no network, a model that rambles — comes back
+ * as `{ ok: true, skipped: true }`, because the AI is a second opinion, not a
+ * gate that can lock a store out of its own dashboard.
+ */
+export async function checkChartColumns(labels) {
+  try {
+    const result = await api('/api/chart-check', {
+      method: 'POST',
+      body: { labels },
+      timeout: 15_000,
+    });
+    if (result && result.ok === false && typeof result.problem === 'string') {
+      return { ok: false, problem: result.problem };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: true, skipped: true };
+  }
 }
 
 export async function removeChart(id) {

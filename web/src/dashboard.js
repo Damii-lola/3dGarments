@@ -23,7 +23,7 @@
 import './nav.js';
 import { MEASURES } from '@shared/measures.js';
 import { getSession, isAccount, signOut } from './services/auth.js';
-import { chartColumns, listCharts, notSetUp, removeChart, saveChart } from './services/charts.js';
+import { chartColumns, checkChartColumns, listCharts, notSetUp, removeChart, saveChart } from './services/charts.js';
 
 const signInSection = document.getElementById('dash-anon');
 const workSection = document.getElementById('dash-in');
@@ -47,7 +47,6 @@ const formTitle = document.getElementById('chart-form-title');
 const nameInput = document.getElementById('chart-name');
 const sexInput = document.getElementById('chart-sex');
 const unitInput = document.getElementById('chart-unit');
-const colsEl = document.getElementById('chart-columns');
 const addColBtn = document.getElementById('chart-add-col');
 const tableEl = document.getElementById('chart-table');
 const headEl = document.getElementById('chart-head');
@@ -138,66 +137,89 @@ function deleteButton(what, onClick) {
   return del;
 }
 
-/** The heading over the table: the size, then each column in the store's words. */
+/**
+ * The heading over the table, and the column editor itself.
+ *
+ * There is no second list of columns to keep in step: each column's name and
+ * the measurement it stands for are controls sitting in its own header cell,
+ * directly over the numbers they describe. Typing a name updates the column in
+ * place, so the table moves as the store types; the header is rebuilt only when
+ * a column is added, removed, repointed or the unit changes.
+ */
 function paintHead() {
   const unit = unitInput.value === 'cm' ? 'cm' : 'in';
-  const labels = ['Size', ...columns.map((c) => `${c.label.trim() || 'Column'} (${unit})`), ''];
-  headEl.replaceChildren(...labels.map((label) => {
-    const cell = document.createElement('span');
-    cell.textContent = label;
-    return cell;
-  }));
+  const cells = [];
+
+  const sizeCell = document.createElement('span');
+  sizeCell.className = 'chart-head-size';
+  sizeCell.append(document.createTextNode('Size'));
+  const unitEl = document.createElement('em');
+  unitEl.textContent = unit;
+  sizeCell.append(unitEl);
+  cells.push(sizeCell);
+
+  columns.forEach((column, index) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'col-head';
+    wrap.dataset.col = column.id;
+
+    const label = input('col-label', {
+      value: column.label,
+      placeholder: column.measure ? 'Chest' : 'Body length',
+      label: `Column ${index + 1} name`,
+      mode: null,
+    });
+    label.maxLength = 24;
+    label.addEventListener('input', () => {
+      column.label = label.value;
+      // Number cells already carry the column's name for a screen reader; keep
+      // that name in step without rebuilding the header under the cursor.
+      for (const cell of rowsEl.querySelectorAll('.chart-num')) {
+        if (cell.dataset.col === column.id) {
+          cell.setAttribute('aria-label', `${label.value.trim() || 'Column'} for this size`);
+        }
+      }
+    });
+
+    const measure = document.createElement('select');
+    measure.className = 'col-measure';
+    measure.setAttribute('aria-label', `What column ${index + 1} measures`);
+    for (const m of MEASURES) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label;
+      measure.append(opt);
+    }
+    const other = document.createElement('option');
+    other.value = '';
+    other.textContent = 'Other \u2014 shown only';
+    measure.append(other);
+    measure.value = fieldOf(column) || '';
+    measure.addEventListener('change', () => {
+      column.measure = measure.value;
+      // A column the store has not named takes the name of what it measures, so
+      // a fresh column is not left headless. A name the store typed is theirs.
+      if (!label.value.trim()) {
+        label.value = MEASURES.find((m) => m.id === measure.value)?.label || 'Measurement';
+        column.label = label.value;
+      }
+    });
+
+    const bottom = document.createElement('div');
+    bottom.className = 'col-head-bottom';
+    const del = deleteButton('Remove this column', () => removeColumn(column));
+    del.classList.add('col-del');
+    bottom.append(measure, del);
+
+    wrap.append(label, bottom);
+    cells.push(wrap);
+  });
+
+  // The last cell lines up with each row's remove button.
+  cells.push(document.createElement('span'));
+  headEl.replaceChildren(...cells);
   // The table has as many number columns as the store added; the grid follows.
   tableEl.style.setProperty('--cols', String(Math.max(1, columns.length)));
-}
-
-/** One row of the column editor: its name, what it measures, and a way to drop it. */
-function columnRow(column) {
-  const row = document.createElement('div');
-  row.className = 'chart-column';
-
-  const label = input('col-label', {
-    value: column.label,
-    placeholder: column.measure ? 'Chest' : 'Body length',
-    label: 'Column name',
-    mode: null,
-  });
-  label.addEventListener('input', () => {
-    column.label = label.value;
-    paintHead();
-  });
-
-  const measure = document.createElement('select');
-  measure.className = 'col-measure';
-  measure.setAttribute('aria-label', 'What this column measures');
-  for (const m of MEASURES) {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.label;
-    measure.append(opt);
-  }
-  const other = document.createElement('option');
-  other.value = '';
-  other.textContent = 'Other \u2014 shown only';
-  measure.append(other);
-  measure.value = fieldOf(column) || '';
-  measure.addEventListener('change', () => {
-    column.measure = measure.value;
-    // A column the store has not named takes the name of what it measures, so a
-    // fresh column is not left headless. A name the store typed is theirs to keep.
-    if (!label.value.trim()) {
-      label.value = MEASURES.find((m) => m.id === measure.value)?.label || 'Measurement';
-      column.label = label.value;
-      paintHead();
-    }
-  });
-
-  row.append(label, measure, deleteButton('Remove this column', () => removeColumn(column)));
-  return row;
-}
-
-function renderColumns() {
-  colsEl.replaceChildren(...columns.map(columnRow));
 }
 
 /** The numbers on screen right now, keyed by column, so a rebuild keeps them. */
@@ -247,11 +269,11 @@ function addColumn() {
   const rows = snapshot();
   let n = columns.length + 1;
   while (columns.some((c) => c.id === `col${n}`)) n += 1;
-  columns = [...columns, { id: `col${n}`, label: '', measure: '' }];
+  const column = { id: `col${n}`, label: '', measure: '' };
+  columns = [...columns, column];
   paintHead();
-  renderColumns();
   rebuildRows(rows);
-  colsEl.lastElementChild?.querySelector('input')?.focus();
+  headEl.querySelector(`.col-head[data-col="${column.id}"] .col-label`)?.focus();
 }
 
 function removeColumn(column) {
@@ -262,7 +284,6 @@ function removeColumn(column) {
   const rows = snapshot();
   columns = columns.filter((c) => c !== column);
   paintHead();
-  renderColumns();
   rebuildRows(rows);
 }
 
@@ -272,6 +293,16 @@ function readForm() {
   const lo = unit === 'cm' ? 13 : 5;
   const hi = unit === 'cm' ? 305 : 120;
   const problems = [];
+  // A column with no name is not a column a shopper can understand, and two
+  // columns wearing one name are worse than one: say so before the AI check
+  // spends a token on them.
+  if (columns.some((c) => !c.label.trim())) {
+    problems.push('Every column needs a name \u2014 it is what your shopper is shown.');
+  }
+  const names = columns.map((c) => c.label.trim().toLowerCase()).filter(Boolean);
+  if (new Set(names).size !== names.length) {
+    problems.push('Two columns have the same name \u2014 give each one its own.');
+  }
   const rows = [];
   for (const rowEl of rowsEl.children) {
     const key = rowEl.querySelector('.chart-key').value.trim();
@@ -353,7 +384,6 @@ function resetForm() {
   unitInput.value = 'in';
   columns = defaultColumns('male');
   paintHead();
-  renderColumns();
   rowsEl.replaceChildren();
   DEFAULT_SIZES.forEach((key) => addRow({ key }));
   cancelBtn.hidden = true;
@@ -397,7 +427,6 @@ function startEdit(chart) {
   unitInput.value = chart.unit === 'cm' ? 'cm' : 'in';
   columns = columnsFromSaved(chart);
   paintHead();
-  renderColumns();
   rowsEl.replaceChildren();
   for (const row of Array.isArray(chart.rows) ? chart.rows : []) {
     const values = {};
@@ -600,10 +629,7 @@ sexInput.addEventListener('change', () => {
       changed = true;
     }
   }
-  if (changed) {
-    paintHead();
-    renderColumns();
-  }
+  if (changed) paintHead();
 });
 
 form.addEventListener('submit', async (event) => {
@@ -630,8 +656,17 @@ form.addEventListener('submit', async (event) => {
   }
 
   setBusy(true);
-  setStatus('Saving…');
+  setStatus('Checking the column names…');
   try {
+    // A shopper has to understand every column, so the names get one last look
+    // before anything is written. The check is tiny — the labels, not the chart
+    // — and `skipped` means it could not run, which must never block a save.
+    const verdict = await checkChartColumns(savedColumns.map((c) => c.label));
+    if (!verdict.ok) {
+      setStatus(verdict.problem, 'error');
+      return;
+    }
+    setStatus('Saving…');
     const saved = await saveChart({
       id: editingId,
       name,

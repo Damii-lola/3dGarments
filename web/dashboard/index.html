@@ -154,17 +154,14 @@
             </label>
           </div>
 
-          <!-- The chart's columns, which are the store's to name. The first one
-               this app can measure is the one a size is decided on. -->
-          <div class="chart-cols">
-            <div class="chart-cols-head">
-              <span>Columns</span>
-              <button class="btn-ghost" id="chart-add-col" type="button">+ Add a column</button>
-            </div>
+          <!-- Each column is edited where it is printed: its name and what it
+               measures sit in the table's own header, over the numbers they
+               describe. The first measurable column decides the size. -->
+          <div class="chart-columns-intro">
             <p class="chart-hint">
               Each column represents one measurement; the first valid one determines the size, while any remaining measurements are checked for fit or displayed as extra information without altering the size.
             </p>
-            <div class="chart-columns" id="chart-columns"></div>
+            <button class="btn-ghost" id="chart-add-col" type="button">+ Add a column</button>
           </div>
 
           <div class="chart-table" id="chart-table">

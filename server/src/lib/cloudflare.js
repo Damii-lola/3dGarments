@@ -352,6 +352,72 @@ export async function describeForWardrobe(jpeg) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Chart column names                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Names a shopper could not act on. "length" is the canonical one: it says a
+ * number exists but not what it measures, so its column cannot be checked
+ * against anything. The model catches spelling and the endless phrasings of the
+ * same mistake; this list catches the plainest case even when the model is
+ * unavailable, so the example that prompted the check always works.
+ */
+const VAGUE_LABELS = new Set([
+  'length', 'size', 'width', 'measurement', 'measure', 'number', 'value',
+  'circumference', 'fit', 'body', 'garment', 'cm', 'in', 'inch', 'inches',
+  'centimetre', 'centimetres', 'centimeter', 'centimeters',
+]);
+
+/**
+ * One tiny Workers AI call (~50 output tokens) over a chart's column names.
+ * `{ ok: true }` means every name is clear and spelt correctly; `{ ok: false,
+ * problem }` is the one answer that should stop a save. A checker that cannot
+ * run answers `{ ok: true, skipped: true }`: being unable to check is not the
+ * same as finding a fault, and must not stand between a store and its chart.
+ */
+export async function checkChartColumns(labels) {
+  const names = (Array.isArray(labels) ? labels : [])
+    .filter((v) => typeof v === 'string')
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  if (!names.length) return { ok: true, skipped: true };
+
+  const vague = names.find((name) => VAGUE_LABELS.has(name.toLowerCase()));
+  if (vague) {
+    return {
+      ok: false,
+      problem: `"${vague}" does not say what it measures \u2014 try "body length" or "sleeve length".`,
+    };
+  }
+
+  if (!cloudflareConfigured()) return { ok: true, skipped: true };
+  const model = config.cloudflare.textModel || config.cloudflare.visionModel;
+  const prompt = `You review the column names of a clothing size chart. Every name must be spelt correctly and say what it measures, such as Chest, Waist, Hips, Shoulder, Sleeve length, Body length or Inseam. A name that is misspelt, or too vague to tell what is being measured, is a problem. Reply with ONLY compact JSON: {"ok":true} when all names are clear, or {"ok":false,"problem":"one short sentence naming the faulty column and a better name"}. Names: ${JSON.stringify(names)}`;
+  try {
+    const result = await runModel(model, {
+      messages: [
+        { role: 'system', content: 'You output strict JSON only.' },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 60,
+      temperature: 0,
+    }, { timeoutMs: 12_000 });
+    const raw = extractJson(result?.response ?? result);
+    if (raw.ok === false || raw.ok === 'false') {
+      const problem = typeof raw.problem === 'string' && raw.problem.trim()
+        ? raw.problem.trim().slice(0, 200)
+        : 'One column name is unclear \u2014 say what it measures.';
+      return { ok: false, problem };
+    }
+    if (raw.ok === true || raw.ok === 'true') return { ok: true };
+    return { ok: true, skipped: true };
+  } catch {
+    return { ok: true, skipped: true };
+  }
+}
+
 /**
  * Which photos show the same garment, decided from their descriptions and measured colour
  * distances. Returns { groups: [[i, …], …], names: [..] } or null when the answer is unusable.
