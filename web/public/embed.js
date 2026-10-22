@@ -209,17 +209,22 @@
 
   // A tag with a code asks for a button; a tag without one is just here to
   // publish ThreeDG, which is what the dashboard uses to preview a chart.
-  if (script) {
+  // The tag may sit in the <head>, where document.body does not exist yet, so
+  // the mount waits for the body rather than attaching to <html> and vanishing
+  // into a place no stylesheet reaches.
+  function autoMount() {
+    if (!script) return;
     var spec = script.dataset || {};
     var code = spec.chart || spec.code || '';
-    if (code) {
-      mount(null, {
-        code: code,
-        name: spec.name || '',
-        label: spec.label || 'Find my size',
-        base: spec.base || '',
-        float: spec.float === '1' || spec.float === 'true',
-      });
-    }
+    if (!code) return;
+    mount(null, {
+      code: code,
+      name: spec.name || '',
+      label: spec.label || 'Find my size',
+      base: spec.base || '',
+      float: spec.float === '1' || spec.float === 'true',
+    });
   }
+  if (document.body) autoMount();
+  else document.addEventListener('DOMContentLoaded', autoMount, { once: true });
 })();
