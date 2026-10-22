@@ -499,21 +499,22 @@ function card(chart) {
   linkInput.addEventListener('focus', () => linkInput.select());
   linkField.append(linkLabel, linkInput);
 
-  const snippet = document.createElement('details');
+  const snippet = document.createElement('div');
   snippet.className = 'chart-snippet';
-  const summary = document.createElement('summary');
-  summary.textContent = 'Popup code for your product page';
+  const snippetLabel = document.createElement('p');
+  snippetLabel.className = 'chart-snippet-label';
+  snippetLabel.textContent = 'Popup code for your product page';
   const snippetText = `<script src="${EMBED}" data-chart="${chart.code}"></script>`;
   const snippetBox = document.createElement('textarea');
   snippetBox.className = 'chart-snippet-box';
   snippetBox.readOnly = true;
-  snippetBox.rows = 3;
+  snippetBox.rows = 2;
   snippetBox.value = snippetText;
   snippetBox.addEventListener('focus', () => snippetBox.select());
   const snippetNote = document.createElement('p');
   snippetNote.className = 'chart-hint';
   snippetNote.textContent = 'That one line is the whole integration. Paste it anywhere on the product page — head or body, it works in both — and a "Find My Size" button opens the size finder in a popup over your page. Nothing else on your site is touched. Change the button text with data-label="…", its colour with data-color="#1a2b3c", or pin it to a corner with data-float="1".';
-  snippet.append(summary, snippetBox, snippetNote);
+  snippet.append(snippetLabel, snippetBox, snippetNote);
 
   const actions = document.createElement('div');
   actions.className = 'actions';

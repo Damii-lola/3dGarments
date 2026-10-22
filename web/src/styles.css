@@ -1736,18 +1736,16 @@ a.btn-ghost {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.76rem;
 }
-.chart-snippet { border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(0, 0, 0, 0.2); }
-.chart-snippet summary {
+.chart-snippet { border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(0, 0, 0, 0.2); overflow: hidden; }
+.chart-snippet-label {
   padding: 0.6rem 0.75rem;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 600;
-  cursor: pointer;
-  list-style: none;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.15);
 }
-.chart-snippet summary::-webkit-details-marker { display: none; }
-.chart-snippet summary::after { content: "+"; float: right; color: var(--accent-2); font-weight: 700; }
-.chart-snippet[open] summary::after { content: "\2013"; }
 .chart-snippet-box {
   display: block;
   width: 100%;
@@ -1966,7 +1964,7 @@ a.btn-ghost {
   .chart-card { gap: 0.55rem; padding: 0.8rem 0.85rem; border-radius: 0.85rem; }
   .chart-card-head h3 { font-size: 0.82rem; }
   .chart-meta { font-size: 0.62rem; }
-  .chart-snippet summary { padding: 0.5rem 0.6rem; font-size: 0.66rem; }
+  .chart-snippet-label { padding: 0.5rem 0.6rem; font-size: 0.66rem; }
   .chart-snippet-box { padding: 0.55rem 0.6rem; font-size: 0.6rem; }
   .chart-snippet .chart-hint { padding: 0.5rem 0.6rem 0.6rem; }
   .chart-honest { font-size: 0.64rem; }
