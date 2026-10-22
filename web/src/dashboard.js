@@ -883,25 +883,25 @@ function applyPcToIframe() {
     return;
   }
   let css = '';
-  // global
-  css += `:root { --pc-primary:${g.primaryColor}; --pc-secondary:${g.secondaryColor}; --pc-accent:${g.accentColor}; --pc-bg:${g.backgroundColor}; --pc-radius:${g.borderRadius}rem; --pc-text-scale:${g.textSize}; }\n`;
-  css += `body { background:${g.backgroundColor}; font-family:${g.fontFamily},system-ui,sans-serif; font-size:calc(100% * ${g.textSize}); }\n`;
-  css += `.threeDG-overlay { backdrop-filter: blur(${g.overlayBlur}px); -webkit-backdrop-filter: blur(${g.overlayBlur}px); }\n`;
+  // global - override the real variables the size page uses
+  css += ':root { --accent:' + g.primaryColor + ' !important; --accent-2:' + g.secondaryColor + ' !important; --bg:' + g.backgroundColor + ' !important; --panel:' + g.backgroundColor + ' !important; --text:' + (g.mode === 'light' ? '#1a1d24' : '#eef0f4') + ' !important; --muted:' + (g.mode === 'light' ? '#5a5f6e' : '#8b90a0') + ' !important; --radius:' + g.borderRadius + 'rem !important; }' + "\n";
+  css += 'body { background:' + g.backgroundColor + ' !important; font-family:' + g.fontFamily + ',system-ui,sans-serif !important; font-size:calc(100% * ' + g.textSize + ') !important; }' + "\n";
+  if (g.mode === 'light') css += 'body { color-scheme: light; }' + "\n";
   // phase 1
-  css += `.intro h1 { color:${p1.headline.color}; font-size:${p1.headline.size}rem; font-weight:${p1.headline.weight}; }\n`;
-  css += `.intro .lead { color:${p1.instruction.color}; font-size:${p1.instruction.size}rem; line-height:${p1.instruction.lineHeight}; }\n`;
-  css += `.garment { background:${p1.productPill.bg}; color:${p1.productPill.color}; font-size:${p1.productPill.size}rem; border-radius:${p1.productPill.radius}rem; border-color:${p1.productPill.border}; }\n`;
-  css += `#open-camera, .open-camera { background:${p1.recordButton.bg}; color:${p1.recordButton.color}; font-size:${p1.recordButton.size}rem; border-radius:${p1.recordButton.radius}rem; }\n`;
-  css += `#open-camera:hover, .open-camera:hover { background:${p1.recordButton.hover}; }\n`;
-  css += `#open-camera svg, .open-camera svg { color:${p1.cameraIcon.color}; width:${p1.cameraIcon.size}rem; height:${p1.cameraIcon.size}rem; }\n`;
-  css += `#privacy, .privacy { background:${p1.privacyBox.bg}; border-color:${p1.privacyBox.border}; color:${p1.privacyBox.color}; font-size:${p1.privacyBox.size}rem; }\n`;
-  css += `#privacy svg, .privacy svg { color:${p1.privacyBox.iconColor}; }\n`;
-  css += `.threeDG-close { color:${p1.closeButton.color}; font-size:${p1.closeButton.size}rem; }\n`;
-  css += `.threeDG-close:hover { color:${p1.closeButton.hover}; }\n`;
+  css += '.intro h1 { color:' + p1.headline.color + ' !important; font-size:' + p1.headline.size + 'rem !important; font-weight:' + p1.headline.weight + ' !important; }' + "\n";
+  css += '.intro .lead { color:' + p1.instruction.color + ' !important; font-size:' + p1.instruction.size + 'rem !important; line-height:' + p1.instruction.lineHeight + ' !important; }' + "\n";
+  css += '.garment { background:' + p1.productPill.bg + ' !important; color:' + p1.productPill.color + ' !important; font-size:' + p1.productPill.size + 'rem !important; border-radius:' + p1.productPill.radius + 'rem !important; border-color:' + p1.productPill.border + ' !important; }' + "\n";
+  css += '#open-camera, .open-camera { background:' + p1.recordButton.bg + ' !important; color:' + p1.recordButton.color + ' !important; font-size:' + p1.recordButton.size + 'rem !important; border-radius:' + p1.recordButton.radius + 'rem !important; }' + "\n";
+  css += '#open-camera:hover, .open-camera:hover { background:' + p1.recordButton.hover + ' !important; }' + "\n";
+  css += '#open-camera svg, .open-camera svg, .cam-icon { color:' + p1.cameraIcon.color + ' !important; width:' + p1.cameraIcon.size + 'rem !important; height:' + p1.cameraIcon.size + 'rem !important; }' + "\n";
+  css += '#privacy, .privacy { background:' + p1.privacyBox.bg + ' !important; border-color:' + p1.privacyBox.border + ' !important; color:' + p1.privacyBox.color + ' !important; font-size:' + p1.privacyBox.size + 'rem !important; }' + "\n";
+  css += '#privacy svg, .privacy svg { color:' + p1.privacyBox.iconColor + ' !important; }' + "\n";
   // phase 2
-  css += `.verdict-eyebrow { color:${p2.resultsHeadline.color}; font-size:${p2.resultsHeadline.size}rem; font-weight:${p2.resultsHeadline.weight}; }\n`;
-  css += `.verdict-size { color:${p2.recommendedSize.color}; font-size:${p2.recommendedSize.size}rem; font-weight:${p2.recommendedSize.weight}; }\n`;
-  css += `.verdict-row, .verdict-note { color:${p2.secondaryText.color}; font-size:${p2.secondaryText.size}rem; }\n`;
+  css += '.verdict-eyebrow { color:' + p2.resultsHeadline.color + ' !important; font-size:' + p2.resultsHeadline.size + 'rem !important; font-weight:' + p2.resultsHeadline.weight + ' !important; }' + "\n";
+  css += '.verdict-size { color:' + p2.recommendedSize.color + ' !important; font-size:' + p2.recommendedSize.size + 'rem !important; font-weight:' + p2.recommendedSize.weight + ' !important; }' + "\n";
+  css += '.verdict-row, .verdict-note { color:' + p2.secondaryText.color + ' !important; font-size:' + p2.secondaryText.size + 'rem !important; }' + "\n";
+  const pcCenter = document.querySelector('.pc-center');
+  if (pcCenter) pcCenter.style.backdropFilter = 'blur(' + g.overlayBlur + 'px)';
   // inject
   let style = doc.getElementById('pc-injected');
   if (!style) {
