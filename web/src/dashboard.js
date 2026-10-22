@@ -615,6 +615,7 @@ async function refresh() {
 
 let pcChart = null;
 let pcConfig = null;
+let pcPhase = 1;
 
 const PC_DEFAULTS = {
   global: {
@@ -652,13 +653,18 @@ function deepMerge(base, over) {
 }
 
 function openCustomizer(chart) {
-  pcChart = chart;
-  pcConfig = deepMerge(PC_DEFAULTS, chart.popup || {});
-  if (!pcOverlay) return;
-  pcOverlay.hidden = false;
-  document.body.style.overflow = 'hidden';
-  buildPcPanels();
-  loadPcIframe();
+  try {
+    pcChart = chart;
+    pcConfig = deepMerge(PC_DEFAULTS, chart && chart.popup ? chart.popup : {});
+    if (!pcOverlay) return;
+    pcOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    buildPcPanels();
+    loadPcIframe();
+  } catch (e) {
+    console.error('openCustomizer failed:', e);
+    showToast('Could not open the customiser.', 'error');
+  }
 }
 
 function closeCustomizer() {
@@ -669,8 +675,8 @@ function closeCustomizer() {
 
 function loadPcIframe() {
   if (!pcIframe || !pcChart) return;
-  pcIframe.src = `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
   pcIframe.addEventListener('load', () => applyPcToIframe(), { once: true });
+  pcIframe.src = `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
 }
 
 /* ---------- panel builders ---------- */
@@ -768,10 +774,12 @@ function buildPcPanels() {
   pcRight.append(phase1, phase2);
 
   function showPhase(n) {
+    pcPhase = n;
     phase1.hidden = n !== 1;
     phase2.hidden = n !== 2;
     b1.classList.toggle('active', n === 1);
     b2.classList.toggle('active', n === 2);
+    applyPcToIframe();
   }
   b1.addEventListener('click', () => showPhase(1));
   b2.addEventListener('click', () => showPhase(2));
@@ -853,11 +861,27 @@ function buildPcPanels() {
 }
 
 function applyPcToIframe() {
-  if (!pcIframe || !pcIframe.contentDocument) return;
+  if (!pcIframe || !pcConfig) return;
+  if (!pcIframe.contentDocument) {
+    // iframe not ready yet — retry shortly
+    setTimeout(applyPcToIframe, 250);
+    return;
+  }
   const doc = pcIframe.contentDocument;
-  const g = pcConfig.global;
-  const p1 = pcConfig.phase1;
-  const p2 = pcConfig.phase2;
+  let g, p1, p2;
+  try {
+    g = pcConfig.global;
+    p1 = pcConfig.phase1;
+    p2 = pcConfig.phase2;
+  } catch (e) {
+    console.error('applyPcToIframe config read failed:', e);
+    return;
+  }
+  // Make sure the iframe's document is ready for manipulation
+  if (!doc.body) {
+    setTimeout(applyPcToIframe, 250);
+    return;
+  }
   let css = '';
   // global
   css += `:root { --pc-primary:${g.primaryColor}; --pc-secondary:${g.secondaryColor}; --pc-accent:${g.accentColor}; --pc-bg:${g.backgroundColor}; --pc-radius:${g.borderRadius}rem; --pc-text-scale:${g.textSize}; }\n`;
@@ -865,7 +889,6 @@ function applyPcToIframe() {
   css += `.threeDG-overlay { backdrop-filter: blur(${g.overlayBlur}px); -webkit-backdrop-filter: blur(${g.overlayBlur}px); }\n`;
   // phase 1
   css += `.intro h1 { color:${p1.headline.color}; font-size:${p1.headline.size}rem; font-weight:${p1.headline.weight}; }\n`;
-  if (p1.headline.text) css += `.intro h1::before { content: "${p1.headline.text}"; }\n`; // not ideal but visual
   css += `.intro .lead { color:${p1.instruction.color}; font-size:${p1.instruction.size}rem; line-height:${p1.instruction.lineHeight}; }\n`;
   css += `.garment { background:${p1.productPill.bg}; color:${p1.productPill.color}; font-size:${p1.productPill.size}rem; border-radius:${p1.productPill.radius}rem; border-color:${p1.productPill.border}; }\n`;
   css += `#open-camera, .open-camera { background:${p1.recordButton.bg}; color:${p1.recordButton.color}; font-size:${p1.recordButton.size}rem; border-radius:${p1.recordButton.radius}rem; }\n`;
@@ -894,6 +917,34 @@ function applyPcToIframe() {
   if (lead && p1.instruction.text) lead.textContent = p1.instruction.text;
   const eyebrow = doc.querySelector('.verdict-eyebrow');
   if (eyebrow && p2.resultsHeadline.text) eyebrow.textContent = p2.resultsHeadline.text;
+
+  // Toggle between the recording view (Phase 1) and the results view (Phase 2)
+  // so the store can preview either state of the popup.
+  const intro = doc.querySelector('.intro');
+  const captureEl = doc.getElementById('capture') || doc.querySelector('[data-step="camera"]');
+  const privacy = doc.getElementById('privacy');
+  const verdictEl = doc.getElementById('verdict');
+  const analysisEl = doc.getElementById('analysis');
+  if (pcPhase === 1) {
+    if (intro) intro.hidden = false;
+    if (privacy) privacy.hidden = false;
+    if (captureEl) captureEl.hidden = false;
+    if (verdictEl) verdictEl.hidden = true;
+    if (analysisEl) analysisEl.hidden = true;
+  } else {
+    if (intro) intro.hidden = true;
+    if (privacy) privacy.hidden = true;
+    if (captureEl) captureEl.hidden = true;
+    if (verdictEl) verdictEl.hidden = false;
+    if (analysisEl) analysisEl.hidden = false;
+    // populate sample result so the preview looks real
+    const verdictSize = doc.getElementById('verdict-size');
+    if (verdictSize && !verdictSize.textContent) verdictSize.textContent = 'M';
+    const verdictFor = doc.getElementById('verdict-for');
+    if (verdictFor && !verdictFor.textContent) verdictFor.textContent = 'for Sample Garment';
+    const verdictRow = doc.getElementById('verdict-row');
+    if (verdictRow) verdictRow.hidden = false;
+  }
 }
 
 async function savePc() {
