@@ -1,0 +1,113 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#0d0e12" />
+    <title>FindMySize — Settings</title>
+    <meta name="description" content="Account settings." />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script src="%BASE_URL%reveal.js"></script>
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true">
+      <span class="sky-layer sky-near"></span>
+      <span class="sky-layer sky-mid"></span>
+      <span class="sky-layer sky-far"></span>
+    </div>
+
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand nav-brand" href="%BASE_URL%" aria-label="FindMySize — home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">FindMy<b>Size</b></span>
+        </a>
+
+        <nav class="nav-links" id="nav-links" aria-label="Sections">
+          <a class="nav-link" href="%BASE_URL%">Home</a>
+          <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+          <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+          <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+
+        <button class="nav-menu" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Sections">
+          <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <button class="nav-user" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+          <svg class="nav-user-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <path d="M5.2 20c.5-3.5 3.4-5.6 6.8-5.6s6.3 2.1 6.8 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <div class="nav-account" id="nav-account" hidden>
+          <p class="nav-account-note" id="nav-account-note"></p>
+          <a class="nav-account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
+          <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+          <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="section" data-reveal>
+        <p class="eyebrow">Account</p>
+        <h1 class="section-title">Settings</h1>
+        <p class="section-lead">Manage your account details.</p>
+      </section>
+
+      <section class="section" data-reveal>
+        <div class="tile" style="max-width: 640px;">
+          <h3>Account</h3>
+          <div class="settings-row">
+            <div>
+              <p class="settings-label">Username</p>
+              <p class="settings-value" id="settings-username">—</p>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>
+              <p class="settings-label">Email</p>
+              <p class="settings-value" id="settings-email">—</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-inner">
+        <span class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">FindMy<b>Size</b></span>
+        </span>
+        <nav class="foot-links" aria-label="Footer">
+          <a href="%BASE_URL%">Home</a>
+          <a href="%BASE_URL%size/">Sizing</a>
+          <a href="%BASE_URL%dashboard/">Dashboard</a>
+          <a href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+      </div>
+      <p class="foot-note">
+        Nothing is saved. Four still frames are measured once and deleted immediately; the video never leaves your customer's phone.
+        Every measurement is an estimate.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/nav.js"></script>
+    <script type="module">
+      import { getSession } from '/src/services/auth.js';
+      getSession().then((session) => {
+        if (session?.user) {
+          document.getElementById('settings-username').textContent = session.user.user_metadata?.username || '—';
+          document.getElementById('settings-email').textContent = session.user.email || '—';
+        }
+      }).catch(() => {});
+    </script>
+  </body>
+</html>

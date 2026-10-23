@@ -30,6 +30,7 @@ export default defineConfig({
         size: page('size/index.html'),
         pricing: page('pricing/index.html'),
         dashboard: page('dashboard/index.html'),
+        settings: page('settings/index.html'),
       },
       output: { manualChunks: { three: ['three'], supabase: ['@supabase/supabase-js'] } },
     },

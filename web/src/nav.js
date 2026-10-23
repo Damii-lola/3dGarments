@@ -24,6 +24,7 @@ const panel = document.getElementById('nav-account');
 const panelName = document.getElementById('nav-account-name');
 const panelNote = document.getElementById('nav-account-note');
 const dashLink = document.getElementById('nav-account-dash');
+const settingsLink = document.getElementById('nav-account-settings');
 const inLink = document.getElementById('nav-account-in');
 const outBtn = document.getElementById('nav-account-out');
 
@@ -90,11 +91,12 @@ function paint(session) {
   panelNote.textContent = account
     ? session.user.email || ''
     : 'The scanner asks who it is measuring before it opens the camera.';
-  dashLink.hidden = !account;
+  if (dashLink) dashLink.hidden = true;
+  if (settingsLink) settingsLink.hidden = !account;
   outBtn.hidden = !account;
   // On the account screen itself there is nothing to point at: the form is
   // already the way in.
-  inLink.hidden = account || inLink.pathname === window.location.pathname;
+  inLink.hidden = account || (inLink && inLink.pathname === window.location.pathname);
 }
 
 getSession().then(paint).catch(() => paint(null));
