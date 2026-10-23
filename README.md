@@ -1,4 +1,4 @@
-# 3dGarments
+# FindMySize
 
 **A size finder for clothing brands.** A brand types a garment's size chart into
 its dashboard, gets a link, and drops a snippet on the product page: the shopper
