@@ -9,7 +9,7 @@ anywhere.
 
 The same engine also powers the fitting-room core in this repo: male and female
 mannequins with real-measurement shape controls, and a garment photo pipeline
-(cut-out, measurement, AI description) that clothing upload builds on.
+(cut-out, measurement, AI description) that clothing upload builds on..
 
 The bodies are the models in `assets/` (FBX), turned into rigged web models (`web/public/body/*.glb`) by `tools/body/`.
 
