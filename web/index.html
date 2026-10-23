@@ -1,275 +1,2895 @@
-﻿<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <!-- No inline scripts (the reveal script is a file), no third-party code except
-         the MediaPipe loader and its model. Everything else is this origin, the API
-         and the signed Supabase storage URLs. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
-    <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <meta name="theme-color" content="#0d0e12" />
-    <title>FindMySize â€” the size is measured, not guessed</title>
-    <meta
-      name="description"
-      content="Give your customers an accurate size recommendation in under a minute, using only a quick 360Â° video. No app to install, and nothing stored."
-    />
-    <link rel="stylesheet" href="/src/styles.css" />
-    <!-- Sets the flag the reveal styles answer to, before anything is painted, and
-         lifts it again if the script below never arrives: a chunk that fails to
-         load must not leave the page invisible. -->
-    <script src="%BASE_URL%reveal.js"></script>
-  </head>
-  <body>
-    <!-- The sky. Three fields of stars, each on its own tile, each sliding one
-         whole tile per cycle so the loop is invisible and nothing ever snaps
-         back. Decoration only, so it is hidden from assistive tech. -->
-    <div class="sky" aria-hidden="true">
-      <span class="sky-layer sky-near"></span>
-      <span class="sky-layer sky-mid"></span>
-      <span class="sky-layer sky-far"></span>
+﻿<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head><script type="application/json" data-od-external-dependencies>["https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap"]</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FindMySize â€” Stop losing money on size returns</title>
+  <meta name="description" content="Give your customers an accurate size recommendation in under a minute â€” using only a quick 360Â° video. Nothing to install, nothing stored.">
+  <meta name="theme-color" content="#f5e9d6">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+  <style data-od-inline-asset="assets/home.css">:root {
+  --cream: #f5e9d6;
+  --cream-soft: #f9f0df;
+  --cream-deep: #eadcc4;
+  --paper: #fdf7ea;
+  --ink: #191411;
+  --ink-2: #221a15;
+  --ink-soft: #3b3028;
+  --muted: #6b5b4e;
+  --muted-strong: #4a3c31;
+  --cream-dim: #c9b9a4;
+  --line: rgba(25, 20, 17, 0.14);
+  --line-strong: rgba(25, 20, 17, 0.28);
+  --line-dark: rgba(245, 233, 214, 0.16);
+  --orange: #f0521f;
+  --orange-text: #a9330a;
+  --orange-deep: #b93a0e;
+  --orange-soft: #fad7c7;
+  --error: #8c2410;
+  --font-display: "Fraunces", "Georgia", "Times New Roman", serif;
+  --font-body: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --fs-hero: clamp(2.45rem, 8.4vw, 7.8rem);
+  --fs-h2: clamp(2rem, 4.4vw, 3.5rem);
+  --fs-h3: clamp(1.18rem, 1.5vw, 1.38rem);
+  --fs-body: clamp(1rem, 1.1vw, 1.1rem);
+  --fs-small: 0.9rem;
+  --fs-label: 0.7rem;
+  --max: 1280px;
+  --gutter: clamp(20px, 4vw, 56px);
+  --header-h: 76px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+}
+
+body.is-locked {
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+  margin: 0;
+}
+
+ul,
+ol,
+dl,
+dd {
+  margin: 0;
+  padding: 0;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: var(--orange);
+  color: var(--cream);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+[id] {
+  scroll-margin-top: calc(var(--header-h) + 20px);
+}
+
+.shell {
+  width: 100%;
+  max-width: var(--max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 120;
+  transform: translateY(-160%);
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--cream);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--orange-text);
+}
+
+.eyebrow::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--orange);
+}
+
+.eyebrow--ink {
+  color: var(--ink);
+}
+
+.eyebrow--ink::before {
+  background: var(--ink);
+}
+
+.eyebrow--cream {
+  color: var(--orange);
+}
+
+.eyebrow--cream::before {
+  background: var(--orange);
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-h2);
+  line-height: 1.01;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-h3);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+}
+
+em {
+  font-style: italic;
+}
+
+.lede {
+  max-width: 58ch;
+  color: var(--muted-strong);
+  line-height: 1.6;
+}
+
+.section {
+  position: relative;
+  padding-block: clamp(64px, 8vw, 108px);
+}
+
+.section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(24px, 4vw, 64px);
+  align-items: end;
+  margin-bottom: clamp(32px, 4.5vw, 56px);
+}
+
+.section-head .lede {
+  justify-self: end;
+}
+
+.section-head h2 {
+  margin-top: 16px;
+  max-width: 18ch;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.22s var(--ease), color 0.22s var(--ease),
+    border-color 0.22s var(--ease), transform 0.22s var(--ease);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn--primary {
+  background: var(--orange);
+  color: var(--ink);
+  border-color: rgba(25, 20, 17, 0.12);
+}
+
+.btn--primary:hover {
+  background: var(--ink);
+  color: var(--cream);
+  border-color: var(--ink);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.btn--ghost:hover {
+  background: var(--ink);
+  color: var(--cream);
+  border-color: var(--ink);
+}
+
+.btn--ink {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.btn--ink:hover {
+  background: var(--orange);
+  color: var(--ink);
+}
+
+.btn--small {
+  min-height: 42px;
+  padding: 0 18px;
+  font-size: 0.85rem;
+}
+
+.btn .icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ticks {
+  height: 8px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    currentColor 0 1px,
+    transparent 1px 12px
+  );
+  opacity: 0.4;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  height: var(--header-h);
+  background: rgba(245, 233, 214, 0.9);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 100%;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.nav a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--ink-soft);
+  transition: color 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+
+.nav a:hover {
+  color: var(--orange-text);
+  background: rgba(25, 20, 17, 0.04);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--ink);
+}
+
+.nav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 5px;
+  height: 2px;
+  background: var(--orange);
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  margin-left: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--orange-text);
+  transition: background-color 0.2s var(--ease), color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+
+.avatar:hover {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: var(--ink);
+}
+
+.avatar svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.menu-btn {
+  display: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.menu-btn span {
+  display: block;
+  width: 17px;
+  height: 1.5px;
+  background: var(--ink);
+  transition: transform 0.24s var(--ease), opacity 0.24s var(--ease);
+}
+
+.menu-btn[aria-expanded="true"] span:first-child {
+  transform: translateY(3.25px) rotate(45deg);
+}
+
+.menu-btn[aria-expanded="true"] span:last-child {
+  transform: translateY(-3.25px) rotate(-45deg);
+}
+
+.mobile-menu {
+  position: fixed;
+  top: var(--header-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 24px var(--gutter) 40px;
+  background: var(--cream);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 62px;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 7vw, 2.1rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.mobile-menu a[aria-current="page"] {
+  color: var(--orange-text);
+}
+
+.mobile-menu .btn {
+  margin-top: 24px;
+  align-self: flex-start;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  letter-spacing: 0;
+}
+
+.hero {
+  padding-block: clamp(40px, 5vw, 68px) clamp(40px, 5vw, 64px);
+}
+
+.hero h1 {
+  margin-top: 20px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-hero);
+  line-height: 0.92;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
+
+.hero h1 em {
+  color: var(--orange);
+  font-style: italic;
+}
+
+.h1-line {
+  display: block;
+}
+
+.hero-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(28px, 4vw, 56px);
+  align-items: end;
+  margin-top: clamp(28px, 4vw, 44px);
+}
+
+.hero-copy {
+  max-width: 44ch;
+}
+
+.hero-sub {
+  font-size: clamp(1.05rem, 1.4vw, 1.2rem);
+  line-height: 1.55;
+  color: var(--muted-strong);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.hero-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.hero-note svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: var(--orange-text);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.console {
+  background: var(--ink-2);
+  color: var(--cream);
+  border: 1px solid rgba(245, 233, 214, 0.09);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 32px 64px -46px rgba(25, 20, 17, 0.7);
+}
+
+.console-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-dark);
+}
+
+.console-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.console-tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.console-time {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--cream-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.console-body {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: clamp(18px, 2.4vw, 32px);
+  align-items: center;
+  padding-block: 22px;
+}
+
+.scan {
+  position: relative;
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin-inline: auto;
+}
+
+.scan-ticks {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(245, 233, 214, 0.45) 0 0.8deg,
+    transparent 0.8deg 4.6deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 0 77%, #000 78% 100%);
+  mask: radial-gradient(circle, transparent 0 77%, #000 78% 100%);
+  opacity: 0.55;
+}
+
+.scan-arc {
+  position: absolute;
+  inset: 5%;
+  width: 90%;
+  height: 90%;
+  animation: spin 22s linear infinite;
+}
+
+.scan-center {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.scan-kicker {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.scan-size {
+  font-family: var(--font-display);
+  font-size: clamp(4.6rem, 7vw, 6rem);
+  line-height: 0.85;
+  color: var(--orange);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-fit {
+  font-size: 0.7rem;
+  color: var(--cream-dim);
+}
+
+.readouts {
+  display: grid;
+}
+
+.readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-dark);
+}
+
+.readout:first-child {
+  border-top: 0;
+}
+
+.readout dt {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.readout dd {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--cream);
+  font-variant-numeric: tabular-nums;
+}
+
+.readout dd span {
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  color: var(--cream-dim);
+  margin-left: 3px;
+}
+
+.console-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-dark);
+  font-size: 0.7rem;
+  color: var(--cream-dim);
+}
+
+.console-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.console-foot svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  fill: none;
+  stroke: var(--orange);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.marquee {
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--cream-dim);
+  border-block: 1px solid var(--ink);
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 46s linear infinite;
+}
+
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+.marquee-group {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 26px;
+  padding: 15px 26px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.marquee-item::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: none;
+  background: var(--orange);
+  transform: rotate(45deg);
+}
+
+.problem {
+  background: var(--orange);
+  color: var(--ink);
+  padding-block: clamp(56px, 7vw, 96px);
+}
+
+.problem .ticks {
+  color: var(--ink);
+  opacity: 0.25;
+  margin-bottom: clamp(32px, 4vw, 48px);
+}
+
+.problem-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: start;
+}
+
+.problem h2 {
+  margin-top: 16px;
+  max-width: 15ch;
+}
+
+.problem .lede {
+  color: rgba(25, 20, 17, 0.8);
+  margin-top: 22px;
+  max-width: 48ch;
+}
+
+.problem-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+  max-width: 52ch;
+}
+
+.problem-list li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  font-size: 1.02rem;
+  color: rgba(25, 20, 17, 0.88);
+}
+
+.problem-list li::before {
+  content: "";
+  width: 12px;
+  height: 2px;
+  margin-top: 0.7em;
+  background: var(--ink);
+}
+
+.cost-card {
+  background: var(--paper);
+  border: 1px solid rgba(25, 20, 17, 0.1);
+  border-radius: 14px;
+  padding: clamp(22px, 2.6vw, 30px);
+  box-shadow: 0 28px 60px -48px rgba(25, 20, 17, 0.65);
+}
+
+.cost-card .ticks {
+  color: var(--orange-deep);
+  opacity: 0.35;
+  margin-bottom: 22px;
+}
+
+.cost-card h3 {
+  font-size: clamp(1.35rem, 2vw, 1.7rem);
+}
+
+.cost-items {
+  display: grid;
+  gap: 2px;
+  margin-top: 18px;
+}
+
+.cost-items li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.95rem;
+}
+
+.cost-items svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--orange-text);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.problem-result {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: clamp(36px, 5vw, 56px);
+  padding-top: 24px;
+  border-top: 1px solid rgba(25, 20, 17, 0.35);
+}
+
+.problem-result p {
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  max-width: 34ch;
+}
+
+.problem-result em {
+  font-style: italic;
+}
+
+.solution {
+  background: var(--cream);
+}
+
+.solve-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(16px, 2vw, 24px);
+}
+
+.solve-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: clamp(20px, 2.4vw, 28px);
+  transition: border-color 0.25s var(--ease);
+}
+
+.solve-card:hover {
+  border-color: rgba(25, 20, 17, 0.32);
+}
+
+.solve-card h3 {
+  margin-top: 20px;
+}
+
+.solve-card p {
+  margin-top: 10px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.micro {
+  min-height: 108px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.micro-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.micro-row b {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.micro-meter {
+  height: 4px;
+  margin: 7px 0 12px;
+  background: var(--cream-deep);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.micro-meter span {
+  display: block;
+  width: var(--w, 50%);
+  height: 100%;
+  background: var(--orange);
+}
+
+.micro--chips {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.size-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.size-chips span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.size-chips .is-on {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: var(--ink);
+}
+
+.micro-note {
+  margin-top: 10px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.micro--zero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+  align-content: center;
+}
+
+.micro--zero svg {
+  width: 18px;
+  height: 18px;
+  align-self: center;
+  fill: none;
+  stroke: var(--orange-text);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.zero {
+  font-family: var(--font-display);
+  font-size: 2.6rem;
+  line-height: 0.9;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.zero-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.micro--zero .micro-note {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
+.promise {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  margin-top: clamp(32px, 4vw, 48px);
+  padding: 20px 24px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.promise span {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 0.95rem;
+}
+
+.promise span + span::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  background: var(--orange);
+  transform: rotate(45deg);
+}
+
+.how {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.how .eyebrow {
+  color: var(--orange);
+}
+
+.how h2 {
+  color: var(--cream);
+  max-width: 16ch;
+}
+
+.how h2 em {
+  color: var(--orange);
+}
+
+.how .section-head .lede {
+  color: var(--cream-dim);
+}
+
+.how-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 6.2fr) minmax(0, 5.8fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: start;
+}
+
+.flow {
+  display: grid;
+}
+
+.flow li {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 18px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line-dark);
+}
+
+.flow li:last-child {
+  border-bottom: 1px solid var(--line-dark);
+}
+
+.flow-num {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--orange);
+  font-variant-numeric: tabular-nums;
+  padding-top: 3px;
+}
+
+.flow p {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--cream);
+  max-width: 46ch;
+}
+
+.flow p strong {
+  font-weight: 600;
+  color: var(--cream);
+}
+
+.pdp-wrap {
+  position: sticky;
+  top: calc(var(--header-h) + 24px);
+}
+
+.pdp {
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(245, 233, 214, 0.12);
+  max-width: 460px;
+  margin-left: auto;
+}
+
+.pdp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pdp-flag {
+  padding: 4px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--orange-text);
+}
+
+.pdp-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.pdp-brand {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pdp-price {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdp h3 {
+  margin-top: 4px;
+  font-size: clamp(1.45rem, 2.2vw, 1.75rem);
+}
+
+.pdp-plate {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 186px;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--cream-deep);
+  overflow: hidden;
+}
+
+.pdp-plate svg {
+  width: auto;
+  height: 86%;
+}
+
+.pdp-plate-label {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(25, 20, 17, 0.5);
+}
+
+.pdp-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.pdp-sizes span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 38px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.pdp-sizes .is-on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--cream);
+}
+
+.pdp-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.pdp-result {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.pdp-result .pdp-result-size {
+  grid-row: span 2;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--orange);
+}
+
+.pdp-result .pdp-result-label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.pdp-result .pdp-result-note {
+  font-size: 0.72rem;
+  color: var(--cream);
+}
+
+.how-result {
+  margin-top: clamp(36px, 5vw, 56px);
+  padding-top: 24px;
+  border-top: 1px solid var(--line-dark);
+}
+
+.how-result p {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  max-width: 32ch;
+  color: var(--cream);
+}
+
+.how-result em {
+  color: var(--orange);
+}
+
+.changes {
+  background: var(--cream);
+}
+
+.change-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(14px, 1.8vw, 20px);
+}
+
+.change-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: clamp(20px, 2.2vw, 26px);
+}
+
+.change-id {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--orange-text);
+}
+
+.change-card h3 {
+  margin-top: 22px;
+}
+
+.change-card p {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.change-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(24px, 3vw, 48px);
+  align-items: center;
+  margin-top: clamp(14px, 1.8vw, 20px);
+  padding: clamp(24px, 3vw, 34px);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.change-wide h3 {
+  margin-top: 12px;
+  font-size: clamp(1.4rem, 2.2vw, 1.8rem);
+}
+
+.change-wide p {
+  margin-top: 10px;
+  max-width: 46ch;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.popover-demo {
+  position: relative;
+  min-height: 176px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--cream-deep);
+  overflow: hidden;
+}
+
+.popover-demo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(25, 20, 17, 0.1) 0 1px,
+    transparent 1px 16px
+  );
+  opacity: 0.5;
+}
+
+.pd-line {
+  position: relative;
+  height: 8px;
+  width: 42%;
+  margin-bottom: 10px;
+  border-radius: 2px;
+  background: rgba(25, 20, 17, 0.16);
+}
+
+.pd-line--wide {
+  width: 68%;
+}
+
+.pd-block {
+  position: relative;
+  height: 62px;
+  margin-top: 16px;
+  border: 1px solid rgba(25, 20, 17, 0.16);
+  border-radius: 6px;
+  background: rgba(253, 247, 234, 0.7);
+}
+
+.pd-pill {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+  box-shadow: 0 12px 24px -16px rgba(25, 20, 17, 0.7);
+}
+
+.pd-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.changes-result {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 20px;
+  margin-top: clamp(32px, 4vw, 48px);
+  padding-top: clamp(28px, 3.4vw, 40px);
+  border-top: 1px solid var(--line-strong);
+}
+
+.changes-result .quote-mark {
+  font-family: var(--font-display);
+  font-size: 4.6rem;
+  line-height: 0.7;
+  color: var(--orange);
+}
+
+.changes-result p {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  max-width: 34ch;
+}
+
+.changes-result em {
+  font-style: italic;
+}
+
+.privacy {
+  background: var(--cream-deep);
+}
+
+.privacy-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(28px, 4vw, 56px);
+  padding: clamp(28px, 4.5vw, 56px);
+  border-radius: 16px;
+  background: var(--ink);
+  color: var(--cream);
+  overflow: hidden;
+}
+
+.privacy-card .ticks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  color: var(--orange);
+  opacity: 0.4;
+}
+
+.shield {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(240, 82, 31, 0.45);
+  border-radius: 50%;
+  color: var(--orange);
+}
+
+.shield svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.privacy-card .eyebrow {
+  margin-top: 28px;
+  color: var(--orange);
+}
+
+.privacy-card h2 {
+  margin-top: 14px;
+  color: var(--cream);
+  max-width: 12ch;
+}
+
+.privacy-copy {
+  display: grid;
+  gap: 18px;
+  align-content: center;
+  padding-top: 8px;
+}
+
+.privacy-copy p {
+  color: var(--cream-dim);
+  line-height: 1.65;
+}
+
+.privacy-copy .privacy-strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 1.8vw, 1.5rem);
+  line-height: 1.25;
+  color: var(--cream);
+  letter-spacing: -0.01em;
+}
+
+.privacy-copy .privacy-highlight {
+  padding-top: 18px;
+  border-top: 1px solid var(--line-dark);
+  color: var(--orange);
+  font-weight: 500;
+}
+
+.cta {
+  background: var(--orange);
+  color: var(--ink);
+  padding-block: clamp(56px, 7vw, 96px);
+}
+
+.cta-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: start;
+}
+
+.cta h2 {
+  margin-top: 16px;
+  max-width: 12ch;
+}
+
+.cta .lede {
+  margin-top: 22px;
+  color: rgba(25, 20, 17, 0.8);
+  max-width: 44ch;
+}
+
+.cta-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 28px;
+  font-size: 0.8rem;
+  color: rgba(25, 20, 17, 0.72);
+}
+
+.cta-note svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.form-card {
+  background: var(--paper);
+  border: 1px solid rgba(25, 20, 17, 0.12);
+  border-radius: 14px;
+  padding: clamp(22px, 3vw, 34px);
+  box-shadow: 0 30px 60px -46px rgba(25, 20, 17, 0.7);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+.field--full {
+  grid-column: 1 / -1;
+}
+
+.field label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.field .optional {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--cream-soft);
+  font-size: 0.95rem;
+  color: var(--ink);
+  transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+
+.field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: rgba(25, 20, 17, 0.42);
+}
+
+.field input:hover,
+.field textarea:hover {
+  border-color: rgba(25, 20, 17, 0.42);
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: 2px solid var(--orange);
+  outline-offset: 1px;
+  border-color: var(--orange);
+  background: var(--paper);
+}
+
+.field input[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: var(--error);
+  background: #fbeee7;
+}
+
+.field-error {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--error);
+}
+
+.form-alert {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  background: #fbeee7;
+  font-size: 0.85rem;
+  color: var(--error);
+}
+
+.form-alert p {
+  font-weight: 600;
+}
+
+.form-alert ul {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.form-alert a {
+  color: var(--error);
+  text-underline-offset: 3px;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+
+.form-actions .btn {
+  min-width: 170px;
+}
+
+.form-actions .btn[disabled] {
+  opacity: 0.72;
+  cursor: progress;
+}
+
+.form-fine {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.form-success {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  padding: 8px 0;
+}
+
+.success-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: var(--ink);
+}
+
+.success-mark svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.form-success h3 {
+  font-size: clamp(1.5rem, 2.4vw, 1.9rem);
+}
+
+.form-success p {
+  max-width: 38ch;
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+
+.form-success strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.form-success .btn {
+  margin-top: 8px;
+}
+
+.footer {
+  background: var(--ink);
+  color: var(--cream);
+  padding-block: 48px 30px;
+}
+
+.footer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.footer .brand {
+  color: var(--cream);
+}
+
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.footer-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  text-decoration: none;
+  color: var(--cream-dim);
+  transition: color 0.2s var(--ease);
+}
+
+.footer-nav a:hover {
+  color: var(--cream);
+}
+
+.footer-rule {
+  height: 1px;
+  margin-block: 28px 24px;
+  background: var(--line-dark);
+}
+
+.footer-legal {
+  max-width: 82ch;
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: rgba(201, 185, 164, 0.78);
+}
+
+.footer-base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 28px;
+  font-size: 0.7rem;
+  color: rgba(201, 185, 164, 0.65);
+}
+
+.problem :focus-visible,
+.cta :focus-visible {
+  outline-color: var(--ink);
+}
+
+.how :focus-visible,
+.footer :focus-visible {
+  outline-color: var(--cream);
+}
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.7s var(--ease) var(--d, 0s),
+    transform 0.7s var(--ease) var(--d, 0s);
+}
+
+.js .reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.rise {
+  animation: rise 0.8s var(--ease) both;
+}
+
+.rise--1 {
+  animation-delay: 0.06s;
+}
+
+.rise--2 {
+  animation-delay: 0.14s;
+}
+
+.rise--3 {
+  animation-delay: 0.22s;
+}
+
+@media (max-width: 1080px) {
+  .hero-bottom {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .hero-copy {
+    max-width: 56ch;
+  }
+
+  .console {
+    max-width: 780px;
+  }
+
+  .hero-note {
+    margin-bottom: 4px;
+  }
+
+  .how-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pdp-wrap {
+    position: static;
+    order: -1;
+  }
+
+  .pdp {
+    max-width: 560px;
+    margin-inline: 0;
+  }
+}
+
+@media (max-width: 960px) {
+  .nav {
+    display: none;
+  }
+
+  .avatar {
+    display: none;
+  }
+
+  .menu-btn {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .section-head {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .section-head .lede {
+    justify-self: start;
+  }
+
+  .solve-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .solve-card {
+    max-width: 640px;
+  }
+
+  .change-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .privacy-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .privacy-copy {
+    padding-top: 4px;
+  }
+
+  .cta-grid {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .cta h2 {
+    max-width: 16ch;
+  }
+}
+
+@media (max-width: 900px) {
+  .problem-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cost-card {
+    max-width: 560px;
+  }
+
+  .problem-result {
+    display: block;
+  }
+
+  .problem-result p {
+    max-width: 40ch;
+  }
+
+  .change-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .popover-demo {
+    max-width: 460px;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --header-h: 68px;
+  }
+
+  .console-body {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+  }
+
+  .scan {
+    max-width: 220px;
+  }
+
+  .readouts {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 20px;
+  }
+
+  .readout {
+    padding: 9px 0;
+  }
+
+  .readout:nth-child(2) {
+    border-top: 0;
+  }
+
+  .readout:nth-child(3) {
+    border-top: 1px solid var(--line-dark);
+  }
+
+  .console-foot {
+    justify-content: flex-start;
+    gap: 6px 18px;
+  }
+
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .change-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .changes-result {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .changes-result .quote-mark {
+    font-size: 3.4rem;
+  }
+
+  .flow li {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .hero-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .hero {
+    padding-top: 32px;
+  }
+
+  .hero h1 {
+    letter-spacing: -0.02em;
+  }
+
+  .hero-actions .btn {
+    width: 100%;
+  }
+
+  .console {
+    padding: 18px;
+  }
+
+  .scan-size {
+    font-size: 4.4rem;
+  }
+
+  .promise {
+    display: grid;
+    gap: 10px;
+  }
+
+  .promise span {
+    gap: 0;
+  }
+
+  .promise span + span::before {
+    display: none;
+  }
+
+  .problem-list li {
+    font-size: 0.98rem;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  .footer-top {
+    align-items: flex-start;
+  }
+
+  .footer-nav {
+    margin-left: -10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .marquee-track {
+    animation: none;
+    transform: none;
+  }
+}
+
+@media print {
+  body::before {
+    display: none;
+  }
+}
+</style>
+  <script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
+  <noscript><style>.reveal{opacity:1!important;transform:none!important}</style></noscript>
+</head>
+<body id="top">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="%BASE_URL%" aria-label="FindMySize home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect width="32" height="32" rx="9" fill="#f0521f"/>
+        <g transform="rotate(45 16 16)">
+          <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+          <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+          <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+          <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+          <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+        </g>
+        </svg>
+        <span>FindMySize</span>
+      </a>
+
+      <nav class="nav" aria-label="Primary">
+        <a href="%BASE_URL%" aria-current="page">Home</a>
+        <a href="%BASE_URL%size/">Sizing</a>
+        <a href="%BASE_URL%dashboard/">Dashboard</a>
+        <a href="%BASE_URL%pricing/">Pricing</a>
+      </nav>
+
+      <a class="avatar" href="%BASE_URL%settings/" aria-label="Account and settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="8.5" r="3.5"/>
+          <path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/>
+        </svg>
+      </a>
+
+      <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">
+        <span></span>
+        <span></span>
+      </button>
     </div>
+  </header>
 
-    <!-- The bar, on every page. Its links are written against the site's base â€”
-         %BASE_URL% is filled in at build time â€” so the same markup holds in a
-         subdirectory and at a domain root. -->
-    <header class="nav">
-      <div class="nav-inner">
-        <a class="brand nav-brand" href="%BASE_URL%" aria-label="FindMySize â€” home">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span class="brand-name">FindMy<b>Size</b></span>
-        </a>
+  <div class="mobile-menu" id="mobile-menu" hidden>
+    <a href="%BASE_URL%" aria-current="page">Home <span aria-hidden="true">â†’</span></a>
+    <a href="%BASE_URL%size/">Sizing <span aria-hidden="true">â†’</span></a>
+    <a href="%BASE_URL%dashboard/">Dashboard <span aria-hidden="true">â†’</span></a>
+    <a href="%BASE_URL%pricing/">Pricing <span aria-hidden="true">â†’</span></a>
+    <a class="btn btn--primary" href="%BASE_URL%demo/">Book a Demo</a>
+  </div>
 
-        <nav class="nav-links" id="nav-links" aria-label="Sections">
-          <a class="nav-link" href="%BASE_URL%">Home</a>
-          <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
-          <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
-          <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
-        </nav>
+  <main id="main" tabindex="-1">
 
-        <button class="nav-menu" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Sections">
-          <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
-          </svg>
-        </button>
+    <section class="hero shell" aria-labelledby="hero-title">
+      <p class="eyebrow rise">For clothing brands</p>
+      <h1 id="hero-title" class="rise rise--1">
+        <span class="h1-line">Stop losing money</span>
+        <span class="h1-line">on <em>size returns</em></span>
+      </h1>
 
-        <button class="nav-user" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
-          <svg class="nav-user-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="8.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" />
-            <path d="M5.2 20c.5-3.5 3.4-5.6 6.8-5.6s6.3 2.1 6.8 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-          </svg>
-        </button>
+      <div class="hero-bottom">
+        <div class="hero-copy rise rise--2">
+          <p class="hero-sub">Give your customers an accurate size recommendation in under a minute â€” using only a quick 360Â° video. Nothing to install, nothing stored.</p>
+          <div class="hero-actions">
+            <a class="btn btn--primary" href="%BASE_URL%demo/">
+              Book a Demo
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+            </a>
+            <a class="btn btn--ghost" href="#how">See how it works</a>
+          </div>
+          <p class="hero-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            360Â° video Â· No install Â· Nothing stored
+          </p>
+        </div>
 
-        <div class="nav-account" id="nav-account" hidden>
-          <p class="nav-account-note" id="nav-account-note"></p>
-          <a class="nav-account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
-          <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
-          <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
+        <div class="console rise rise--3" aria-label="Example size scan result">
+          <div class="console-top">
+            <span class="console-tag">Live size scan</span>
+            <span class="console-time">00:41</span>
+          </div>
+          <div class="console-body">
+            <div class="scan">
+              <span class="scan-ticks" aria-hidden="true"></span>
+              <svg class="scan-arc" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+                <circle cx="100" cy="100" r="94" fill="none" stroke="rgba(245,233,214,0.16)" stroke-width="1.5"/>
+                <circle cx="100" cy="100" r="94" fill="none" stroke="#f0521f" stroke-width="2" stroke-dasharray="140 450" stroke-linecap="round"/>
+                <circle cx="100" cy="6" r="3.2" fill="#f0521f"/>
+              </svg>
+              <div class="scan-center">
+                <span class="scan-kicker">Recommended size</span>
+                <span class="scan-size">M</span>
+                <span class="scan-fit">Oversized Heavy Tee</span>
+              </div>
+            </div>
+
+            <dl class="readouts">
+              <div class="readout">
+                <dt>Chest</dt>
+                <dd>96<span>cm</span></dd>
+              </div>
+              <div class="readout">
+                <dt>Waist</dt>
+                <dd>78<span>cm</span></dd>
+              </div>
+              <div class="readout">
+                <dt>Hip</dt>
+                <dd>101<span>cm</span></dd>
+              </div>
+              <div class="readout">
+                <dt>Inseam</dt>
+                <dd>79<span>cm</span></dd>
+              </div>
+            </dl>
+          </div>
+          <div class="console-foot">
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+              360Â° capture complete
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/></svg>
+              Frames already deleted
+            </span>
+          </div>
         </div>
       </div>
-    </header>
+    </section>
 
-    <main class="page">
-      <!-- The home page is written for the brand: the tool is sold to the store,
-           and the shopper-facing scanner lives on the store's own product page. -->
-      <section class="section hero" data-reveal>
-        <p class="eyebrow">For clothing brands</p>
-        <h2 class="hero-title">Stop losing money on size returns</h2>
-        <p class="hero-lead">
-          Give your customers an accurate size recommendation in under a minute
-          &mdash; using only a quick 360&deg; video. Nothing to install, nothing stored.
-        </p>
-        <div class="hero-cta">
-          <a class="btn-primary" href="#book">Book a Demo</a>
-          <a class="btn-ghost" href="#how">See how it works</a>
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track">
+        <div class="marquee-group">
+          <span class="marquee-item">Measured in seconds</span>
+          <span class="marquee-item">No app to install</span>
+          <span class="marquee-item">Nothing stored</span>
+          <span class="marquee-item">Works on any product page</span>
+          <span class="marquee-item">Fewer returns, better margins</span>
+          <span class="marquee-item">Built for clothing brands</span>
         </div>
-      </section>
+        <div class="marquee-group">
+          <span class="marquee-item">Measured in seconds</span>
+          <span class="marquee-item">No app to install</span>
+          <span class="marquee-item">Nothing stored</span>
+          <span class="marquee-item">Works on any product page</span>
+          <span class="marquee-item">Fewer returns, better margins</span>
+          <span class="marquee-item">Built for clothing brands</span>
+        </div>
+      </div>
+    </div>
 
-      <section class="section" id="problem" data-reveal>
-        <p class="eyebrow">The problem</p>
-        <h2 class="section-title">Returns are quietly killing your margins</h2>
-        <p class="section-lead">Most clothing brands lose thousands every month to size-related returns.</p>
-        <div class="grid grid-wide">
-          <div class="beats">
-            <p>Customers don&rsquo;t know their real measurements.</p>
-            <p>Size charts vary wildly between brands.</p>
-            <p>And &ldquo;order two sizes and return one&rdquo; has become normal.</p>
-          </div>
-          <div class="tile">
-            <h3>Every return costs you</h3>
-            <ul class="costs">
-              <li>Double shipping</li>
-              <li>Restocking time</li>
-              <li>Damaged or unsellable product</li>
-              <li>Lost profit</li>
+    <section class="section problem" id="problem" aria-labelledby="problem-title">
+      <div class="shell">
+        <div class="ticks" aria-hidden="true"></div>
+        <div class="problem-grid">
+          <div class="reveal">
+            <p class="eyebrow eyebrow--ink">The problem</p>
+            <h2 id="problem-title">Returns are quietly killing your margins</h2>
+            <p class="lede">Most clothing brands lose thousands every month to size-related returns.</p>
+            <ul class="problem-list">
+              <li>Customers donâ€™t know their real measurements.</li>
+              <li>Size charts vary widely between brands.</li>
+              <li>And â€œorder two sizes and return oneâ€ has become normal.</li>
             </ul>
           </div>
-        </div>
-        <p class="callout">The result? Lower margins, higher costs, and frustrated customers.</p>
-      </section>
 
-      <section class="section" id="solution" data-reveal>
-        <p class="eyebrow">The solution</p>
-        <h2 class="section-title">A better way to get the size right</h2>
-        <p class="section-copy">
-          Our tool lets shoppers on your product page record a short 360&deg; video
-          of themselves. It reads their body measurements from that video, then
-          recommends the size for that exact product &mdash; in seconds.
-        </p>
-        <div class="grid">
-          <div class="tile">
+          <aside class="cost-card reveal" style="--d:.1s" aria-label="The cost of a return">
+            <div class="ticks" aria-hidden="true"></div>
+            <h3>Every return costs you</h3>
+            <ul class="cost-items">
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/></svg>
+                Restocking fees
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M12 4v6l-3 2 3 2v6"/></svg>
+                Damaged or unsellable product
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7l6 6 4-4 8 8"/><path d="M21 21h-6M21 21v-6"/></svg>
+                Lost profit
+              </li>
+            </ul>
+          </aside>
+        </div>
+
+        <div class="problem-result reveal">
+          <p>The result? Lower margins, higher costs, and frustrated customers.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section solution" id="solution" aria-labelledby="solution-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal">
+            <p class="eyebrow">The solution</p>
+            <h2 id="solution-title">A better way to get the size right</h2>
+          </div>
+          <p class="lede reveal" style="--d:.08s">Our tool lets shoppers on your product page record a short 360Â° video of themselves. It reads their body measurements from that video, then recommends the size for that exact product â€” in seconds.</p>
+        </div>
+
+        <div class="solve-grid">
+          <article class="solve-card reveal">
+            <div class="micro">
+              <div class="micro-row"><span>Shoulder</span><b>42 cm</b></div>
+              <div class="micro-meter"><span style="--w:72%"></span></div>
+              <div class="micro-row"><span>Chest</span><b>96 cm</b></div>
+              <div class="micro-meter"><span style="--w:64%"></span></div>
+              <p class="micro-note">1 of 6 readings</p>
+            </div>
             <h3>They see the measurements</h3>
             <p>Every number is shown, with the reading behind it, so nothing has to be taken on trust.</p>
-          </div>
-          <div class="tile">
+          </article>
+
+          <article class="solve-card reveal" style="--d:.08s">
+            <div class="micro micro--chips">
+              <div class="size-chips" aria-hidden="true">
+                <span>XS</span><span>S</span><span class="is-on">M</span><span>L</span><span>XL</span>
+              </div>
+              <p class="micro-note">Recommended: M</p>
+            </div>
             <h3>They get a clear size</h3>
             <p>Their measurements are scored row by row against the chart you typed for that garment: the worst disagreement decides, not the best one.</p>
-          </div>
-          <div class="tile">
+          </article>
+
+          <article class="solve-card reveal" style="--d:.16s">
+            <div class="micro micro--zero">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>
+              <span class="zero">0</span>
+              <span class="zero-label">frames kept</span>
+              <p class="micro-note">Deleted at once</p>
+            </div>
             <h3>Then everything is deleted</h3>
-            <p>The clip is deleted the moment it has been measured. Nothing is kept &mdash; not the video, not the frames, not the numbers.</p>
+            <p>The clip is deleted the moment it has been measured. Nothing is kept â€” not the video, not the frames, not the numbers.</p>
+          </article>
+        </div>
+
+        <div class="promise reveal">
+          <span>No profiles.</span>
+          <span>No saved measurements.</span>
+          <span>No risk.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section how" id="how" aria-labelledby="how-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal">
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">Simple for your customers. <em>Powerful for your brand.</em></h2>
+          </div>
+          <p class="lede reveal" style="--d:.08s">From size chart to confident order â€” five steps, and nothing for the shopper to download.</p>
+        </div>
+
+        <div class="how-grid">
+          <ol class="flow reveal">
+            <li>
+              <span class="flow-num">01</span>
+              <p><strong>Add the garment</strong> in your dashboard and type its size chart.</p>
+            </li>
+            <li>
+              <span class="flow-num">02</span>
+              <p><strong>Paste the snippet</strong> once onto that product page â€” a â€œfind my sizeâ€ button appears there.</p>
+            </li>
+            <li>
+              <span class="flow-num">03</span>
+              <p><strong>Your shopper opens it</strong> and records a quick 360Â° video on their phone.</p>
+            </li>
+            <li>
+              <span class="flow-num">04</span>
+              <p><strong>Their body is measured</strong>, the numbers are shown, and their size comes off your chart.</p>
+            </li>
+            <li>
+              <span class="flow-num">05</span>
+              <p><strong>All of it is deleted immediately.</strong></p>
+            </li>
+          </ol>
+
+          <div class="pdp-wrap reveal" style="--d:.1s">
+            <div class="pdp" aria-label="Example product page with the size finder">
+              <div class="pdp-top">
+                <span>Product page Â· live demo</span>
+                <span class="pdp-flag">Find my size</span>
+              </div>
+              <div class="pdp-meta">
+                <span class="pdp-brand">Oakler &amp; Co.</span>
+                <span class="pdp-price">$68.00</span>
+              </div>
+              <h3>Oversized Heavy Tee</h3>
+              <div class="pdp-plate">
+                <span class="pdp-plate-label">360Â° scan</span>
+                <svg viewBox="0 0 200 180" aria-hidden="true" focusable="false">
+                  <path d="M63 22l21-10c3 6 8 9 16 9s13-3 16-9l21 10 18 36-21 11-6-15v88H72V54l-6 15-21-11z" fill="#f5e9d6" stroke="#191411" stroke-width="2.2" stroke-linejoin="round"/>
+                  <path d="M84 12c0 8 7 13 16 13s16-5 16-13" fill="none" stroke="#191411" stroke-width="2"/>
+                  <path d="M62 92h76" stroke="#f0521f" stroke-width="1.6" stroke-dasharray="4 4"/>
+                  <path d="M62 86v12M138 86v12" stroke="#f0521f" stroke-width="1.6"/>
+                  <text x="100" y="84" text-anchor="middle" font-family="'Instrument Sans', sans-serif" font-size="8.5" letter-spacing="1.1" fill="#a9330a">CHEST 96 CM</text>
+                </svg>
+              </div>
+              <div class="pdp-sizes" aria-hidden="true">
+                <span>XS</span><span>S</span><span class="is-on">M</span><span>L</span><span>XL</span>
+              </div>
+              <div class="pdp-cta">Find my size</div>
+              <div class="pdp-result">
+                <span class="pdp-result-size">M</span>
+                <span class="pdp-result-label">Recommended</span>
+                <span class="pdp-result-note">Chest 96 Â· Waist 78 Â· Hip 101 cm</span>
+              </div>
+            </div>
           </div>
         </div>
-        <p class="callout">No profiles. No saved measurements. No risk.</p>
-      </section>
 
-      <section class="section" id="how" data-reveal>
-        <p class="eyebrow">How it works</p>
-        <h2 class="section-title">Simple for your customers. Powerful for your brand.</h2>
-        <ol class="steps">
-          <li class="step">
-            <span class="step-n" aria-hidden="true">1</span>
-            <p class="step-title">You add the garment in your dashboard and type its size chart</p>
-          </li>
-          <li class="step">
-            <span class="step-n" aria-hidden="true">2</span>
-            <p class="step-title">Paste the snippet once onto that product page &mdash; a &ldquo;Find my size&rdquo; button appears there</p>
-          </li>
-          <li class="step">
-            <span class="step-n" aria-hidden="true">3</span>
-            <p class="step-title">The shopper opens it, and records a quick 360&deg; video on their phone</p>
-          </li>
-          <li class="step">
-            <span class="step-n" aria-hidden="true">4</span>
-            <p class="step-title">Their body is measured, the numbers are shown, and their size comes off <em>your</em> chart</p>
-          </li>
-          <li class="step">
-            <span class="step-n" aria-hidden="true">5</span>
-            <p class="step-title">All of it is deleted immediately</p>
-          </li>
-        </ol>
-        <p class="callout">They never leave your store. You reduce returns. Everyone wins.</p>
-      </section>
+        <div class="how-result reveal">
+          <p>They never leave your store. You reduce returns. <em>Everyone wins.</em></p>
+        </div>
+      </div>
+    </section>
 
-      <section class="section" id="benefits" data-reveal>
-        <p class="eyebrow">What it changes</p>
-        <h2 class="section-title">Built for clothing brands that care about margins</h2>
-        <div class="grid">
-          <div class="tile">
+    <section class="section changes" id="changes" aria-labelledby="changes-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal">
+            <p class="eyebrow">What it changes</p>
+            <h2 id="changes-title">Built for clothing brands that care about margins</h2>
+          </div>
+          <p class="lede reveal" style="--d:.08s">The difference shows up in your returns rate, your support inbox, and your bottom line.</p>
+        </div>
+
+        <div class="change-grid">
+          <article class="change-card reveal">
+            <span class="change-id">01</span>
             <h3>Fewer size returns</h3>
             <p>People order the size that fits, so the parcel does not come back.</p>
-          </div>
-          <div class="tile">
+          </article>
+          <article class="change-card reveal" style="--d:.06s">
+            <span class="change-id">02</span>
             <h3>More confident buying</h3>
             <p>A number they can see beats a chart they have to guess at.</p>
-          </div>
-          <div class="tile">
+          </article>
+          <article class="change-card reveal" style="--d:.12s">
+            <span class="change-id">03</span>
             <h3>A better customer experience</h3>
             <p>No tape measure, no fitting room, no app to install.</p>
-          </div>
-          <div class="tile">
+          </article>
+          <article class="change-card reveal" style="--d:.18s">
+            <span class="change-id">04</span>
             <h3>No data to look after</h3>
             <p>Nothing is stored, so there is nothing to lose and nothing to report.</p>
-          </div>
-          <div class="tile">
+          </article>
+        </div>
+
+        <div class="change-wide reveal">
+          <div>
+            <span class="change-id">On any product page</span>
             <h3>Easy to add anywhere</h3>
-            <p>
-              Paste one snippet onto the product page and the size finder opens in
-              a popup over it &mdash; no theme to edit, and no new tab for the
-              shopper to get lost in.
-            </p>
+            <p>Paste one snippet onto the product page and the size finder appears in a popover over the store â€” no new tab for the shopper to get lost in.</p>
+          </div>
+          <div class="popover-demo" aria-hidden="true">
+            <div class="pd-line"></div>
+            <div class="pd-line pd-line--wide"></div>
+            <div class="pd-block"></div>
+            <span class="pd-pill">Find my size</span>
           </div>
         </div>
-        <p class="callout">Stop treating returns as &ldquo;just part of the business&rdquo;. Fix the root cause.</p>
-      </section>
 
-      <section class="section" id="privacy" data-reveal>
-        <div class="privacy-card">
-          <svg class="privacy-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-            <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
-            <circle cx="12" cy="14.8" r="1.15" fill="currentColor" />
+        <div class="changes-result reveal">
+          <span class="quote-mark" aria-hidden="true">â€œ</span>
+          <p>Stop treating returns as â€œjust part of the businessâ€. <em>Fix the root cause.</em></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section privacy" id="privacy" aria-labelledby="privacy-title">
+      <div class="shell">
+        <div class="privacy-card reveal">
+          <div class="ticks" aria-hidden="true"></div>
+          <div>
+            <span class="shield" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            <p class="eyebrow">Privacy</p>
+            <h2 id="privacy-title">Privacy by design</h2>
+          </div>
+          <div class="privacy-copy">
+            <p class="privacy-strong">We never store videos or body measurements.</p>
+            <p>Everything is processed in real time and is gone right after the size recommendation is shown. No body profiles. No saved measurements. No data kept.</p>
+            <p class="privacy-highlight">Your customers stay private. Your brand stays trusted.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section cta" id="book" aria-labelledby="demo-title">
+      <div class="shell cta-grid">
+        <div class="reveal">
+          <p class="eyebrow eyebrow--ink">Book a demo</p>
+          <h2 id="demo-title">Ready to cut size returns?</h2>
+          <p class="lede">See how the tool works on a real product page and get a clear plan for your store. Leave an address and we will reply.</p>
+          <p class="cta-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            One reply from a real person. No newsletter, no sequence.
+          </p>
+        </div>
+
+        <div class="form-card reveal" style="--d:.08s">
+          <form id="demo-form" novalidate>
+            <div class="form-alert" id="form-alert" role="alert" hidden>
+              <p>Please check the highlighted fields and try again.</p>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="name">Name</label>
+                <input id="name" name="name" type="text" autocomplete="name" placeholder="Sam Okafor" aria-describedby="name-error" required>
+                <span class="field-error" id="name-error" hidden>Enter your name.</span>
+              </div>
+              <div class="field">
+                <label for="store">Store or brand</label>
+                <input id="store" name="store" type="text" autocomplete="organization" placeholder="Oakler &amp; Co." aria-describedby="store-error" required>
+                <span class="field-error" id="store-error" hidden>Enter your store or brand name.</span>
+              </div>
+              <div class="field field--full">
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" aria-describedby="email-error" required>
+                <span class="field-error" id="email-error" hidden>Enter a valid email address.</span>
+              </div>
+              <div class="field field--full">
+                <label for="products">What products do you sell? <span class="optional">Optional</span></label>
+                <textarea id="products" name="products" rows="3" placeholder="Which product, and how bad the returns are." aria-describedby="products-error"></textarea>
+                <span class="field-error" id="products-error" hidden></span>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn--primary" type="submit">
+                Book a Demo
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+              </button>
+              <p class="form-fine">We only use these details to reply to this request.</p>
+            </div>
+          </form>
+
+          <div class="form-success" id="form-success" tabindex="-1" hidden>
+            <span class="success-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            </span>
+            <h3>Request received.</h3>
+            <p>We will reply to <strong id="success-email">your address</strong> within one business day with a demo link and next steps.</p>
+            <button class="btn btn--ghost btn--small" type="button" id="form-reset">Send another request</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-top">
+        <a class="brand" href="%BASE_URL%" aria-label="FindMySize home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <rect width="32" height="32" rx="9" fill="#f0521f"/>
+            <path d="M9 22V11h14" fill="none" stroke="#fdf7ea" stroke-width="2.4" stroke-linecap="round"/>
+            <path d="M9 15h5M9 19h3M19 11v4M23 11v5" fill="none" stroke="#fdf7ea" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
-          <div class="privacy-body privacy-body-lg">
-            <p class="eyebrow eyebrow-good">Privacy</p>
-            <h2 class="section-title">Privacy by design</h2>
-            <p class="section-lead">We never store videos or body measurements.</p>
-            <p class="section-copy">
-              Everything is processed in real time and is gone right after the size
-              recommendation is shown. No body profiles. No saved measurements. No
-              data kept.
-            </p>
-            <p class="privacy-close">Your customers stay private. Your brand stays trusted.</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="section cta-card" id="book" data-reveal>
-        <h2 class="cta-title">Ready to cut size returns?</h2>
-        <p class="section-lead">
-          See how the tool works on a real product page and get a clear plan for
-          your store. Leave an address and we will reply.
-        </p>
-        <!-- The form opens the visitor's own mail client with these details
-             filled in: nothing to run on our side, and the reply comes back to
-             the address they typed. DEMO_EMAIL in landing.js is the same one. -->
-        <form class="demo-form" id="demo-form" action="mailto:findmysize.us@gmail.com" method="post" enctype="text/plain">
-          <label class="demo-field">
-            <span>Name</span>
-            <input id="demo-name" name="name" type="text" autocomplete="name" placeholder="Sam Okafor" required />
-          </label>
-          <label class="demo-field">
-            <span>Store or brand</span>
-            <input id="demo-store" name="store" type="text" autocomplete="organization" placeholder="Okafor &amp; Co." />
-          </label>
-          <label class="demo-field">
-            <span>Email</span>
-            <input id="demo-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
-          </label>
-          <label class="demo-field demo-wide">
-            <span>What would you like to fix?</span>
-            <textarea id="demo-message" name="message" rows="3" placeholder="Which product, and how bad the returns are."></textarea>
-          </label>
-          <div class="actions demo-wide">
-            <button class="btn-primary" id="demo-submit" type="submit">Book a Demo</button>
-          </div>
-        </form>
-        <p class="status" id="demo-status" role="status" aria-live="polite"></p>
-      </section>
-    </main>
-
-    <footer class="foot">
-      <div class="foot-inner">
-        <span class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span class="brand-name">FindMy<b>Size</b></span>
-        </span>
-        <nav class="foot-links" aria-label="Footer">
+          <span>FindMySize</span>
+        </a>
+        <nav class="footer-nav" aria-label="Footer">
           <a href="%BASE_URL%">Home</a>
           <a href="%BASE_URL%size/">Sizing</a>
           <a href="%BASE_URL%dashboard/">Dashboard</a>
           <a href="%BASE_URL%pricing/">Pricing</a>
         </nav>
       </div>
-      <p class="foot-note">
-        Nothing is saved. The video never leaves your customer's phone: four still frames are measured once and deleted the moment the reading is
-        done. Every measurement is an estimate, and it is shown with the reading
-        behind it so it can be checked.
-      </p>
-    </footer>
+      <div class="footer-rule" aria-hidden="true"></div>
+      <p class="footer-legal">Nothing is saved. The video never leaves your customerâ€™s phone; four still frames are measured once and deleted the moment the reading is done. Every measurement is an estimate, and it is shown with the reading behind it so it can be checked.</p>
+      <div class="footer-base">
+        <span>Â© 2026 FindMySize. All rights reserved.</span>
+        <span>Privacy-first by design.</span>
+      </div>
+    </div>
+  </footer>
 
-    <script type="module" src="/src/landing.js"></script>
-  </body>
+  <script>(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  /* Mobile menu */
+  var menuBtn = document.querySelector(".menu-btn");
+  var mobileMenu = document.getElementById("mobile-menu");
+
+  function setMenu(open) {
+    if (!menuBtn || !mobileMenu) return;
+    menuBtn.setAttribute("aria-expanded", String(open));
+    menuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    mobileMenu.hidden = !open;
+    document.body.classList.toggle("is-locked", open);
+    if (open) {
+      var first = mobileMenu.querySelector("a, button");
+      if (first) first.focus();
+    }
+  }
+
+  if (menuBtn && mobileMenu) {
+    menuBtn.addEventListener("click", function () {
+      setMenu(menuBtn.getAttribute("aria-expanded") !== "true");
+    });
+
+    mobileMenu.addEventListener("click", function (event) {
+      if (event.target.closest("a")) setMenu(false);
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && menuBtn.getAttribute("aria-expanded") === "true") {
+        setMenu(false);
+        menuBtn.focus();
+      }
+    });
+
+    var wide = window.matchMedia("(min-width: 961px)");
+    var closeOnWide = function (event) {
+      if (event.matches) setMenu(false);
+    };
+    if (wide.addEventListener) wide.addEventListener("change", closeOnWide);
+    else if (wide.addListener) wide.addListener(closeOnWide);
+  }
+
+  /* Scroll reveals */
+  var revealEls = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
+
+  if (!("IntersectionObserver" in window)) {
+    revealEls.forEach(function (el) {
+      el.classList.add("is-in");
+    });
+  } else {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-in");
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: "0px 0px -6% 0px", threshold: 0.08 }
+    );
+
+    revealEls.forEach(function (el) {
+      observer.observe(el);
+    });
+  }
+
+  /* Demo form */
+  var form = document.getElementById("demo-form");
+  var formCard = form ? form.closest(".form-card") : null;
+  var success = document.getElementById("form-success");
+  var successEmail = document.getElementById("success-email");
+  var resetBtn = document.getElementById("form-reset");
+  var alertBox = document.getElementById("form-alert");
+  var submitBtn = form ? form.querySelector('button[type="submit"]') : null;
+  var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  var fields = {
+    name: {
+      input: document.getElementById("name"),
+      error: document.getElementById("name-error"),
+      validate: function (value) {
+        return value.trim().length >= 2;
+      }
+    },
+    store: {
+      input: document.getElementById("store"),
+      error: document.getElementById("store-error"),
+      validate: function (value) {
+        return value.trim().length >= 2;
+      }
+    },
+    email: {
+      input: document.getElementById("email"),
+      error: document.getElementById("email-error"),
+      validate: function (value) {
+        return emailPattern.test(value.trim());
+      }
+    }
+  };
+
+  var order = ["name", "store", "email"];
+
+  function markField(key, valid) {
+    var field = fields[key];
+    if (!field || !field.input) return;
+    field.input.setAttribute("aria-invalid", String(!valid));
+    if (field.error) field.error.hidden = valid;
+  }
+
+  function clearErrors() {
+    order.forEach(function (key) {
+      markField(key, true);
+    });
+    if (alertBox) alertBox.hidden = true;
+  }
+
+  if (form) {
+    order.forEach(function (key) {
+      var field = fields[key];
+      if (!field.input) return;
+      field.input.addEventListener("input", function () {
+        if (field.input.getAttribute("aria-invalid") === "true") {
+          markField(key, field.validate(field.input.value));
+        }
+      });
+    });
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      clearErrors();
+
+      var firstInvalid = null;
+
+      order.forEach(function (key) {
+        var field = fields[key];
+        if (!field.input) return;
+        var valid = field.validate(field.input.value);
+        markField(key, valid);
+        if (!valid && !firstInvalid) firstInvalid = field.input;
+      });
+
+      if (firstInvalid) {
+        if (alertBox) alertBox.hidden = false;
+        firstInvalid.focus();
+        return;
+      }
+
+      var emailValue = fields.email.input.value.trim();
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sendingâ€¦";
+      }
+
+      window.setTimeout(function () {
+        if (successEmail) successEmail.textContent = emailValue;
+        form.hidden = true;
+        if (success) {
+          success.hidden = false;
+          success.focus();
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML =
+            'Book a Demo <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>';
+        }
+      }, 650);
+    });
+  }
+
+  if (resetBtn) {
+    resetBtn.addEventListener("click", function () {
+      if (!form) return;
+      form.reset();
+      clearErrors();
+      if (success) success.hidden = true;
+      form.hidden = false;
+      if (formCard) {
+        formCard.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      if (fields.name.input) fields.name.input.focus({ preventScroll: true });
+    });
+  }
+})();
+</script>
+</body>
 </html>
+
+
+
 
 
