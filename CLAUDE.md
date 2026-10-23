@@ -120,3 +120,6 @@ render.yaml             Render blueprint
 - Better segmentation for busy backgrounds (e.g. a segmentation model or Cloudflare Images `segment=foreground`)
 - Long hair (hair cards), eye colours, direct-manipulation posing (click a joint + gizmo), ambient occlusion pass
 - Save/load models and outfits to the cloud (`/api/me/outfits` exists)
+
+## Home page design
+`web/index.html` + `web/src/landing.css` (standalone stylesheet, does NOT use `styles.css`) + `web/src/landing.js`. Cream/orange design with Fraunces + Instrument Sans, self-hosted via `@fontsource-variable/*` (the CSP is `font-src 'self'`, so no Google Fonts). The nav keeps the ids `nav.js` drives (`nav-links`, `nav-menu`, `nav-user`, `nav-account*`); scroll reveals are `class="reveal" data-reveal` (nav.js adds `.seen`). The demo section is `id="book"` because `pricing/` links to `/#book`. The demo form opens the visitor's mail client (no server).
