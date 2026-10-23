@@ -29,7 +29,7 @@ jobs:
             echo "::warning::Supabase secrets not set (SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD, SUPABASE_PROJECT_REF) — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         if: steps.guard.outputs.skip != 'true'
         with: { version: latest }
       - name: Link project
