@@ -61,6 +61,8 @@ const addBtn = document.getElementById('chart-add');
 const saveBtn = document.getElementById('chart-save');
 const cancelBtn = document.getElementById('chart-cancel');
 const statusEl = document.getElementById('chart-status');
+const badgeText = document.getElementById('ledger-badge-text');
+const confirmDialog = document.getElementById('confirm-dialog');
 
 /** The site's own root, so a link or a snippet is right on any host or subpath. */
 const SITE = new URL(import.meta.env.BASE_URL, window.location.origin).href;
@@ -381,6 +383,7 @@ function setBusy(busy) {
 function resetForm() {
   editingId = null;
   formTitle.textContent = 'Add a garment';
+  if (badgeText) badgeText.textContent = 'New chart';
   nameInput.value = '';
   sexInput.value = 'male';
   unitInput.value = 'in';
@@ -424,6 +427,7 @@ function columnsFromSaved(chart) {
 function startEdit(chart) {
   editingId = chart.id;
   formTitle.textContent = `Editing ${chart.name}`;
+  if (badgeText) badgeText.textContent = 'Editing';
   nameInput.value = chart.name;
   sexInput.value = chart.sex;
   unitInput.value = chart.unit === 'cm' ? 'cm' : 'in';
@@ -469,10 +473,18 @@ function carriedEverywhere(chart, id) {
 }
 
 /** One garment: its link, its snippet, and the few things you can do with them. */
-function card(chart) {
+function card(chart, index = 0) {
   const article = document.createElement('article');
   article.className = 'chart-card';
   article.dataset.code = chart.code;
+
+  const top = document.createElement('div');
+  top.className = 'chart-card-top';
+
+  const number = document.createElement('span');
+  number.className = 'chart-index';
+  number.setAttribute('aria-hidden', 'true');
+  number.textContent = String(index + 1).padStart(2, '0');
 
   const head = document.createElement('header');
   head.className = 'chart-card-head';
@@ -484,7 +496,8 @@ function card(chart) {
   const printed = (Array.isArray(chart.columns) ? chart.columns : [])
     .filter((c) => c && c.label && !c.measure && carriedEverywhere(chart, c.id))
     .map((c) => c.label);
-  const count = Array.isArray(chart.rows) ? chart.rows.length : 0;
+  const rows = Array.isArray(chart.rows) ? chart.rows : [];
+  const count = rows.length;
   meta.textContent = [
     who(chart.sex),
     `${count} size${count === 1 ? '' : 's'}`,
@@ -494,16 +507,40 @@ function card(chart) {
   ].filter(Boolean).join(' · ');
   head.append(title, meta);
 
-  const linkField = document.createElement('label');
+  // The size names on the chart, at a glance.
+  const rail = document.createElement('ul');
+  rail.className = 'size-rail';
+  rail.setAttribute('aria-label', 'Sizes in this chart');
+  for (const row of rows) {
+    const li = document.createElement('li');
+    li.textContent = String(row?.key ?? '');
+    rail.append(li);
+  }
+  top.append(number, head, rail);
+
+  const link = `${SITE}size/?g=${chart.code}`;
+  const linkField = document.createElement('div');
   linkField.className = 'chart-field';
   const linkLabel = document.createElement('span');
+  linkLabel.className = 'field-label';
   linkLabel.textContent = 'The link';
+  const codeRow = document.createElement('div');
+  codeRow.className = 'code-row';
   const linkInput = document.createElement('input');
   linkInput.className = 'chart-code';
+  linkInput.type = 'text';
   linkInput.readOnly = true;
-  linkInput.value = `${SITE}size/?g=${chart.code}`;
+  linkInput.value = link;
+  linkInput.setAttribute('aria-label', `Public link for ${chart.name}`);
   linkInput.addEventListener('focus', () => linkInput.select());
-  linkField.append(linkLabel, linkInput);
+  const miniCopy = document.createElement('button');
+  miniCopy.type = 'button';
+  miniCopy.className = 'mini-copy';
+  miniCopy.dataset.act = 'copy-link';
+  miniCopy.setAttribute('aria-label', `Copy the link for ${chart.name}`);
+  miniCopy.textContent = 'Copy';
+  codeRow.append(linkInput, miniCopy);
+  linkField.append(linkLabel, codeRow);
 
   const snippet = document.createElement('div');
   snippet.className = 'chart-snippet';
@@ -516,20 +553,21 @@ function card(chart) {
   snippetBox.readOnly = true;
   snippetBox.rows = 2;
   snippetBox.value = snippetText;
+  snippetBox.setAttribute('aria-label', `Popup code for ${chart.name}`);
   snippetBox.addEventListener('focus', () => snippetBox.select());
   const snippetNote = document.createElement('p');
-  snippetNote.className = 'chart-hint';
+  snippetNote.className = 'hint';
   snippetNote.textContent = 'That one line is the whole integration. Paste it anywhere on the product page — head or body, it works in both — and a "Find My Size" button opens the size finder in a popup over your page. Nothing else on your site is touched. Change the button text with data-label="…", its colour with data-color="#1a2b3c", or pin it to a corner with data-float="1".';
   snippet.append(snippetLabel, snippetBox, snippetNote);
 
   const actions = document.createElement('div');
   actions.className = 'actions';
   const buttons = [
-    ['preview', 'Preview & Customise Popup', 'btn-primary'],
-    ['copy-embed', 'Copy the popup code', 'btn-ghost'],
-    ['copy-link', 'Copy the link', 'btn-ghost'],
-    ['edit', 'Edit this chart', 'btn-ghost'],
-    ['delete', 'Delete', 'btn-ghost chart-del'],
+    ['preview', 'Preview & Customise Popup', 'btn btn--primary btn--small'],
+    ['copy-embed', 'Copy the popup code', 'btn btn--ghost btn--small'],
+    ['copy-link', 'Copy the link', 'btn btn--ghost btn--small'],
+    ['edit', 'Edit this chart', 'btn btn--ghost btn--small'],
+    ['delete', 'Delete', 'btn btn--quiet btn--small chart-del'],
   ];
   for (const [act, label, className] of buttons) {
     const button = document.createElement('button');
@@ -540,13 +578,13 @@ function card(chart) {
     actions.append(button);
   }
 
-  article.append(head, linkField, snippet, actions);
+  article.append(top, linkField, snippet, actions);
   return article;
 }
 
 function listMessage(text) {
   const tile = document.createElement('div');
-  tile.className = 'tile';
+  tile.className = 'list-empty';
   const p = document.createElement('p');
   p.textContent = text;
   tile.append(p);
@@ -576,7 +614,7 @@ function renderList(charts) {
     listEl.append(listMessage(`No garments match "${searchQuery}".`));
     return;
   }
-  for (const chart of visible) listEl.append(card(chart));
+  visible.forEach((chart, index) => listEl.append(card(chart, index)));
 }
 
 function updateStats(charts) {
@@ -1062,6 +1100,43 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+/**
+ * Ask before deleting. The page's own dialog when the browser has <dialog>, the
+ * browser's confirm() when it does not, so a delete is never silent either way.
+ */
+function confirmDelete(chart) {
+  if (!confirmDialog || typeof confirmDialog.showModal !== 'function') {
+    return Promise.resolve(window.confirm(`Delete ${chart.name}? Any product page using its link stops working.`));
+  }
+  const text = document.getElementById('confirm-text');
+  const title = document.getElementById('confirm-title');
+  if (title) title.textContent = `Delete ${chart.name}?`;
+  if (text) text.textContent = 'Any product page using its link or popup code stops working. This cannot be undone.';
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      confirmDialog.removeEventListener('close', finish);
+      confirmDialog.removeEventListener('click', onBackdrop);
+      document.body.classList.remove('has-dialog');
+      resolve(confirmDialog.returnValue === 'delete');
+    };
+    // A click on the dim area outside the card lands on the <dialog> element itself.
+    const onBackdrop = (event) => { if (event.target === confirmDialog) confirmDialog.close('cancel'); };
+    confirmDialog.returnValue = '';
+    confirmDialog.addEventListener('close', finish);
+    confirmDialog.addEventListener('click', onBackdrop);
+    document.body.classList.add('has-dialog');
+    confirmDialog.showModal();
+    document.getElementById('confirm-cancel')?.focus();
+  });
+}
+
+confirmDialog?.addEventListener('click', (event) => {
+  const closer = event.target.closest('[data-close]');
+  if (closer) confirmDialog.close('cancel');
+});
+document.getElementById('confirm-delete')?.addEventListener('click', () => confirmDialog?.close('delete'));
+
 /** Everything a card can be asked to do. */
 listEl.addEventListener('click', async (event) => {
   const button = event.target.closest('button[data-act]');
@@ -1086,7 +1161,7 @@ listEl.addEventListener('click', async (event) => {
       startEdit(chart);
       break;
     case 'delete': {
-      if (!window.confirm(`Delete ${chart.name}? Any product page using its link stops working.`)) return;
+      if (!(await confirmDelete(chart))) return;
       button.disabled = true;
       try {
         await removeChart(chart.id);
@@ -1124,6 +1199,8 @@ function paint(session) {
   workSection.hidden = !account;
   listSection.hidden = !account;
   howSection.hidden = !account;
+  for (const el of document.querySelectorAll('[data-in-only]')) el.hidden = !account;
+  for (const el of document.querySelectorAll('[data-out-only]')) el.hidden = account;
   if (!account) return;
 
   if (nameEl) nameEl.textContent = session.user.user_metadata?.username || 'Your account';
@@ -1146,3 +1223,22 @@ outBtn?.addEventListener('click', async () => {
 });
 
 resetForm();
+/* ---------- the menu on a phone ----------
+   nav.js opens and closes the list of pages. This adds: the page behind it
+   stops scrolling, the button says what it will do, and the button inside the
+   list (which stays on this page) puts the menu away on its way down. */
+const menuButton = document.getElementById('nav-menu');
+if (menuButton) {
+  const syncMenu = () => {
+    const open = menuButton.getAttribute('aria-expanded') === 'true';
+    menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    document.body.classList.toggle('is-locked', open);
+  };
+  new MutationObserver(syncMenu).observe(menuButton, { attributes: true, attributeFilter: ['aria-expanded'] });
+  document.querySelector('.nav-demo')?.addEventListener('click', () => {
+    if (menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+  window.matchMedia('(min-width: 901px)').addEventListener('change', (event) => {
+    if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+}

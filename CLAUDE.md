@@ -123,3 +123,6 @@ render.yaml             Render blueprint
 
 ## Home page design
 `web/index.html` + `web/src/landing.css` (standalone stylesheet, does NOT use `styles.css`) + `web/src/landing.js`. Cream/orange design with Fraunces + Instrument Sans, self-hosted via `@fontsource-variable/*` (the CSP is `font-src 'self'`, so no Google Fonts). The nav keeps the ids `nav.js` drives (`nav-links`, `nav-menu`, `nav-user`, `nav-account*`); scroll reveals are `class="reveal" data-reveal` (nav.js adds `.seen`). The demo section is `id="book"` because `pricing/` links to `/#book`. The demo form opens the visitor's mail client (no server).
+
+## Dashboard design
+`web/dashboard/index.html` + `web/src/dashboard.css` (standalone, same tokens as `landing.css`) + `web/src/dashboard.js`. The page keeps every id `dashboard.js` uses (`dash-anon`, `dash-in`, `dash-setup`, `dash-list-section`, `dash-how`, `chart-*`, `pc-*`, `stat-*`). Elements marked `data-in-only` / `data-out-only` are shown by `paint()` for signed-in / signed-out visitors. Garment cards are built in `card()` (dashboard.js) to match the `.chart-card` styles. Delete asks through `#confirm-dialog` (falls back to `window.confirm`).
