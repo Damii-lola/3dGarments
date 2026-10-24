@@ -663,7 +663,7 @@ const PC_DEFAULTS = {
   },
   phase1: {
     headline: { text: 'Find your size', color: '#eef0f4', size: 1.5, weight: 650 },
-    instruction: { text: 'Record a 360° video of yourself, turning slowly all the way around: stand still, whole body in frame, arms a hand\\u2019s width from your sides.', color: '#8b90a0', size: 1, lineHeight: 1.5 },
+    instruction: { text: 'Record a 360° video of yourself, turning slowly all the way around: stand still, whole body in frame, arms a hand’s width from your sides.', color: '#8b90a0', size: 1, lineHeight: 1.5 },
     productPill: { bg: '#1d212a', color: '#eef0f4', size: 0.9, radius: 0.8, border: 'rgba(255,255,255,0.1)' },
     recordButton: { bg: '#ff6a4a', color: '#fff', size: 1, radius: 0.8, hover: '#f04a29' },
     cameraIcon: { color: '#fff', size: 1.05 },
