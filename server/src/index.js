@@ -12,6 +12,7 @@ import { groups } from './routes/groups.js';
 import { scan } from './routes/scan.js';
 import { bodyScan } from './routes/body-scan.js';
 import { chartCheck } from './routes/chart-check.js';
+import { websiteAnalysis } from './routes/website-analysis.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
 
@@ -48,6 +49,7 @@ app.use('/api/groups', groups);
 app.use('/api/scan', scan);
 app.use('/api/body-scan', bodyScan);
 app.use('/api/chart-check', chartCheck);
+app.use('/api/website-analysis', websiteAnalysis);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
 

@@ -23,6 +23,7 @@
 import './nav.js';
 import { MEASURES } from '@shared/measures.js';
 import { getSession, isAccount, signOut } from './services/auth.js';
+import { api } from './services/api.js';
 import { chartColumns, checkChartColumns, listCharts, notSetUp, removeChart, saveChart } from './services/charts.js';
 
 const signInSection = document.getElementById('dash-anon');
@@ -547,7 +548,12 @@ function card(chart, index = 0) {
   const snippetLabel = document.createElement('p');
   snippetLabel.className = 'chart-snippet-label';
   snippetLabel.textContent = 'Popup code for your product page';
-  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}"></script>`;
+  const fab = (chart && chart.popup && chart.popup.fabButton) || {};
+  const fabAttrs = [];
+  if (fab.label) fabAttrs.push(`data-label="${String(fab.label).replace(/"/g, '&quot;')}"`);
+  if (fab.bg) fabAttrs.push(`data-color="${String(fab.bg).replace(/"/g, '&quot;')}"`);
+  if (fab.float === false) fabAttrs.push('data-float="0"');
+  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}" ${fabAttrs.join(' ')}></script>`;
   const snippetBox = document.createElement('textarea');
   snippetBox.className = 'chart-snippet-box';
   snippetBox.readOnly = true;
@@ -557,7 +563,7 @@ function card(chart, index = 0) {
   snippetBox.addEventListener('focus', () => snippetBox.select());
   const snippetNote = document.createElement('p');
   snippetNote.className = 'hint';
-  snippetNote.textContent = 'That one line is the whole integration. Paste it anywhere on the product page — head or body, it works in both — and a "Find My Size" button opens the size finder in a popup over your page. Nothing else on your site is touched. Change the button text with data-label="…", its colour with data-color="#1a2b3c", or pin it to a corner with data-float="1".';
+  snippetNote.textContent = 'That one line is the whole integration. Paste it at the top of your product page\'s <body> (or anywhere — head or body both work) and a "Find My Size" button floats bottom-right as a FAB, opening the size finder in a popup over your page. Nothing else on your site is touched. Change the button text with data-label="…", its colour with data-color="#1a2b3c", or pin it inline instead of floating with data-float="0".';
   snippet.append(snippetLabel, snippetBox, snippetNote);
 
   const actions = document.createElement('div');
@@ -661,6 +667,20 @@ const PC_DEFAULTS = {
     backgroundColor: '#15181f', overlayBlur: 6, borderRadius: 1.35, fontFamily: 'system-ui',
     textSize: 1, mode: 'dark',
   },
+  fabButton: {
+    label: 'Find My Size',
+    bg: '#ff6a4a',
+    textColor: '#fff',
+    radius: 0.8,
+    float: true,
+  },
+  phase0: {
+    label: 'Find My Size',
+    bg: '#ff6a4a',
+    textColor: '#fff',
+    radius: 0.8,
+    float: true,
+  },
   phase1: {
     headline: { text: 'Find your size', color: '#eef0f4', size: 1.5, weight: 650 },
     instruction: { text: 'Record a 360° video of yourself, turning slowly all the way around: stand still, whole body in frame, arms a hand’s width from your sides.', color: '#8b90a0', size: 1, lineHeight: 1.5 },
@@ -714,7 +734,12 @@ function closeCustomizer() {
 function loadPcIframe() {
   if (!pcIframe || !pcChart) return;
   pcIframe.addEventListener('load', () => applyPcToIframe(), { once: true });
-  pcIframe.src = `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
+  // Phase 0 previews the shop page (just the floating button on a blank shop screen).
+  // Phases 1 and 2 preview the scanner popup embedded in the page.
+  const url = pcPhase === 0
+    ? `${SITE}shop/?g=${encodeURIComponent(pcChart.code)}`
+    : `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
+  pcIframe.src = url;
 }
 
 /* ---------- panel builders ---------- */
@@ -779,51 +804,97 @@ function pcSection(parent, title) {
   parent.append(h);
 }
 
+function rebuildPcPanels() {
+  buildPcPanels();
+}
+
 function buildPcPanels() {
   if (!pcLeft || !pcRight) return;
   pcLeft.replaceChildren();
   pcRight.replaceChildren();
 
-  // ---- Left: global styles ----
+  // ---- Left: website analysis ----
   const g = pcConfig.global;
-  pcSection(pcLeft, 'Global styles');
-  pcText(pcLeft, 'Logo URL', () => g.logo, (v) => { g.logo = v; });
-  pcColor(pcLeft, 'Primary colour', () => g.primaryColor, (v) => { g.primaryColor = v; });
-  pcColor(pcLeft, 'Secondary colour', () => g.secondaryColor, (v) => { g.secondaryColor = v; });
-  pcColor(pcLeft, 'Accent colour', () => g.accentColor, (v) => { g.accentColor = v; });
-  pcColor(pcLeft, 'Background colour', () => g.backgroundColor, (v) => { g.backgroundColor = v; });
-  pcNumber(pcLeft, 'Overlay blur', () => g.overlayBlur, (v) => { g.overlayBlur = v; }, { min: 0, max: 20, step: 1 });
-  pcNumber(pcLeft, 'Border radius', () => g.borderRadius, (v) => { g.borderRadius = v; }, { min: 0, max: 3, step: 0.05 });
+  const f = pcConfig.fabButton;
+
+  pcSection(pcLeft, 'Match your website');
+  const urlWrap = document.createElement('div');
+  urlWrap.className = 'pc-field';
+  const urlLab = document.createElement('label');
+  urlLab.textContent = 'Your homepage URL';
+  const urlInp = document.createElement('input');
+  urlInp.id = 'pc-website-url';
+  urlInp.type = 'text';
+  urlInp.placeholder = 'https://your-store.com';
+  urlInp.value = pcConfig.websiteUrl || '';
+  urlInp.addEventListener('change', () => { pcConfig.websiteUrl = urlInp.value; });
+  const analyzeBtn = document.createElement('button');
+  analyzeBtn.id = 'pc-analyze-btn';
+  analyzeBtn.type = 'button';
+  analyzeBtn.className = 'btn btn--primary btn--small';
+  analyzeBtn.textContent = 'Analyze with AI';
+  analyzeBtn.addEventListener('click', analyzeWebsite);
+  urlWrap.append(urlLab, urlInp, analyzeBtn);
+  pcLeft.append(urlWrap);
+
+  const status = document.createElement('p');
+  status.className = 'chart-status';
+  status.textContent = 'Paste your homepage URL and the AI will read its colours, fonts and vibe, then set every phase of the popup and the floating button to match.';
+  status.style.fontSize = '0.8rem';
+  status.style.color = 'var(--muted)';
+  status.style.marginTop = '0.5rem';
+  pcLeft.append(status);
+
+  pcLeft.append(document.createElement('hr'));
+
+  // Global styles collapsed into read-only summary (driven by AI)
+  pcSection(pcLeft, 'Resulting palette (auto-set by AI)');
+  pcColor(pcLeft, 'Primary', () => g.primaryColor, (v) => { g.primaryColor = v; });
+  pcColor(pcLeft, 'Background', () => g.backgroundColor, (v) => { g.backgroundColor = v; });
   pcText(pcLeft, 'Font family', () => g.fontFamily, (v) => { g.fontFamily = v; });
-  pcNumber(pcLeft, 'Overall text size', () => g.textSize, (v) => { g.textSize = v; }, { min: 0.7, max: 1.4, step: 0.05 });
   pcSelect(pcLeft, 'Mode', () => g.mode, (v) => { g.mode = v; }, [['dark', 'Dark'], ['light', 'Light']]);
 
-  // ---- Right: element-by-element with phase switcher ----
+  // ---- Right: phase tabs ----
   const switcher = document.createElement('div');
   switcher.className = 'pc-phase-switcher';
+  const b0 = document.createElement('button'); b0.textContent = 'Phase 0 (Button)';
   const b1 = document.createElement('button'); b1.textContent = 'Phase 1 (Recording)';
   const b2 = document.createElement('button'); b2.textContent = 'Phase 2 (Results)';
-  switcher.append(b1, b2);
+  switcher.append(b0, b1, b2);
   pcRight.append(switcher);
 
+  const phase0 = document.createElement('div');
   const phase1 = document.createElement('div');
   const phase2 = document.createElement('div');
+  phase1.hidden = true;
   phase2.hidden = true;
-  pcRight.append(phase1, phase2);
+  pcRight.append(phase0, phase1, phase2);
 
   function showPhase(n) {
     pcPhase = n;
+    phase0.hidden = n !== 0;
     phase1.hidden = n !== 1;
     phase2.hidden = n !== 2;
+    b0.classList.toggle('active', n === 0);
     b1.classList.toggle('active', n === 1);
     b2.classList.toggle('active', n === 2);
     applyPcToIframe();
   }
+  b0.addEventListener('click', () => showPhase(0));
   b1.addEventListener('click', () => showPhase(1));
   b2.addEventListener('click', () => showPhase(2));
-  showPhase(1);
+  showPhase(0);
 
-  // Phase 1
+  // Phase 0 — Floating button
+  const p0 = pcConfig.fabButton;
+  pcSection(phase0, 'Floating button');
+  pcText(phase0, 'Button text', () => p0.label, (v) => { p0.label = v; });
+  pcColor(phase0, 'Button colour', () => p0.bg, (v) => { p0.bg = v; });
+  pcColor(phase0, 'Text colour', () => p0.textColor, (v) => { p0.textColor = v; });
+  pcNumber(phase0, 'Border radius', () => p0.radius, (v) => { p0.radius = v; }, { min: 0, max: 2, step: 0.05 });
+  pcSelect(phase0, 'Position', () => p0.float ? 'float' : 'inline', (v) => { p0.float = v === 'float'; }, [['float', 'Floating bottom-right (FAB)'], ['inline', 'Inline where the tag sits']]);
+
+  // Phase 1 — Recording
   const p1 = pcConfig.phase1;
   pcSection(phase1, 'Headline');
   pcText(phase1, 'Text', () => p1.headline.text, (v) => { p1.headline.text = v; });
@@ -867,7 +938,7 @@ function buildPcPanels() {
   pcNumber(phase1, 'Size', () => p1.closeButton.size, (v) => { p1.closeButton.size = v; }, { min: 0.8, max: 2, step: 0.05 });
   pcColor(phase1, 'Hover colour', () => p1.closeButton.hover, (v) => { p1.closeButton.hover = v; });
 
-  // Phase 2
+  // Phase 2 — Results
   const p2 = pcConfig.phase2;
   pcSection(phase2, 'Results headline');
   pcText(phase2, 'Text', () => p2.resultsHeadline.text, (v) => { p2.resultsHeadline.text = v; });
@@ -898,6 +969,56 @@ function buildPcPanels() {
   pcText(phase2, 'Border colour', () => p2.secondaryButton.border, (v) => { p2.secondaryButton.border = v; });
 }
 
+/* ---------- website analysis ---------- */
+
+async function analyzeWebsite() {
+  const urlInp = document.getElementById('pc-website-url');
+  if (!urlInp) return;
+  const url = urlInp.value.trim();
+  if (!url) { showToast('Enter a homepage URL first.', 'error'); return; }
+
+  const analyzeBtn = document.getElementById('pc-analyze-btn');
+  const origText = analyzeBtn.textContent;
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = 'Analyzing…';
+
+  try {
+    const result = await api('/api/website-analysis/analyze', {
+      method: 'POST',
+      body: { url },
+    });
+
+    if (!result) throw new Error('No response');
+
+    // Apply AI suggestion to config
+    const g = pcConfig.global;
+    const f = pcConfig.fabButton;
+
+    g.primaryColor = result.primaryColor || g.primaryColor;
+    g.secondaryColor = result.secondaryColor || g.secondaryColor;
+    g.accentColor = result.accentColor || g.accentColor;
+    g.backgroundColor = result.backgroundColor || g.backgroundColor;
+    g.textColor = result.textColor || g.textColor;
+    g.fontFamily = result.fontFamily || g.fontFamily;
+    g.mode = result.mode || g.mode;
+    g.borderRadius = result.borderRadius !== undefined ? result.borderRadius : g.borderRadius;
+
+    f.bg = result.accentColor || f.bg;
+    f.textColor = result.textColor || f.textColor;
+    f.radius = result.borderRadius !== undefined ? result.borderRadius : f.radius;
+
+    rebuildPcPanels();
+    applyPcToIframe();
+
+    showToast(`Website analyzed (${result.source}). Palette applied to all phases.`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'Could not analyze that website.', 'error');
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = origText;
+  }
+}
+
 function applyPcToIframe() {
   if (!pcIframe || !pcConfig) return;
   if (!pcIframe.contentDocument) {
@@ -906,9 +1027,10 @@ function applyPcToIframe() {
     return;
   }
   const doc = pcIframe.contentDocument;
-  let g, p1, p2;
+  let g, p0, p1, p2;
   try {
     g = pcConfig.global;
+    p0 = pcConfig.fabButton;
     p1 = pcConfig.phase1;
     p2 = pcConfig.phase2;
   } catch (e) {
@@ -925,6 +1047,9 @@ function applyPcToIframe() {
   css += ':root { --accent:' + g.primaryColor + ' !important; --accent-2:' + g.secondaryColor + ' !important; --bg:' + g.backgroundColor + ' !important; --panel:' + g.backgroundColor + ' !important; --text:' + (g.mode === 'light' ? '#1a1d24' : '#eef0f4') + ' !important; --muted:' + (g.mode === 'light' ? '#5a5f6e' : '#8b90a0') + ' !important; --radius:' + g.borderRadius + 'rem !important; }' + "\n";
   css += 'body { background:' + g.backgroundColor + ' !important; font-family:' + g.fontFamily + ',system-ui,sans-serif !important; font-size:calc(100% * ' + g.textSize + ') !important; }' + "\n";
   if (g.mode === 'light') css += 'body { color-scheme: light; }' + "\n";
+  // phase 0 — floating button
+  css += '.threeDG-float { position: fixed !important; right: 1.1rem !important; bottom: 1.1rem !important; z-index: 2147482000 !important; display: ' + (p0.float ? 'block' : 'none') + ' !important; }' + "\n";
+  css += '.threeDG-button { background: ' + p0.bg + ' !important; color: ' + p0.textColor + ' !important; border-radius: ' + p0.radius + 'rem !important; }' + "\n";
   // phase 1
   css += '.intro h1 { color:' + p1.headline.color + ' !important; font-size:' + p1.headline.size + 'rem !important; font-weight:' + p1.headline.weight + ' !important; }' + "\n";
   css += '.intro .lead { color:' + p1.instruction.color + ' !important; font-size:' + p1.instruction.size + 'rem !important; line-height:' + p1.instruction.lineHeight + ' !important; }' + "\n";

@@ -339,25 +339,24 @@ revoke all on function public.chart_by_code(text) from public;
 grant execute on function public.chart_by_code(text) to anon, authenticated;
 
 
--- 20261023000000_popup_customization.sql
+-- 20261024000000_user_settings.sql
 
--- Per-garment popup customization (rich editor).
--- `popup` is a JSON object. Empty object = defaults.
-alter table public.size_charts
-  add column if not exists popup jsonb not null default '{}'::jsonb
-  check (jsonb_typeof(popup) = 'object');
+create table if not exists public.user_settings (
+  user_id          uuid primary key references auth.users(id) on delete cascade,
+  notify_results   boolean not null default true,
+  notify_digest    boolean not null default false,
+  notify_marketing boolean not null default false,
+  notify_security  boolean not null default true,
+  billing_email    text,
+  tax_id           text,
+  theme            text not null default 'dark' check (theme in ('dark','light','system')),
+  accent_colour    text not null default '#ff6a4a' check (accent_colour ~* '^#[0-9a-f]{6}$'),
+  default_unit     text not null default 'cm' check (default_unit in ('cm','in')),
+  updated_at       timestamptz not null default now()
+);
 
-drop function if exists public.chart_by_code(text);
-create function public.chart_by_code(candidate text)
-returns table (name text, sex text, unit text, columns jsonb, rows jsonb, popup jsonb)
-language sql
-security definer
-set search_path = public
-as $$
-  select c.name, c.sex, c.unit, c.columns, c.rows, c.popup
-  from public.size_charts c
-  where c.code = lower(trim(candidate))
-  limit 1;
-$$;
-revoke all on function public.chart_by_code(text) from public;
-grant execute on function public.chart_by_code(text) to anon, authenticated;
+alter table public.user_settings enable row level security;
+
+drop policy if exists "user_settings: owner all" on public.user_settings;
+create policy "user_settings: owner all" on public.user_settings
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

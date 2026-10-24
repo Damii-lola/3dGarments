@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; font-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>FindMySize — Shop preview</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body class="shop-preview">
+    <!-- A blank shop page: nothing but the floating FindMySize button in the corner. -->
+    <main class="shop">
+      <section class="shop-hero">
+        <h1>Sample Product</h1>
+        <p class="shop-lead">This is what your shoppers see. The floating FindMySize button opens the size finder popup.</p>
+      </section>
+    </main>
+
+    <!-- The embed script: the chart code comes from a query param ?g=CODE -->
+    <script>
+      (function () {
+        const params = new URLSearchParams(location.search);
+        const code = params.get('g') || '';
+        const s = document.createElement('script');
+        s.src = '/embed.js';
+        if (code) s.setAttribute('data-chart', code);
+        s.setAttribute('data-label', 'Find My Size');
+        document.body.appendChild(s);
+      })();
+    </script>
+  </body>
+</html>
