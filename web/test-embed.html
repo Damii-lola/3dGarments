@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FindMySize — Embed Test Page</title>
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 2rem; background: #f5e9d6; color: #191411; }
+      .product { max-width: 600px; margin: 0 auto; background: #fff; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 20px rgba(0,0,0,.1); }
+      h1 { margin-top: 0; }
+      .badge { display: inline-block; background: #f0521f; color: #fff; padding: .2rem .6rem; border-radius: 999px; font-size: .8rem; margin-bottom: 1rem; }
+      .price { font-size: 1.5rem; font-weight: 700; color: #a9330a; margin: .5rem 0; }
+      .buy { display: inline-block; background: #191411; color: #fff; padding: .8rem 1.6rem; border-radius: .8rem; text-decoration: none; font-weight: 600; margin-top: 1rem; }
+      .buy:hover { background: #3b3028; }
+      .note { margin-top: 2rem; padding: 1rem; background: #fdf7ea; border-radius: .8rem; font-size: .9rem; color: #4a3c31; }
+    </style>
+  </head>
+  <body>
+
+    <main class="product">
+      <span class="badge">New Arrival</span>
+      <h1>Oversized Heavy Tee</h1>
+      <p class="price">$48.00</p>
+      <p>A soft, boxy tee in heavyweight cotton. Model is 5'10" wearing M.</p>
+
+      <!-- The size finder FAB — paste this at the top of your product page's <body> -->
+      <script src="/embed.js" data-chart="test-12345" data-label="Find my size" data-color="#f0521f"></script>
+
+      <a class="buy" href="#">Add to Bag</a>
+    </main>
+
+    <div class="note">
+      <strong>How to test:</strong> Open this page on any device. A floating "Find my size" button should appear bottom-right. Click it — the size finder popup opens over this page.
+    </div>
+
+  </body>
+</html>
