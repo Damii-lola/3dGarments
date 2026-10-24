@@ -232,27 +232,30 @@
             product page</b>. Click inside it, then <b>Copy</b> (or press
             Ctrl/Cmd+C). It looks like this:
           </p>
-          <pre class="chart-snippet-box" style="margin: 0.6rem 0;">&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE"&gt;&lt;/script&gt;</pre>
+          <pre class="chart-snippet-box" style="margin: 0.6rem 0;">&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE" data-label="Find My Size"&gt;&lt;/script&gt;</pre>
           <p class="chart-hint">
-            That single line is the entire integration. You only need the
-            <code>data-chart</code> part; everything else is optional.
+            That single line is the entire integration. The <code>data-chart</code>
+            part tells it which size chart to use; everything else is optional.
           </p>
         </div>
 
         <div class="tile">
-          <h3>Step 2 &mdash; Paste it into your product page</h3>
+          <h3>Step 2 &mdash; Paste it at the top of your product page</h3>
           <p>
             Open your product page's HTML (or your platform's "Custom HTML",
             "Additional scripts", or "Code injection" box) and paste that line
-            once per garment.
+            <b>at the very top of your <code>&lt;body&gt;</code></b>, before anything
+            else. The button will float bottom-right as a FAB.
           </p>
           <ul style="margin: 0.5rem 0 0.5rem 1.2rem; line-height: 1.7;">
-            <li><b>In the &lt;body&gt;</b> (e.g. under the size selector): the button appears exactly where you pasted it.</li>
-            <li><b>In the &lt;head&gt;</b>: there's no visible spot, so the button floats in the bottom-right corner automatically.</li>
+            <li><b>Shopify:</b> Online Store &rarr; Themes &rarr; Edit code &rarr; product page template &rarr; paste at the top of <code>&lt;body&gt;</code>.</li>
+            <li><b>WordPress / WooCommerce:</b> Use a "Custom HTML" block or "Code injection" box on the product page.</li>
+            <li><b>Squarespace:</b> Use a Code block set to "Embed" and paste the line.</li>
+            <li><b>Any other site:</b> Paste the <code>&lt;script&gt;</code> tag right after the opening <code>&lt;body&gt;</code> tag.</li>
           </ul>
           <p class="chart-hint">
             Paste it once per garment. A page selling three garments gets three
-            lines (or three buttons).
+            floating buttons, one per size chart.
           </p>
         </div>
 
@@ -267,16 +270,19 @@
 
         <div class="tile">
           <h3>Step 4 &mdash; Customise (all optional)</h3>
-          <p>Add any of these to the same line:</p>
+          <p>
+            Open the chart card&rsquo;s <b>Preview &amp; Customise Popup</b> panel to
+            style the floating button and every screen of the size finder to match
+            your brand. Then copy the updated snippet below.
+          </p>
           <ul style="margin: 0.5rem 0 0.5rem 1.2rem; line-height: 1.7;">
             <li><b>Button text:</b> <code>data-label="Find my fit"</code></li>
             <li><b>Colour:</b> <code>data-color="#2563eb"</code> (any CSS colour)</li>
-            <li><b>Corner pin:</b> <code>data-float="1"</code></li>
           </ul>
           <p class="chart-hint">
-            Example: a green floating button that says "Find My Size":
+            Example: a green button that says "Find My Size":
           </p>
-          <pre class="chart-snippet-box" style="margin: 0.4rem 0 0;">&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE" data-color="#16a34a" data-float="1"&gt;&lt;/script&gt;</pre>
+          <pre class="chart-snippet-box" style="margin: 0.4rem 0 0;">&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE" data-label="Find My Size" data-color="#16a34a"&gt;&lt;/script&gt;</pre>
         </div>
 
         <div class="tile">
