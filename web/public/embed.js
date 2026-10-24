@@ -242,7 +242,9 @@
       label: spec.label || 'Find My Size',
       base: spec.base || '',
       color: spec.color || spec.accent || '',
-      float: spec.float === '1' || spec.float === 'true',
+      // Floating is the default: a tag at the top of <body> becomes a FAB.
+      // Only data-float="0" pins it inline instead.
+      float: spec.float !== '0' && spec.float !== 'false',
     });
   }
   if (document.body) autoMount();
