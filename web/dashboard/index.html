@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -57,6 +57,12 @@
           <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
           <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
         </div>
+
+        <div class="account-bar" id="account-bar" hidden>
+          <span class="account-name" id="dash-name">—</span>
+          <span class="account-email" id="dash-mail">—</span>
+          <button class="account-out" id="dash-out" type="button">Log out</button>
+        </div>
       </div>
     </header>
 
@@ -78,6 +84,7 @@
         <div class="tile">
           <p class="eyebrow eyebrow-faint">No account on this browser</p>
           <p class="dash-name">Log in to add your clothing</p>
+          <p class="dash-mail" id="dash-mail"></p>
           <p class="dash-mail">
             A username, an email and a password. Your size charts belong to that
             account; a customer opening a link from your product page needs no
