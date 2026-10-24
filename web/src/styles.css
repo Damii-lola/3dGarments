@@ -2369,3 +2369,22 @@ a.btn-ghost {
   .settings-sidebar { order: 1; }
   .settings-content { order: 2; }
 }
+
+/* ============ Shop preview page (Phase 0: blank shop + floating button) ============ */
+
+.shop-preview { margin: 0; padding: 0; background: #0d0e12; }
+
+.shop { width: 100%; min-height: 100vh; display: flex; flex-direction: column; }
+
+.shop-hero {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+.shop-hero h1 {
+  margin: 0 0 0.5rem; font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text);
+}
+.shop-lead {
+  margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.6;
+}
+

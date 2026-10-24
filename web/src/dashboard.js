@@ -696,7 +696,12 @@ function closeCustomizer() {
 function loadPcIframe() {
   if (!pcIframe || !pcChart) return;
   pcIframe.addEventListener('load', () => applyPcToIframe(), { once: true });
-  pcIframe.src = `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
+  // Phase 0 previews the shop page (just the floating button on a blank shop screen).
+  // Phases 1 and 2 preview the scanner popup embedded in the page.
+  const url = pcPhase === 0
+    ? `${SITE}shop/?g=${encodeURIComponent(pcChart.code)}`
+    : `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
+  pcIframe.src = url;
 }
 
 /* ---------- panel builders ---------- */
@@ -780,11 +785,13 @@ function buildPcPanels() {
   const urlLab = document.createElement('label');
   urlLab.textContent = 'Your homepage URL';
   const urlInp = document.createElement('input');
+  urlInp.id = 'pc-website-url';
   urlInp.type = 'text';
   urlInp.placeholder = 'https://your-store.com';
   urlInp.value = pcConfig.websiteUrl || '';
   urlInp.addEventListener('change', () => { pcConfig.websiteUrl = urlInp.value; });
   const analyzeBtn = document.createElement('button');
+  analyzeBtn.id = 'pc-analyze-btn';
   analyzeBtn.type = 'button';
   analyzeBtn.className = 'btn-primary';
   analyzeBtn.textContent = 'Analyze with AI';
@@ -927,12 +934,12 @@ function buildPcPanels() {
 /* ---------- website analysis ---------- */
 
 async function analyzeWebsite() {
-  const urlInp = document.querySelector('.pc-field input[type="text"]');
+  const urlInp = document.getElementById('pc-website-url');
   if (!urlInp) return;
   const url = urlInp.value.trim();
   if (!url) { showToast('Enter a homepage URL first.', 'error'); return; }
 
-  const analyzeBtn = urlInp.nextElementSibling;
+  const analyzeBtn = document.getElementById('pc-analyze-btn');
   const origText = analyzeBtn.textContent;
   analyzeBtn.disabled = true;
   analyzeBtn.textContent = 'Analyzing…';

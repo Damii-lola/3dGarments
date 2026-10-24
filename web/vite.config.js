@@ -31,6 +31,7 @@ export default defineConfig({
         pricing: page('pricing/index.html'),
         dashboard: page('dashboard/index.html'),
         settings: page('settings/index.html'),
+        shop: page('shop/index.html'),
       },
       output: { manualChunks: { three: ['three'], supabase: ['@supabase/supabase-js'] } },
     },
