@@ -510,7 +510,12 @@ function card(chart) {
   const snippetLabel = document.createElement('p');
   snippetLabel.className = 'chart-snippet-label';
   snippetLabel.textContent = 'Popup code for your product page';
-  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}"></script>`;
+  const fab = (chart && chart.popup && chart.popup.fabButton) || {};
+  const fabAttrs = [];
+  if (fab.label) fabAttrs.push(`data-label="${String(fab.label).replace(/"/g, '&quot;')}"`);
+  if (fab.bg) fabAttrs.push(`data-color="${String(fab.bg).replace(/"/g, '&quot;')}"`);
+  if (fab.float === false) fabAttrs.push('data-float="0"');
+  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}" ${fabAttrs.join(' ')}></script>`;
   const snippetBox = document.createElement('textarea');
   snippetBox.className = 'chart-snippet-box';
   snippetBox.readOnly = true;
@@ -622,6 +627,13 @@ const PC_DEFAULTS = {
     logo: '', primaryColor: '#ff6a4a', secondaryColor: '#ff8a5c', accentColor: '#ff5b3a',
     backgroundColor: '#15181f', overlayBlur: 6, borderRadius: 1.35, fontFamily: 'system-ui',
     textSize: 1, mode: 'dark',
+  },
+  fabButton: {
+    label: 'Find My Size',
+    bg: '#ff6a4a',
+    textColor: '#fff',
+    radius: 0.8,
+    float: true,
   },
   phase1: {
     headline: { text: 'Find your size', color: '#eef0f4', size: 1.5, weight: 650 },
@@ -759,6 +771,15 @@ function buildPcPanels() {
   pcText(pcLeft, 'Font family', () => g.fontFamily, (v) => { g.fontFamily = v; });
   pcNumber(pcLeft, 'Overall text size', () => g.textSize, (v) => { g.textSize = v; }, { min: 0.7, max: 1.4, step: 0.05 });
   pcSelect(pcLeft, 'Mode', () => g.mode, (v) => { g.mode = v; }, [['dark', 'Dark'], ['light', 'Light']]);
+
+  // ---- Floating button (FAB) ----
+  const f = pcConfig.fabButton;
+  pcSection(pcLeft, 'Floating button');
+  pcText(pcLeft, 'Button text', () => f.label, (v) => { f.label = v; });
+  pcColor(pcLeft, 'Button colour', () => f.bg, (v) => { f.bg = v; });
+  pcColor(pcLeft, 'Text colour', () => f.textColor, (v) => { f.textColor = v; });
+  pcNumber(pcLeft, 'Border radius', () => f.radius, (v) => { f.radius = v; }, { min: 0, max: 2, step: 0.05 });
+  pcSelect(pcLeft, 'Position', () => f.float ? 'float' : 'inline', (v) => { f.float = v === 'float'; }, [['float', 'Floating bottom-right (FAB)'], ['inline', 'Inline where the tag sits']]);
 
   // ---- Right: element-by-element with phase switcher ----
   const switcher = document.createElement('div');
