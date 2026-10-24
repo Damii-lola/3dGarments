@@ -66,23 +66,62 @@ if (button) button.addEventListener('click', async () => {
    harvested by a third party, and — the useful part — the reply comes back to
    the address the visitor typed, which is the one that needs the answer. */
 const demoForm = document.getElementById('demo-form');
-const demoStatus = document.getElementById('demo-status');
+const demoAlert = document.getElementById('form-alert');
+const demoSuccess = document.getElementById('form-success');
+const demoSuccessEmail = document.getElementById('success-email');
+const demoReset = document.getElementById('form-reset');
+
+const nameInput = document.getElementById('name');
+const storeInput = document.getElementById('store');
+const emailInput = document.getElementById('email');
+const messageInput = document.getElementById('products');
+
+/** The two fields that must be filled in, with the message each one shows. */
+const required = [
+  { input: nameInput, error: document.getElementById('name-error'), ok: (v) => v.length > 0 },
+  { input: emailInput, error: document.getElementById('email-error'), ok: (v) => EMAIL_RE.test(v) },
+];
+
+function mark(field, valid) {
+  if (!field.input) return;
+  field.input.setAttribute('aria-invalid', String(!valid));
+  if (field.error) field.error.hidden = valid;
+}
+
+function clearErrors() {
+  for (const field of required) mark(field, true);
+  if (demoAlert) demoAlert.hidden = true;
+}
+
+for (const field of required) {
+  // Once a field has been flagged it re-checks as the visitor types, so the
+  // message goes away the moment it is no longer true.
+  field.input?.addEventListener('input', () => {
+    if (field.input.getAttribute('aria-invalid') === 'true') mark(field, field.ok(field.input.value.trim()));
+  });
+}
 
 demoForm?.addEventListener('submit', (event) => {
   event.preventDefault();
+  clearErrors();
 
-  const name = document.getElementById('demo-name').value.trim();
-  const store = document.getElementById('demo-store').value.trim();
-  const email = document.getElementById('demo-email').value.trim();
-  const message = document.getElementById('demo-message').value.trim();
+  let firstInvalid = null;
+  for (const field of required) {
+    if (!field.input) continue;
+    const valid = field.ok(field.input.value.trim());
+    mark(field, valid);
+    if (!valid && !firstInvalid) firstInvalid = field.input;
+  }
+  if (firstInvalid) {
+    if (demoAlert) demoAlert.hidden = false;
+    firstInvalid.focus();
+    return;
+  }
 
-  const field = (message) => {
-    demoStatus.className = 'status error';
-    demoStatus.textContent = message;
-  };
-
-  if (!name) return field('A name, please.');
-  if (!EMAIL_RE.test(email)) return field('That does not look like an email address.');
+  const name = nameInput.value.trim();
+  const store = storeInput.value.trim();
+  const email = emailInput.value.trim();
+  const message = messageInput.value.trim();
 
   // Written out and sent, rather than sent by the form: what arrives in the
   // inbox is then something a person can read, in the order they would ask it.
@@ -101,7 +140,46 @@ demoForm?.addEventListener('submit', (event) => {
   const subject = store ? `Demo request — ${store}` : `Demo request — ${name}`;
   window.location.href = `mailto:${DEMO_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
-  demoStatus.className = 'status ok';
-  demoStatus.textContent = 'Your mail app is opening with the details — send it and we will reply.';
+  // The card says what actually happened: the mail app was opened, nothing has
+  // been sent until they press send there.
+  if (demoSuccessEmail) demoSuccessEmail.textContent = email;
+  demoForm.hidden = true;
+  if (demoSuccess) {
+    demoSuccess.hidden = false;
+    demoSuccess.focus();
+  }
 });
 
+demoReset?.addEventListener('click', () => {
+  if (!demoForm) return;
+  // Not reset(): they are editing a request that is still in front of them, not starting another.
+  clearErrors();
+  if (demoSuccess) demoSuccess.hidden = true;
+  demoForm.hidden = false;
+  demoForm.closest('.form-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  nameInput?.focus({ preventScroll: true });
+});
+
+/* ---------- the menu on a phone ----------
+   nav.js opens and closes the section list. This adds what the full-screen
+   version needs on top: the page behind it stops scrolling while it is open,
+   the button says what it will do, and the "Book a Demo" button inside it
+   (which stays on this page) puts the menu away on its way down. */
+const menuButton = document.getElementById('nav-menu');
+if (menuButton) {
+  const syncMenu = () => {
+    const open = menuButton.getAttribute('aria-expanded') === 'true';
+    menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    document.body.classList.toggle('is-locked', open);
+  };
+  new MutationObserver(syncMenu).observe(menuButton, { attributes: true, attributeFilter: ['aria-expanded'] });
+
+  document.querySelector('.nav-demo')?.addEventListener('click', () => {
+    if (menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+
+  // Turning the phone sideways (or widening the window) past the breakpoint must not leave the page locked.
+  window.matchMedia('(min-width: 961px)').addEventListener('change', (event) => {
+    if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+}
