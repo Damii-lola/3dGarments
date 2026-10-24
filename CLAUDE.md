@@ -126,3 +126,6 @@ render.yaml             Render blueprint
 
 ## Dashboard design
 `web/dashboard/index.html` + `web/src/dashboard.css` (standalone, same tokens as `landing.css`) + `web/src/dashboard.js`. The page keeps every id `dashboard.js` uses (`dash-anon`, `dash-in`, `dash-setup`, `dash-list-section`, `dash-how`, `chart-*`, `pc-*`, `stat-*`). Elements marked `data-in-only` / `data-out-only` are shown by `paint()` for signed-in / signed-out visitors. Garment cards are built in `card()` (dashboard.js) to match the `.chart-card` styles. Delete asks through `#confirm-dialog` (falls back to `window.confirm`).
+
+## Auth page design
+`web/auth/index.html` + `web/src/auth.css` (standalone, same tokens as the other redesigned pages) + `web/src/auth.js`. All ids `auth.js` reads are kept (`auth-*`, `tab-*`, `signup-*`, `login-*`, `code-*`, `sent-*`, `recovery-*`, `username-state`, `forgot-btn`). The tab buttons carry `data-tab`, which `showTab()` reads to move the `.on` class. Status text uses `.status.error` / `.status.ok`; the username hint uses `.auth-hint.good` / `.auth-hint.bad`.

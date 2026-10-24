@@ -567,3 +567,20 @@ onAuthChange((session, event) => {
 });
 
 skipBtn.addEventListener('click', () => location.assign(SCANNER));
+
+/* ---------- the menu on a phone ----------
+   nav.js opens and closes the list of pages. This adds: the page behind it
+   stops scrolling while it is open, and the button says what it will do. */
+const menuButton = document.getElementById('nav-menu');
+if (menuButton) {
+  const syncMenu = () => {
+    const open = menuButton.getAttribute('aria-expanded') === 'true';
+    menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    document.body.classList.toggle('is-locked', open);
+  };
+  new MutationObserver(syncMenu).observe(menuButton, { attributes: true, attributeFilter: ['aria-expanded'] });
+  // Widening the window past the breakpoint must not leave the page locked.
+  window.matchMedia('(min-width: 981px)').addEventListener('change', (event) => {
+    if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+}
