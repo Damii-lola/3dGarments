@@ -892,7 +892,7 @@ em { font-style: italic; }
   width: 260px;
   height: 260px;
   border-radius: 50%;
-  border: 1px solid rgba(240, 82, 31, 0.32);
+  border: 1px solid rgb(var(--orange-rgb, 240 82 31) / 0.32);
   pointer-events: none;
 }
 
@@ -1115,7 +1115,7 @@ em { font-style: italic; }
 .faq details:hover { border-color: var(--line-strong); }
 
 .faq details[open] {
-  border-color: rgba(240, 82, 31, 0.45);
+  border-color: rgb(var(--orange-rgb, 240 82 31) / 0.45);
   box-shadow: 0 22px 44px -40px rgba(25, 20, 17, 0.7);
 }
 

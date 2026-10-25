@@ -462,7 +462,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: none;
   border-radius: 50%;
   background: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.14);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.14);
 }
 
 .card-secure {
@@ -634,7 +634,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   outline: none;
   background: var(--paper);
   border-color: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.15);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.15);
 }
 
 .auth-field input:-webkit-autofill,

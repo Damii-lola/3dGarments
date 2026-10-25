@@ -6,8 +6,12 @@
  * edit anything on it. Changes are echoed to Supabase (profile metadata,
  * password, notifications) and confirmed with a toast.
  */
-import { getSession, isAccount, signOut, updatePassword } from './services/auth.js';
+import { getSession, isAccount, signOut, updateEmail } from './services/auth.js';
 import { api } from './services/api.js';
+import { rememberSettings } from './theme.js';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN = 8; // the server enforces the same number
 
 const gate = document.getElementById('settings-gate');
 const body = document.getElementById('settings-body');
@@ -56,6 +60,68 @@ function paint(session) {
   const avatar = document.getElementById('settings-avatar');
   const letter = (name.charAt(0) || '?').toUpperCase();
   avatar.textContent = letter;
+
+  accountId = session?.user?.id || '';
+  loadSettings();
+}
+
+/* ---------- what was saved before ---------- */
+
+// The panels that write what loadSettings() reads. Until it has read it they stay shut:
+// saving a half-empty form over a stored one would erase it.
+const SAVE_BUTTONS = ['settings-save-profile', 'settings-save-notifications', 'settings-save-billing', 'settings-save-appearance'];
+const SAVE_LABELS = { 'settings-save-profile': 'Save changes', 'settings-save-notifications': 'Save notification preferences', 'settings-save-billing': 'Save billing details', 'settings-save-appearance': 'Save appearance' };
+const PANEL_STATUS = ['settings-profile-status', 'settings-notifications-status', 'settings-billing-status', 'settings-appearance-status'];
+
+function holdSaving(held) {
+  for (const id of SAVE_BUTTONS) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = held;
+  }
+}
+
+const field = (id) => document.getElementById(id);
+const setValue = (id, value) => { const el = field(id); if (el && value !== undefined && value !== null) el.value = value; };
+const setChecked = (id, value) => { const el = field(id); if (el && typeof value === 'boolean') el.checked = value; };
+
+let accountId = '';
+let loading = null;
+function loadSettings() {
+  if (loading) return loading;
+  holdSaving(true);
+  loading = api('/api/me/settings')
+    .then(({ settings, profile }) => {
+      setValue('settings-username', profile?.username);
+      setValue('settings-full-name', profile?.full_name);
+      setValue('settings-brand-name', profile?.brand_name);
+      if (settings) {
+        setChecked('settings-notify-results', settings.notify_results);
+        setChecked('settings-notify-digest', settings.notify_digest);
+        setChecked('settings-notify-marketing', settings.notify_marketing);
+        setValue('settings-billing-email', settings.billing_email);
+        setValue('settings-tax-id', settings.tax_id);
+        // null = never chosen: the form shows what is in effect (light, the brand orange, inches).
+        setValue('settings-theme', settings.theme || 'light');
+        setValue('settings-accent-colour', settings.accent_colour || window.FMSTheme?.BRAND || '#f0521f');
+        setValue('settings-unit', settings.default_unit || 'in');
+        rememberSettings(settings, accountId);
+      } else {
+        setValue('settings-theme', 'light');
+        setValue('settings-accent-colour', window.FMSTheme?.BRAND || '#f0521f');
+        setValue('settings-unit', 'in');
+      }
+      holdSaving(false);
+    })
+    .catch(() => {
+      loading = null; // a reload may try again
+      for (const id of PANEL_STATUS) {
+        const status = field(id);
+        if (!status) continue;
+        status.textContent = 'Could not load your saved settings, so saving is switched off. Reload the page to try again.';
+        status.className = 'settings-panel-hint settings-panel-hint-error';
+      }
+    });
+  return loading;
 }
 
 /* ---------- profile ---------- */
@@ -69,13 +135,27 @@ async function saveProfile() {
   const btn = document.getElementById('settings-save-profile');
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
+    const currentEmail = (await getSession())?.user?.email || '';
+    const emailChanged = email.toLowerCase() !== currentEmail.toLowerCase();
+    // Checked first, so a bad address cannot leave the rest half-saved.
+    if (emailChanged && !EMAIL_RE.test(email)) throw new Error('That does not look like an email address.');
+
     await api('/api/me/profile', {
       method: 'PATCH',
-      body: { username, email, full_name: fullName, brand_name: brandName },
+      body: { username, full_name: fullName, brand_name: brandName },
     });
-    status.textContent = 'Saved.';
+
+    let note = 'Saved.';
+    let keepFor = 2500;
+    if (emailChanged) {
+      // The address changes only when the link sent there is followed.
+      await updateEmail(email);
+      note = `Saved. We sent a confirmation link to ${email}. Your sign-in email changes once you follow it.`;
+      keepFor = 12000;
+    }
+    status.textContent = note;
     status.className = 'settings-panel-hint settings-panel-hint-ok';
-    setTimeout(() => { status.textContent = ''; }, 2500);
+    setTimeout(() => { status.textContent = ''; }, keepFor);
   } catch (err) {
     status.textContent = err.message || 'Could not save.';
     status.className = 'settings-panel-hint settings-panel-hint-error';
@@ -95,8 +175,11 @@ async function changePassword() {
   const btn = document.getElementById('settings-save-password');
   btn.disabled = true; btn.textContent = 'Changing…';
   try {
+    if (!current) throw new Error('Enter your current password.');
+    if (newPass.length < PASSWORD_MIN) throw new Error(`A new password needs at least ${PASSWORD_MIN} characters.`);
     if (newPass !== confirm) throw new Error('The two new passwords do not match.');
-    await updatePassword(newPass);
+    // The server tests the current password before it stores the new one.
+    await api('/api/me/password', { method: 'PATCH', body: { current_password: current, new_password: newPass } });
     status.textContent = 'Password changed.';
     status.className = 'settings-panel-hint settings-panel-hint-ok';
     document.getElementById('settings-current-password').value = '';
@@ -171,6 +254,7 @@ async function saveAppearance() {
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
     await api('/api/me/appearance', { method: 'PATCH', body: { theme, accent_colour: accent, unit } });
+    rememberSettings({ theme, accent_colour: accent, default_unit: unit }, accountId);
     status.textContent = 'Appearance saved.';
     status.className = 'settings-panel-hint settings-panel-hint-ok';
     setTimeout(() => { status.textContent = ''; }, 2500);
@@ -182,6 +266,21 @@ async function saveAppearance() {
   }
 }
 document.getElementById('settings-save-appearance')?.addEventListener('click', saveAppearance);
+
+// Choosing a theme or colour shows it at once, on this page and nowhere else: it is kept
+// (on this device and on the account) only when "Save appearance" is pressed, and
+// otherwise the next page load goes back to what was saved.
+function previewAppearance() {
+  window.FMSTheme?.apply({
+    theme: document.getElementById('settings-theme').value,
+    accent: document.getElementById('settings-accent-colour').value,
+  });
+  const status = document.getElementById('settings-appearance-status');
+  status.textContent = 'Previewing. Press "Save appearance" to keep it.';
+  status.className = 'settings-panel-hint';
+}
+document.getElementById('settings-theme')?.addEventListener('change', previewAppearance);
+document.getElementById('settings-accent-colour')?.addEventListener('input', previewAppearance);
 
 /* ---------- danger zone ---------- */
 

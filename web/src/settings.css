@@ -714,9 +714,9 @@ body.is-locked { overflow: hidden; }
   width: 52px;
   height: 52px;
   flex: none;
-  border: 1px solid rgba(240, 82, 31, 0.55);
+  border: 1px solid rgb(var(--orange-rgb, 240 82 31) / 0.55);
   border-radius: 50%;
-  background: rgba(240, 82, 31, 0.12);
+  background: rgb(var(--orange-rgb, 240 82 31) / 0.12);
   font-family: var(--font-display);
   font-size: 1.4rem;
   color: var(--orange);
@@ -928,7 +928,7 @@ body.is-locked { overflow: hidden; }
 .settings-field textarea:focus-visible {
   outline: none;
   border-color: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.22);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.22);
 }
 
 .settings-field input[type="color"] { padding: 5px; cursor: pointer; }

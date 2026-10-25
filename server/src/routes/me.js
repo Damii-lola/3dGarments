@@ -4,6 +4,8 @@ import { HttpError, ah } from '../lib/errors.js';
 import { requireUser } from '../middleware/auth.js';
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config.js';
+import { changePassword, createAttemptLog } from '../services/account-security.js';
+import { parseAppearance, shapeSettings } from '../services/user-settings.js';
 
 const RANGES = {
   height_cm: [120, 220],
@@ -19,6 +21,15 @@ function admin() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+
+/** A client that is only used to test a password: it keeps no session of its own. */
+function probe() {
+  return createClient(config.supabase.url, config.supabase.anonKey || config.supabase.serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+const passwordAttempts = createAttemptLog();
 
 export const me = Router();
 me.use(requireUser);
@@ -78,6 +89,46 @@ me.patch('/profile', ah(async (req, res) => {
   res.json({ ok: true, user: data.user });
 }));
 
+/* ---------- everything the settings page shows ---------- */
+
+me.get('/settings', ah(async (req, res) => {
+  const { data, error } = await db().from('user_settings').select('*').eq('user_id', req.user.id).maybeSingle();
+  if (error) throw new HttpError(500, error.message);
+  // Fresh from the auth service: req.user is cached for a minute after each request.
+  const { data: auth, error: authErr } = await admin().auth.admin.getUserById(req.user.id);
+  if (authErr) throw new HttpError(500, authErr.message);
+  const meta = auth?.user?.user_metadata || {};
+  res.json({
+    settings: shapeSettings(data),
+    profile: { username: meta.username || '', full_name: meta.full_name || '', brand_name: meta.brand_name || '' },
+  });
+}));
+
+/* ---------- password ---------- */
+
+me.patch('/password', ah(async (req, res) => {
+  await changePassword({
+    user: req.user,
+    current: req.body?.current_password,
+    next: req.body?.new_password,
+    attempts: passwordAttempts,
+    // Right or wrong is the only answer wanted; anything else is not "wrong password".
+    verify: async (email, password) => {
+      const { error } = await probe().auth.signInWithPassword({ email, password });
+      if (!error) return true;
+      if (error.status === 429) throw new HttpError(429, 'Too many attempts. Try again in a few minutes.');
+      if (error.status === 400 || /invalid login credentials/i.test(error.message)) return false;
+      throw new HttpError(502, 'Could not check your password just now. Try again.');
+    },
+    update: async (userId, password) => {
+      const { error } = await admin().auth.admin.updateUserById(userId, { password });
+      if (!error) return;
+      throw new HttpError(error.status === 422 || error.status === 400 ? 400 : 500, error.message);
+    },
+  });
+  res.json({ ok: true });
+}));
+
 /* ---------- notifications ---------- */
 
 me.patch('/notifications', ah(async (req, res) => {
@@ -109,15 +160,10 @@ me.patch('/billing', ah(async (req, res) => {
 /* ---------- appearance ---------- */
 
 me.patch('/appearance', ah(async (req, res) => {
-  const { theme, accent_colour, unit } = req.body || {};
-  const { error } = await db().from('user_settings').upsert({
-    user_id: req.user.id,
-    theme: theme || 'dark',
-    accent_colour: accent_colour || '#ff6a4a',
-    default_unit: unit || 'cm',
-  }, { onConflict: 'user_id' });
+  const row = parseAppearance(req.body);
+  const { error } = await db().from('user_settings').upsert({ user_id: req.user.id, ...row }, { onConflict: 'user_id' });
   if (error) throw new HttpError(500, error.message);
-  res.json({ ok: true });
+  res.json({ ok: true, appearance: row });
 }));
 
 /* ---------- delete account ---------- */

@@ -27,8 +27,9 @@ html:not(.embed) body.app {
   --n-line: rgba(25, 20, 17, 0.14);
   --n-line-strong: rgba(25, 20, 17, 0.28);
   --n-line-dark: rgba(245, 233, 214, 0.16);
-  --n-orange: #f0521f;
-  --n-orange-text: #a9330a;
+  --n-orange: var(--orange, #f0521f);
+  --n-orange-text: var(--orange-text, #a9330a);
+  --n-on-dark: #f5e9d6;
   --n-display: "Fraunces Variable", "Fraunces", Georgia, "Times New Roman", serif;
   --n-body: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
 
@@ -187,7 +188,7 @@ html:not(.embed) body.app .stage {
   background:
     radial-gradient(90% 55% at 50% 0%, rgba(240, 82, 31, 0.2), transparent 70%),
     var(--n-ink-2);
-  color: var(--n-cream);
+  color: var(--n-on-dark);
   box-shadow: 0 40px 80px -44px rgba(25, 20, 17, 0.75);
 }
 
@@ -199,7 +200,7 @@ html:not(.embed) body.app .intro h1 {
   font-weight: 400;
   line-height: 1.05;
   letter-spacing: -0.02em;
-  color: var(--n-cream);
+  color: var(--n-on-dark);
 }
 
 html:not(.embed) body.app .intro .lead { font-size: 17px; line-height: 1.55; color: rgba(245, 233, 214, 0.7); }
@@ -238,7 +239,7 @@ html:not(.embed) body.app .cam-cta {
   font-weight: 400;
   letter-spacing: -0.01em;
   text-transform: none;
-  color: var(--n-cream);
+  color: var(--n-on-dark);
 }
 
 html:not(.embed) body.app .cam-cta::after {
@@ -251,7 +252,7 @@ html:not(.embed) body.app .cam-cta::after {
   background: linear-gradient(90deg, transparent, rgba(240, 82, 31, 0.55), transparent);
 }
 
-html:not(.embed) body.app .open-camera:hover .cam-cta { color: var(--n-cream); }
+html:not(.embed) body.app .open-camera:hover .cam-cta { color: var(--n-on-dark); }
 .cam-hint { font-size: 15px; color: rgba(245, 233, 214, 0.6); }
 
 html:not(.embed) body.app .capture,
@@ -269,9 +270,9 @@ html:not(.embed) body.app .privacy {
   box-shadow: none;
 }
 
-html:not(.embed) body.app .privacy-lock { width: 22px; height: 22px; margin-top: 2px; color: var(--n-cream); }
+html:not(.embed) body.app .privacy-lock { width: 22px; height: 22px; margin-top: 2px; color: var(--n-on-dark); }
 html:not(.embed) body.app .privacy-body { gap: 6px; }
-html:not(.embed) body.app .privacy-line { font-size: 16px; font-weight: 600; color: var(--n-cream); }
+html:not(.embed) body.app .privacy-line { font-size: 16px; font-weight: 600; color: var(--n-on-dark); }
 html:not(.embed) body.app .privacy-sub { font-size: 15px; line-height: 1.55; color: rgba(245, 233, 214, 0.62); }
 
 /* the two promises under it (hidden together with the first screen) */
@@ -409,3 +410,24 @@ html:not(.embed) body.app .privacy-sub { font-size: 15px; line-height: 1.55; col
 /* account first, then the menu: the order in the design */
 html:not(.embed) body.app .nav-user { order: 2; }
 html:not(.embed) body.app .nav-menu { order: 3; }
+
+/* ---------- dark theme (see public/theme-init.js; the popup never gets it) ---------- */
+
+html:not(.embed)[data-theme="dark"] body.app {
+  color-scheme: dark;
+  --n-cream: #120e0b;
+  --n-paper: #1b1511;
+  --n-ink: #f5e9d6;
+  --n-ink-soft: #e0d2bd;
+  --n-muted: #b3a28d;
+  --n-line: rgba(245, 233, 214, 0.14);
+  --n-line-strong: rgba(245, 233, 214, 0.3);
+  --n-orange-text: var(--orange-text, #ff8a5c);
+}
+
+html:not(.embed)[data-theme="dark"] body.app .nav { background: rgba(18, 14, 11, 0.92); }
+html:not(.embed)[data-theme="dark"] body.app .nav-link:hover,
+html:not(.embed)[data-theme="dark"] body.app .nav-account-item:hover { background: rgba(245, 233, 214, 0.08); }
+html:not(.embed)[data-theme="dark"] body.app .stage { box-shadow: 0 40px 80px -44px rgba(0, 0, 0, 0.9); border: 1px solid var(--n-line-dark, rgba(245, 233, 214, 0.1)); }
+html:not(.embed)[data-theme="dark"] .page-ticker,
+html:not(.embed)[data-theme="dark"] .page-foot { background: #0b0907; }

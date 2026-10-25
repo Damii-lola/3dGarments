@@ -387,7 +387,7 @@ function resetForm() {
   if (badgeText) badgeText.textContent = 'New chart';
   nameInput.value = '';
   sexInput.value = 'male';
-  unitInput.value = 'in';
+  unitInput.value = window.FMSTheme?.read?.().unit === 'cm' ? 'cm' : 'in'; // the settings page's choice, else inches
   columns = defaultColumns('male');
   paintHead();
   rowsEl.replaceChildren();
@@ -661,6 +661,24 @@ let pcChart = null;
 let pcConfig = null;
 let pcPhase = 1;
 
+/**
+ * The popup's starting colours. When the account has picked an accent colour (Settings >
+ * Appearance), the buttons start in it; a chart that already has its own saved colours
+ * keeps them, and with no accent chosen nothing here changes.
+ */
+function pcDefaults() {
+  const accent = window.FMSTheme?.read?.().accent;
+  const chosen = /^#[0-9a-f]{6}$/i.test(accent || '') && accent.toLowerCase() !== window.FMSTheme.BRAND;
+  if (!chosen) return PC_DEFAULTS;
+  const copy = JSON.parse(JSON.stringify(PC_DEFAULTS));
+  copy.global.primaryColor = accent;
+  copy.fabButton.bg = accent;
+  copy.phase0.bg = accent;
+  copy.phase1.recordButton.bg = accent;
+  copy.phase2.primaryCta.bg = accent;
+  return copy;
+}
+
 const PC_DEFAULTS = {
   global: {
     logo: '', primaryColor: '#ff6a4a', secondaryColor: '#ff8a5c', accentColor: '#ff5b3a',
@@ -713,7 +731,7 @@ function deepMerge(base, over) {
 function openCustomizer(chart) {
   try {
     pcChart = chart;
-    pcConfig = deepMerge(PC_DEFAULTS, chart && chart.popup ? chart.popup : {});
+    pcConfig = deepMerge(pcDefaults(), chart && chart.popup ? chart.popup : {});
     if (!pcOverlay) return;
     pcOverlay.hidden = false;
     document.body.style.overflow = 'hidden';

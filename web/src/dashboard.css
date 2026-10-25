@@ -552,7 +552,7 @@ em { font-style: italic; }
   flex: none;
   border-radius: 50%;
   background: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.16);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.16);
 }
 
 .console-time {
@@ -812,7 +812,7 @@ em { font-style: italic; }
   outline: none;
   background: var(--paper);
   border-color: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.14);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.14);
 }
 
 .field select {
@@ -963,7 +963,7 @@ em { font-style: italic; }
   outline: none;
   background: var(--paper);
   border-color: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.13);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.13);
 }
 
 .chart-row-del {
@@ -1069,7 +1069,7 @@ em { font-style: italic; }
 .toolbar select:focus {
   outline: none;
   border-color: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.14);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.14);
 }
 
 .charts { display: grid; gap: 16px; }
@@ -1255,7 +1255,7 @@ em { font-style: italic; }
 .chart-snippet-box:focus {
   outline: none;
   border-color: var(--orange);
-  box-shadow: 0 0 0 3px rgba(240, 82, 31, 0.18);
+  box-shadow: 0 0 0 3px rgb(var(--orange-rgb, 240 82 31) / 0.18);
 }
 
 .chart-snippet .hint {

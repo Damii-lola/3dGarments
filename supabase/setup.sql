@@ -349,9 +349,9 @@ create table if not exists public.user_settings (
   notify_security  boolean not null default true,
   billing_email    text,
   tax_id           text,
-  theme            text not null default 'dark' check (theme in ('dark','light','system')),
-  accent_colour    text not null default '#ff6a4a' check (accent_colour ~* '^#[0-9a-f]{6}$'),
-  default_unit     text not null default 'cm' check (default_unit in ('cm','in')),
+  theme            text check (theme in ('dark','light','system')),
+  accent_colour    text check (accent_colour ~* '^#[0-9a-f]{6}$'),
+  default_unit     text check (default_unit in ('cm','in')),
   updated_at       timestamptz not null default now()
 );
 
@@ -360,3 +360,16 @@ alter table public.user_settings enable row level security;
 drop policy if exists "user_settings: owner all" on public.user_settings;
 create policy "user_settings: owner all" on public.user_settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- 20261025000000_appearance_defaults.sql
+
+alter table public.user_settings alter column theme drop not null;
+alter table public.user_settings alter column theme drop default;
+alter table public.user_settings alter column accent_colour drop not null;
+alter table public.user_settings alter column accent_colour drop default;
+alter table public.user_settings alter column default_unit drop not null;
+alter table public.user_settings alter column default_unit drop default;
+
+update public.user_settings set theme = null where theme = 'dark';
+update public.user_settings set accent_colour = null where lower(accent_colour) = '#ff6a4a';
+update public.user_settings set default_unit = null where default_unit = 'cm';

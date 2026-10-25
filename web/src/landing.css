@@ -1581,7 +1581,7 @@ button.avatar {
   place-items: center;
   width: 48px;
   height: 48px;
-  border: 1px solid rgba(240, 82, 31, 0.45);
+  border: 1px solid rgb(var(--orange-rgb, 240 82 31) / 0.45);
   border-radius: 50%;
   color: var(--orange);
 }

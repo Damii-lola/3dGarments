@@ -16,6 +16,7 @@
  * nothing here needs a server of its own.
  */
 import { getSession, isAccount, onAuthChange, signOut } from './services/auth.js';
+import './theme.js';
 
 const links = document.getElementById('nav-links');
 const menu = document.getElementById('nav-menu');

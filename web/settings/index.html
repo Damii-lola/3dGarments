@@ -13,6 +13,8 @@
     <meta name="description" content="Account settings." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/settings.css" />
+    <link rel="stylesheet" href="/src/theme.css" />
+    <script src="%BASE_URL%theme-init.js"></script>
   </head>
   <body id="top">
   <a class="skip" href="#main">Skip to content</a>
@@ -162,7 +164,7 @@
                 <div class="settings-field">
                   <label class="settings-field-label" for="settings-email">Email address</label>
                   <input type="email" id="settings-email" placeholder="you@example.com" />
-                  <p class="settings-field-hint">Used for sign-in, receipts and size-finder results.</p>
+                  <p class="settings-field-hint">Used for sign-in, receipts and size-finder results. A new address is confirmed by a link sent to it before it takes effect.</p>
                 </div>
                 <div class="settings-field">
                   <label class="settings-field-label" for="settings-full-name">Full name</label>
@@ -194,7 +196,7 @@
               <div class="settings-grid">
                 <div class="settings-field">
                   <label class="settings-field-label" for="settings-current-password">Current password</label>
-                  <input type="password" id="settings-current-password" autocomplete="current-password" />
+                  <input type="password" id="settings-current-password" autocomplete="current-password" required />
                   <p class="settings-field-hint">Required to change your password.</p>
                 </div>
                 <div class="settings-field">
@@ -338,22 +340,22 @@
                 <div class="settings-field">
                   <label class="settings-field-label" for="settings-theme">Theme</label>
                   <select id="settings-theme">
-                    <option value="dark">Dark</option>
                     <option value="light">Light</option>
-                    <option value="system">System</option>
+                    <option value="dark">Dark</option>
+                    <option value="system">Match my device</option>
                   </select>
-                  <p class="settings-field-hint">Controls the dashboard, popup and scanner colours.</p>
+                  <p class="settings-field-hint">Light, dark, or follow your device. Applies across the site; the popup on your store has its own colours (set in the dashboard).</p>
                 </div>
                 <div class="settings-field">
                   <label class="settings-field-label" for="settings-accent-colour">Accent colour</label>
-                  <input type="color" id="settings-accent-colour" value="#ff6a4a" />
-                  <p class="settings-field-hint">Used on buttons, links and the floating size-finder button.</p>
+                  <input type="color" id="settings-accent-colour" value="#f0521f" />
+                  <p class="settings-field-hint">Used on buttons, links and highlights across the site, and as the starting colour when you customise a popup. Very dark colours are lightened a little so text stays readable.</p>
                 </div>
                 <div class="settings-field">
                   <label class="settings-field-label" for="settings-unit">Default size unit</label>
                   <select id="settings-unit">
-                    <option value="cm">Centimetres (cm)</option>
                     <option value="in">Inches (in)</option>
+                    <option value="cm">Centimetres (cm)</option>
                   </select>
                   <p class="settings-field-hint">Applied to new size charts unless you override them.</p>
                 </div>

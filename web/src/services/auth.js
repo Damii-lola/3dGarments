@@ -168,6 +168,19 @@ export async function requestPasswordReset(email) {
 }
 
 /** Set the new password on the session the reset link carried. */
+/**
+ * Ask for the account's email to change. It does NOT change yet: Supabase sends a
+ * confirmation link to the new address (and, when the project asks for it, to the old
+ * one too), and the address is replaced only once the link is followed. That is the
+ * point - an address typed into a form is not proof that its owner wants it.
+ */
+export async function updateEmail(email) {
+  const c = await sb();
+  if (!c) throw new Error('cloud not configured');
+  const { error } = await c.auth.updateUser({ email }, { emailRedirectTo: accountPageUrl() });
+  if (error) throw error;
+}
+
 export async function updatePassword(password) {
   const c = await sb();
   const { data, error } = await c.auth.updateUser({ password });
