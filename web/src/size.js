@@ -48,6 +48,29 @@ if (embedded) {
   document.querySelector('.nav-brand')?.removeAttribute('href');
 }
 
+if (!embedded) {
+  // The standalone page says it the way its design does. The popup keeps the
+  // original wording (stores restyle and reword that one from the dashboard).
+  const heading = document.querySelector('#intro h1');
+  const lead = document.querySelector('#intro .lead');
+  if (heading) heading.textContent = 'Record one slow turn';
+  if (lead) lead.textContent = 'Turn all the way around, slowly. Stand still, whole body in frame, arms a hand\u2019s width from your sides \u2014 that gap is how we tell your arms from your torso. Max 30 seconds.';
+
+  // The menu on a phone: the page behind it stops scrolling while it is open.
+  const menuButton = document.getElementById('nav-menu');
+  if (menuButton) {
+    const syncMenu = () => {
+      const open = menuButton.getAttribute('aria-expanded') === 'true';
+      menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Sections');
+      document.body.classList.toggle('is-locked', open);
+    };
+    new MutationObserver(syncMenu).observe(menuButton, { attributes: true, attributeFilter: ['aria-expanded'] });
+    window.matchMedia('(min-width: 961px)').addEventListener('change', (event) => {
+      if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+    });
+  }
+}
+
 const config = await within(cloudConfig().catch(() => null), CONFIG_WAIT, null);
 
 if (!config || embedded || chartCode) {

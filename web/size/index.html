@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en" class="scan">
   <head>
     <meta charset="utf-8" />
@@ -8,9 +8,13 @@
          and the signed Supabase storage URLs. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <meta name="theme-color" content="#0d0e12" />
-    <title>FindMySize â€” Find your size</title>
+    <meta name="theme-color" content="#f5e9d6" />
+    <title>FindMySize — Find your size</title>
+    <!-- Before anything paints: the store popup (?embed=1) must never flash the page's own chrome. -->
+    <script src="%BASE_URL%embed-flag.js"></script>
     <link rel="stylesheet" href="/src/styles.css" />
+    <!-- The page around the scanner. Every rule in it is under html:not(.embed). -->
+    <link rel="stylesheet" href="/src/size-shell.css" />
   </head>
   <body class="app">
     <!-- The sky. Three fields of stars, each on its own tile, each sliding one
@@ -27,7 +31,7 @@
          never leaves costs more than it gives. -->
     <header class="nav">
       <div class="nav-inner">
-        <a class="brand nav-brand" href="%BASE_URL%" aria-label="FindMySize â€” home">
+        <a class="brand nav-brand" href="%BASE_URL%" aria-label="FindMySize — home">
           <span class="brand-mark" aria-hidden="true"></span>
           <span class="brand-name">FindMy<b>Size</b></span>
         </a>
@@ -86,6 +90,7 @@
             <circle cx="12" cy="12.2" r="3.6" />
           </svg>
           <span class="cam-cta">Click to Record</span>
+          <span class="cam-hint page-only">360&deg; &middot; hold still &middot; max 30 seconds</span>
         </button>
 
         <div class="capture-choice" id="capture-choice" hidden>
@@ -126,6 +131,17 @@
           </p>
         </div>
       </div>
+
+      <p class="card-foot page-only">
+        <span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+          Measured on your device
+        </span>
+        <span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/></svg>
+          Frames deleted after reading
+        </span>
+      </p>
 
       <!-- Step 2: trim the clip's LENGTH before analysing -->
       <section class="trim" id="trim" hidden>
@@ -260,6 +276,60 @@
 
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </main>
+
+    <div class="page-ticker page-only" aria-hidden="true">
+      <div class="page-ticker-track">
+        <div class="page-ticker-group">
+          <span class="page-ticker-item">No app to install</span>
+          <span class="page-ticker-item">Nothing stored</span>
+          <span class="page-ticker-item">Max 30 seconds</span>
+          <span class="page-ticker-item">Four frames, then deleted</span>
+          <span class="page-ticker-item">Every number shown with its reading</span>
+        </div>
+        <div class="page-ticker-group">
+          <span class="page-ticker-item">No app to install</span>
+          <span class="page-ticker-item">Nothing stored</span>
+          <span class="page-ticker-item">Max 30 seconds</span>
+          <span class="page-ticker-item">Four frames, then deleted</span>
+          <span class="page-ticker-item">Every number shown with its reading</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="page-orange page-only" aria-labelledby="how-title">
+      <div class="page-wrap">
+        <p class="kicker">How it works</p>
+        <h2 id="how-title">One slow turn. <em>Then your size.</em></h2>
+        <ol class="page-steps">
+          <li><b>Record one turn</b>Stand still, whole body in frame, arms a hand&rsquo;s width from your sides. Max 30 seconds.</li>
+          <li><b>Trim if you need to</b>Keep just the turn. Four still frames are measured, then deleted.</li>
+          <li><b>See your size</b>Every measurement is shown with the reading behind it, and scored against the chart.</li>
+        </ol>
+      </div>
+    </section>
+
+    <footer class="page-foot page-only">
+      <div class="page-wrap">
+        <div class="page-foot-top">
+          <a class="foot-brand" href="%BASE_URL%" aria-label="FindMySize — home">
+            <span class="foot-mark" aria-hidden="true"></span>
+            <span>FindMy<b>Size</b></span>
+          </a>
+          <nav aria-label="Footer">
+            <a href="%BASE_URL%">Home</a>
+            <a href="%BASE_URL%size/">Sizing</a>
+            <a href="%BASE_URL%dashboard/">Dashboard</a>
+            <a href="%BASE_URL%pricing/">Pricing</a>
+          </nav>
+        </div>
+        <hr />
+        <p>Nothing is saved. Four still frames are measured once and deleted immediately; the video never leaves your customer&rsquo;s phone. Every measurement is an estimate.</p>
+        <div class="base">
+          <span>&copy; 2026 FindMySize. All rights reserved.</span>
+          <span>Privacy-first by design.</span>
+        </div>
+      </div>
+    </footer>
 
     <!-- The door first: /size is for someone with an account, and the scanner
          itself is heavy (a pose model, three.js, the lab), so src/size.js

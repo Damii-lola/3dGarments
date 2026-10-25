@@ -17,17 +17,7 @@
       </section>
     </main>
 
-    <!-- The embed script: the chart code comes from a query param ?g=CODE -->
-    <script>
-      (function () {
-        const params = new URLSearchParams(location.search);
-        const code = params.get('g') || '';
-        const s = document.createElement('script');
-        s.src = '/embed.js';
-        if (code) s.setAttribute('data-chart', code);
-        s.setAttribute('data-label', 'Find My Size');
-        document.body.appendChild(s);
-      })();
-    </script>
+    <!-- The embed script is added by src/shop.js: the chart code comes from a query param ?g=CODE -->
+    <script type="module" src="/src/shop.js"></script>
   </body>
 </html>

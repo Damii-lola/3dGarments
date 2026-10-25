@@ -129,3 +129,9 @@ render.yaml             Render blueprint
 
 ## Auth page design
 `web/auth/index.html` + `web/src/auth.css` (standalone, same tokens as the other redesigned pages) + `web/src/auth.js`. All ids `auth.js` reads are kept (`auth-*`, `tab-*`, `signup-*`, `login-*`, `code-*`, `sent-*`, `recovery-*`, `username-state`, `forgot-btn`). The tab buttons carry `data-tab`, which `showTab()` reads to move the `.on` class. Status text uses `.status.error` / `.status.ok`; the username hint uses `.auth-hint.good` / `.auth-hint.bad`.
+
+## Pricing and settings design
+`web/pricing/index.html` + `web/src/pricing.css` + `web/src/pricing.js` (the price counts up once; respects reduced motion). `web/settings/index.html` + `web/src/settings.css` + `web/src/settings.js`: the server-backed settings page; each nav button carries `data-panel` (which panel it opens), every field keeps its id.
+
+## Sizing page design
+`web/size/index.html` keeps `styles.css` (the scanner and the store popup) and adds `web/src/size-shell.css`, in which EVERY rule is under `html:not(.embed)`: the popup (`?embed=1`) is unchanged, pixel for pixel. `public/embed-flag.js` marks the popup before first paint so the standalone chrome (`.page-only`: ticker, section, footer) never flashes there. Chrome is written in px because on phones `styles.css` scales the root font. The standalone heading/lead are set in `size.js` (`!embedded`); the popup keeps the original wording the dashboard customiser edits.
