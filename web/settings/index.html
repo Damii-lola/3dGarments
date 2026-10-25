@@ -1,332 +1,427 @@
 <!doctype html>
-<html lang="en" js>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- No inline scripts (the reveal script is a file), no third-party code except
+         the MediaPipe loader and its model. Everything else is this origin, the API
+         and the signed Supabase storage URLs. Fonts are self-hosted for the same reason. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <meta name="theme-color" content="#0d0e12" />
+    <meta name="theme-color" content="#f5e9d6" />
     <title>FindMySize — Settings</title>
-    <meta name="description" content="Account settings for FindMySize." />
-    <link rel="stylesheet" href="/src/styles.css" />
-    <script src="%BASE_URL%reveal.js"></script>
+    <meta name="description" content="Account settings." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/settings.css" />
   </head>
-  <body>
-    <div class="sky" aria-hidden="true">
-      <span class="sky-layer sky-near"></span>
-      <span class="sky-layer sky-mid"></span>
-      <span class="sky-layer sky-far"></span>
+  <body id="top">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span class="brand-name">FindMy<b>Size</b></span>
+      </a>
+
+      <!-- ids below are the ones nav.js drives: current page, the account panel
+           (Settings + Log out when signed in, "Log in or sign up" when not) and the menu -->
+      <nav class="nav" id="nav-links" aria-label="Primary">
+        <a class="nav-link" href="%BASE_URL%">Home</a>
+        <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+        <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+        <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        <a class="btn btn--primary nav-demo" href="%BASE_URL%dashboard/">Open the dashboard</a>
+      </nav>
+
+      <button class="avatar" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="8.5" r="3.5"/>
+          <path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/>
+        </svg>
+      </button>
+
+      <button class="menu-btn" id="nav-menu" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-links">
+        <span></span>
+        <span></span>
+      </button>
+
+      <div class="account" id="nav-account" hidden>
+        <p class="account-note" id="nav-account-note"></p>
+        <a class="account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
+        <a class="account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+        <button class="account-item" id="nav-account-out" type="button" hidden>Log out</button>
+      </div>
     </div>
+  </header>
 
-    <header class="nav">
-      <div class="nav-inner">
-        <a class="brand nav-brand" href="%BASE_URL%" aria-label="FindMySize — home">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span class="brand-name">FindMy<b>Size</b></span>
-        </a>
-
-        <nav class="nav-links" id="nav-links" aria-label="Sections">
-          <a class="nav-link" href="%BASE_URL%">Home</a>
-          <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
-          <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
-          <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
-        </nav>
-
-        <button class="nav-menu" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Sections">
-          <svg class="nav-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
-          </svg>
-        </button>
-
-        <button class="nav-user" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
-          <svg class="nav-user-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="8.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" />
-            <path d="M5.2 20c.5-3.5 3.4-5.6 6.8-5.6s6.3 2.1 6.8 5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-          </svg>
-        </button>
-
-        <div class="nav-account" id="nav-account" hidden>
-          <p class="nav-account-note" id="nav-account-note"></p>
-          <a class="nav-account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
-          <a class="nav-account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
-          <button class="nav-account-item nav-account-out" id="nav-account-out" type="button" hidden>Log out</button>
+  <main id="main" tabindex="-1">
+    <section class="set-hero shell" aria-labelledby="hero-title">
+      <div>
+        <p class="eyebrow">Account &middot; Settings</p>
+        <h1 id="hero-title">Your account,<br />in <em>order.</em></h1>
+        <p class="hero-sub">Manage your account, security, notifications and billing &mdash; everything in one place.</p>
+        <div class="chips">
+          <span class="chip">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="11" width="14" height="9" rx="2.4"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            Saved to your account
+          </span>
+          <span class="chip">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            Nothing about a body is stored
+          </span>
         </div>
       </div>
-    </header>
 
-    <main class="page">
-      <section class="section" data-reveal>
-        <p class="eyebrow">Account</p>
-        <h1 class="section-title">Settings</h1>
-        <p class="section-lead">Manage your account, security, notifications and billing — everything in one place.</p>
-      </section>
+      <aside class="account-file" aria-label="Your account at a glance">
+        <span class="af-ticks" aria-hidden="true"></span>
+        <div class="af-top"><span>Account file</span><span id="af-session">Not logged in</span></div>
+        <div class="af-id">
+          <span class="af-avatar" id="settings-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/></svg>
+          </span>
+          <div>
+            <p class="af-kicker">Account details</p>
+            <p class="af-title">Your identity</p>
+          </div>
+        </div>
+        <div class="af-field">
+          <p class="af-label">Username</p>
+          <p class="af-value" id="settings-account-name">&mdash;</p>
+        </div>
+        <div class="af-field">
+          <p class="af-label">Email</p>
+          <p class="af-value" id="settings-account-email">&mdash;</p>
+        </div>
+        <p class="af-foot" id="af-foot">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="11" width="14" height="9" rx="2.4"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          <span>Supplied by your account</span>
+        </p>
+      </aside>
+    </section>
 
-      <section class="section" data-reveal>
-        <!-- Sign-in gate: unsigned users see a login prompt -->
-        <div id="settings-gate" class="settings-gate" hidden>
-          <div class="tile tile-alert">
-            <h3>Sign in to manage your account</h3>
-            <p>Your settings belong to your account. Sign in (or sign up) to edit them.</p>
-            <div class="actions" style="display:flex; gap:0.6rem; margin-top:0.7rem;">
-              <a class="btn-primary" href="%BASE_URL%auth/">Sign in or sign up</a>
-              <a class="btn-ghost" href="%BASE_URL%">Back to home</a>
+    <section class="shell">
+      <!-- Sign-in gate: unsigned users see a login prompt -->
+      <div id="settings-gate" class="settings-gate" hidden>
+        <div class="gate-card">
+          <h2>Sign in to manage your account</h2>
+          <p>Your settings belong to your account. Sign in (or sign up) to edit them.</p>
+          <div class="settings-actions">
+            <a class="btn btn--primary" href="%BASE_URL%auth/">Sign in or sign up</a>
+            <a class="btn btn--ghost" href="%BASE_URL%">Back to home</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Signed-in settings content -->
+      <div id="settings-body" hidden>
+        <div class="set-layout">
+          <aside class="side">
+            <p class="side-label">Settings</p>
+            <nav class="settings-nav" aria-label="Settings sections">
+              <button class="settings-nav-item settings-nav-item-active" id="nav-account-profile" data-panel="account" type="button" aria-current="true"><span>01</span>Account</button>
+              <button class="settings-nav-item" id="nav-security" data-panel="security" type="button"><span>02</span>Security</button>
+              <button class="settings-nav-item" id="nav-notifications" data-panel="notifications" type="button"><span>03</span>Notifications</button>
+              <button class="settings-nav-item" id="nav-billing" data-panel="billing" type="button"><span>04</span>Billing</button>
+              <button class="settings-nav-item" id="nav-appearance" data-panel="appearance" type="button"><span>05</span>Appearance</button>
+              <button class="settings-nav-item is-danger" id="nav-danger" data-panel="danger" type="button"><span>06</span>Danger zone</button>
+            </nav>
+            <div class="side-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+              <p>Your settings are saved to your account. No body data is ever stored.</p>
+              <button class="btn btn--ghost btn--small settings-change-plan" id="settings-change-plan" type="button">Change plan</button>
+            </div>
+          </aside>
+
+          <div class="settings-content">
+            <!-- Account / Profile -->
+            <div id="panel-account" class="settings-panel settings-panel-active">
+              <header class="panel-head">
+                <span class="panel-no" aria-hidden="true">01</span>
+                <div>
+                  <p class="panel-kicker">Profile</p>
+                  <h2>Account details</h2>
+                </div>
+                <p class="panel-side">How your account is identified across the workspace.</p>
+              </header>
+              <div class="settings-grid">
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-username">Username</label>
+                  <input type="text" id="settings-username" placeholder="e.g. alex" maxlength="30" />
+                  <p class="settings-field-hint">Public name shown on your charts and dashboard.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-email">Email address</label>
+                  <input type="email" id="settings-email" placeholder="you@example.com" />
+                  <p class="settings-field-hint">Used for sign-in, receipts and size-finder results.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-full-name">Full name</label>
+                  <input type="text" id="settings-full-name" placeholder="Alex Rivera" />
+                  <p class="settings-field-hint">Optional. Appears on invoices and export reports.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-brand-name">Brand / store name</label>
+                  <input type="text" id="settings-brand-name" placeholder="e.g. Alex&rsquo;s Threads" />
+                  <p class="settings-field-hint">Shown on the size finder popup and order confirmation emails.</p>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn--primary settings-save-profile" id="settings-save-profile" type="button">Save changes</button>
+              </div>
+              <p class="settings-panel-hint" id="settings-profile-status" role="status"></p>
+            </div>
+
+            <!-- Security -->
+            <div id="panel-security" class="settings-panel">
+              <header class="panel-head">
+                <span class="panel-no" aria-hidden="true">02</span>
+                <div>
+                  <p class="panel-kicker">Security</p>
+                  <h2>Password &amp; access</h2>
+                </div>
+                <p class="panel-side">Keep your account yours.</p>
+              </header>
+              <div class="settings-grid">
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-current-password">Current password</label>
+                  <input type="password" id="settings-current-password" autocomplete="current-password" />
+                  <p class="settings-field-hint">Required to change your password.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-new-password">New password</label>
+                  <input type="password" id="settings-new-password" minlength="8" autocomplete="new-password" />
+                  <p class="settings-field-hint">At least 8 characters.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-confirm-password">Confirm new password</label>
+                  <input type="password" id="settings-confirm-password" autocomplete="new-password" />
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn--primary settings-save-password" id="settings-save-password" type="button">Change password</button>
+              </div>
+              <p class="settings-panel-hint" id="settings-password-status" role="status"></p>
+
+              <div class="settings-divider">
+                <span>Signed-in devices</span>
+              </div>
+              <div class="settings-grid settings-device-list" id="settings-device-list">
+                <div class="settings-device-row">
+                  <div class="settings-device-info">
+                    <p class="settings-device-name">This browser</p>
+                    <p class="settings-device-meta">Chrome &bull; Lagos, Nigeria &bull; Active now</p>
+                  </div>
+                  <button class="settings-device-signout" id="settings-signout-others" type="button">Sign out of all other devices</button>
+                </div>
+              </div>
+              <p class="settings-panel-hint" id="settings-security-status" role="status"></p>
+            </div>
+
+            <!-- Notifications -->
+            <div id="panel-notifications" class="settings-panel">
+              <header class="panel-head">
+                <span class="panel-no" aria-hidden="true">03</span>
+                <div>
+                  <p class="panel-kicker">Notifications</p>
+                  <h2>How we reach you</h2>
+                </div>
+                <p class="panel-side">Choose what reaches you, and how often.</p>
+              </header>
+              <div class="settings-grid">
+                <div class="settings-toggle-field">
+                  <div>
+                    <label class="settings-toggle-label" for="settings-notify-results">Size-finder results</label>
+                    <p class="settings-toggle-hint">Get an email when a shopper uses your size finder.</p>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settings-notify-results" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="settings-toggle-field">
+                  <div>
+                    <label class="settings-toggle-label" for="settings-notify-digest">Weekly digest</label>
+                    <p class="settings-toggle-hint">A summary of charts, scans and conversions every Monday.</p>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settings-notify-digest" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="settings-toggle-field">
+                  <div>
+                    <label class="settings-toggle-label" for="settings-notify-marketing">Marketing &amp; product updates</label>
+                    <p class="settings-toggle-hint">New features, pricing changes and early access invites.</p>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settings-notify-marketing" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="settings-toggle-field">
+                  <div>
+                    <label class="settings-toggle-label" for="settings-notify-security">Security alerts</label>
+                    <p class="settings-toggle-hint">New sign-ins, password changes and suspicious activity.</p>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settings-notify-security" checked disabled />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn--primary settings-save-notifications" id="settings-save-notifications" type="button">Save notification preferences</button>
+              </div>
+              <p class="settings-panel-hint" id="settings-notifications-status" role="status"></p>
+            </div>
+
+            <!-- Billing -->
+            <div id="panel-billing" class="settings-panel">
+              <header class="panel-head">
+                <span class="panel-no" aria-hidden="true">04</span>
+                <div>
+                  <p class="panel-kicker">Billing</p>
+                  <h2>Subscription</h2>
+                </div>
+                <p class="panel-side">One flat price per store.</p>
+              </header>
+              <div class="settings-plan-card">
+                <div class="settings-plan-info">
+                  <p class="settings-plan-name" id="settings-plan-name">Pro</p>
+                  <p class="settings-plan-price">$150 <span class="settings-plan-period">/ month</span></p>
+                  <p class="settings-plan-next" id="settings-plan-next">Next invoice: &mdash;</p>
+                </div>
+                <div class="settings-plan-actions">
+                  <button class="btn btn--primary settings-manage-subscription" id="settings-manage-subscription" type="button">Manage subscription</button>
+                  <button class="btn btn--ghost settings-download-invoice" id="settings-download-invoice" type="button">Download latest invoice</button>
+                </div>
+              </div>
+              <div class="settings-grid settings-billing-grid">
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-billing-email">Billing email</label>
+                  <input type="email" id="settings-billing-email" />
+                  <p class="settings-field-hint">Invoices and receipts are sent here.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-tax-id">Tax ID (optional)</label>
+                  <input type="text" id="settings-tax-id" placeholder="e.g. VAT number" />
+                  <p class="settings-field-hint">Added to invoices where applicable.</p>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn--primary settings-save-billing" id="settings-save-billing" type="button">Save billing details</button>
+              </div>
+              <p class="settings-panel-hint" id="settings-billing-status" role="status"></p>
+            </div>
+
+            <!-- Appearance -->
+            <div id="panel-appearance" class="settings-panel">
+              <header class="panel-head">
+                <span class="panel-no" aria-hidden="true">05</span>
+                <div>
+                  <p class="panel-kicker">Appearance</p>
+                  <h2>Look &amp; feel</h2>
+                </div>
+                <p class="panel-side">The units and colours you reach for most often.</p>
+              </header>
+              <div class="settings-grid">
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-theme">Theme</label>
+                  <select id="settings-theme">
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="system">System</option>
+                  </select>
+                  <p class="settings-field-hint">Controls the dashboard, popup and scanner colours.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-accent-colour">Accent colour</label>
+                  <input type="color" id="settings-accent-colour" value="#ff6a4a" />
+                  <p class="settings-field-hint">Used on buttons, links and the floating size-finder button.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field-label" for="settings-unit">Default size unit</label>
+                  <select id="settings-unit">
+                    <option value="cm">Centimetres (cm)</option>
+                    <option value="in">Inches (in)</option>
+                  </select>
+                  <p class="settings-field-hint">Applied to new size charts unless you override them.</p>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn--primary settings-save-appearance" id="settings-save-appearance" type="button">Save appearance</button>
+              </div>
+              <p class="settings-panel-hint" id="settings-appearance-status" role="status"></p>
+            </div>
+
+            <!-- Danger zone -->
+            <div id="panel-danger" class="settings-panel settings-danger">
+              <header class="panel-head">
+                <span class="panel-no" aria-hidden="true">06</span>
+                <div>
+                  <p class="panel-kicker">Danger zone</p>
+                  <h2>Delete your account</h2>
+                </div>
+                <p class="panel-side">This cannot be undone.</p>
+              </header>
+              <p class="settings-panel-copy">
+                Deleting your account permanently removes your size charts, shopper data and billing
+                history. It cannot be undone. Any active subscription will be cancelled.
+              </p>
+              <div class="settings-actions">
+                <button class="btn btn-danger settings-delete-account" id="settings-delete-account" type="button">Delete account</button>
+              </div>
+              <p class="settings-panel-hint" id="settings-danger-status" role="status"></p>
             </div>
           </div>
         </div>
+      </div>
+    </section>
+  </main>
 
-        <!-- Signed-in settings content -->
-        <div id="settings-body" hidden>
-          <!-- Settings sidebar + content -->
-          <div class="settings-shell">
-            <aside class="settings-sidebar">
-              <div class="settings-account-card">
-                <div class="settings-avatar" id="settings-avatar"></div>
-                <p class="settings-account-name" id="settings-account-name">—</p>
-                <p class="settings-account-email" id="settings-account-email">—</p>
-                <button class="btn-secondary settings-change-plan" id="settings-change-plan" style="width:100%; margin-top:0.7rem;">Change plan</button>
-              </div>
-
-              <nav class="settings-nav">
-                <button class="settings-nav-item settings-nav-item-active" id="nav-account-profile" type="button">Account</button>
-                <button class="settings-nav-item" id="nav-security" type="button">Security</button>
-                <button class="settings-nav-item" id="nav-notifications" type="button">Notifications</button>
-                <button class="settings-nav-item" id="nav-billing" type="button">Billing</button>
-                <button class="settings-nav-item" id="nav-appearance" type="button">Appearance</button>
-                <button class="settings-nav-item" id="nav-danger" type="button">Danger zone</button>
-              </nav>
-            </aside>
-
-            <div class="settings-content">
-              <!-- Account / Profile -->
-              <div id="panel-account" class="settings-panel settings-panel-active">
-                <p class="settings-panel-eyebrow">Profile</p>
-                <h2 class="settings-panel-title">Account details</h2>
-                <div class="settings-grid">
-                  <div class="settings-field">
-                    <label class="settings-field-label">Username</label>
-                    <input type="text" id="settings-username" placeholder="e.g. alex" maxlength="30" />
-                    <p class="settings-field-hint">Public name shown on your charts and dashboard.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Email address</label>
-                    <input type="email" id="settings-email" placeholder="you@example.com" />
-                    <p class="settings-field-hint">Used for sign-in, receipts and size-finder results.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Full name</label>
-                    <input type="text" id="settings-full-name" placeholder="Alex Rivera" />
-                    <p class="settings-field-hint">Optional. Appears on invoices and export reports.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Brand / store name</label>
-                    <input type="text" id="settings-brand-name" placeholder="e.g. Alex&rsquo;s Threads" />
-                    <p class="settings-field-hint">Shown on the size finder popup and order confirmation emails.</p>
-                  </div>
-                </div>
-                <div class="settings-actions">
-                  <button class="btn-primary settings-save-profile" id="settings-save-profile">Save changes</button>
-                </div>
-                <p class="settings-panel-hint" id="settings-profile-status"></p>
-              </div>
-
-              <!-- Security -->
-              <div id="panel-security" class="settings-panel">
-                <p class="settings-panel-eyebrow">Security</p>
-                <h2 class="settings-panel-title">Password &amp; access</h2>
-                <div class="settings-grid">
-                  <div class="settings-field">
-                    <label class="settings-field-label">Current password</label>
-                    <input type="password" id="settings-current-password" />
-                    <p class="settings-field-hint">Required to change your password.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">New password</label>
-                    <input type="password" id="settings-new-password" minlength="8" />
-                    <p class="settings-field-hint">At least 8 characters.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Confirm new password</label>
-                    <input type="password" id="settings-confirm-password" />
-                  </div>
-                </div>
-                <div class="settings-actions">
-                  <button class="btn-primary settings-save-password" id="settings-save-password">Change password</button>
-                </div>
-                <p class="settings-panel-hint" id="settings-password-status"></p>
-
-                <div class="settings-divider">
-                  <span>Signed-in devices</span>
-                </div>
-                <div class="settings-grid settings-device-list" id="settings-device-list">
-                  <div class="settings-device-row">
-                    <div class="settings-device-info">
-                      <p class="settings-device-name">This browser</p>
-                      <p class="settings-device-meta">Chrome &bull; Lagos, Nigeria &bull; Active now</p>
-                    </div>
-                    <button class="settings-device-signout" id="settings-signout-others">Sign out of all other devices</button>
-                  </div>
-                </div>
-                <p class="settings-panel-hint" id="settings-security-status"></p>
-              </div>
-
-              <!-- Notifications -->
-              <div id="panel-notifications" class="settings-panel">
-                <p class="settings-panel-eyebrow">Notifications</p>
-                <h2 class="settings-panel-title">How we reach you</h2>
-                <div class="settings-grid">
-                  <div class="settings-toggle-field">
-                    <div>
-                      <label class="settings-toggle-label">Size-finder results</label>
-                      <p class="settings-toggle-hint">Get an email when a shopper uses your size finder.</p>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settings-notify-results" checked />
-                      <span class="switch-slider"></span>
-                    </label>
-                  </div>
-                  <div class="settings-toggle-field">
-                    <div>
-                      <label class="settings-toggle-label">Weekly digest</label>
-                      <p class="settings-toggle-hint">A summary of charts, scans and conversions every Monday.</p>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settings-notify-digest" />
-                      <span class="switch-slider"></span>
-                    </label>
-                  </div>
-                  <div class="settings-toggle-field">
-                    <div>
-                      <label class="settings-toggle-label">Marketing &amp; product updates</label>
-                      <p class="settings-toggle-hint">New features, pricing changes and early access invites.</p>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settings-notify-marketing" />
-                      <span class="switch-slider"></span>
-                    </label>
-                  </div>
-                  <div class="settings-toggle-field">
-                    <div>
-                      <label class="settings-toggle-label">Security alerts</label>
-                      <p class="settings-toggle-hint">New sign-ins, password changes and suspicious activity.</p>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settings-notify-security" checked disabled />
-                      <span class="switch-slider"></span>
-                    </label>
-                  </div>
-                </div>
-                <div class="settings-actions">
-                  <button class="btn-primary settings-save-notifications" id="settings-save-notifications">Save notification preferences</button>
-                </div>
-                <p class="settings-panel-hint" id="settings-notifications-status"></p>
-              </div>
-
-              <!-- Billing -->
-              <div id="panel-billing" class="settings-panel">
-                <p class="settings-panel-eyebrow">Billing</p>
-                <h2 class="settings-panel-title">Subscription</h2>
-                <div class="settings-plan-card">
-                  <div class="settings-plan-info">
-                    <p class="settings-plan-name" id="settings-plan-name">Pro</p>
-                    <p class="settings-plan-price">$150 <span class="settings-plan-period">/ month</span></p>
-                    <p class="settings-plan-next" id="settings-plan-next">Next invoice: &mdash;</p>
-                  </div>
-                  <div class="settings-plan-actions">
-                    <button class="btn-primary settings-manage-subscription" id="settings-manage-subscription">Manage subscription</button>
-                    <button class="btn-ghost settings-download-invoice" id="settings-download-invoice">Download latest invoice</button>
-                  </div>
-                </div>
-                <div class="settings-grid settings-billing-grid">
-                  <div class="settings-field">
-                    <label class="settings-field-label">Billing email</label>
-                    <input type="email" id="settings-billing-email" />
-                    <p class="settings-field-hint">Invoices and receipts are sent here.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Tax ID (optional)</label>
-                    <input type="text" id="settings-tax-id" placeholder="e.g. VAT number" />
-                    <p class="settings-field-hint">Added to invoices where applicable.</p>
-                  </div>
-                </div>
-                <div class="settings-actions">
-                  <button class="btn-primary settings-save-billing" id="settings-save-billing">Save billing details</button>
-                </div>
-                <p class="settings-panel-hint" id="settings-billing-status"></p>
-              </div>
-
-              <!-- Appearance -->
-              <div id="panel-appearance" class="settings-panel">
-                <p class="settings-panel-eyebrow">Appearance</p>
-                <h2 class="settings-panel-title">Look &amp; feel</h2>
-                <div class="settings-grid">
-                  <div class="settings-field">
-                    <label class="settings-field-label">Theme</label>
-                    <select id="settings-theme">
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                      <option value="system">System</option>
-                    </select>
-                    <p class="settings-field-hint">Controls the dashboard, popup and scanner colours.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Accent colour</label>
-                    <input type="color" id="settings-accent-colour" value="#ff6a4a" />
-                    <p class="settings-field-hint">Used on buttons, links and the floating size-finder button.</p>
-                  </div>
-                  <div class="settings-field">
-                    <label class="settings-field-label">Default size unit</label>
-                    <select id="settings-unit">
-                      <option value="cm">Centimetres (cm)</option>
-                      <option value="in">Inches (in)</option>
-                    </select>
-                    <p class="settings-field-hint">Applied to new size charts unless you override them.</p>
-                  </div>
-                </div>
-                <div class="settings-actions">
-                  <button class="btn-primary settings-save-appearance" id="settings-save-appearance">Save appearance</button>
-                </div>
-                <p class="settings-panel-hint" id="settings-appearance-status"></p>
-              </div>
-
-              <!-- Danger zone -->
-              <div id="panel-danger" class="settings-panel settings-danger">
-                <p class="settings-panel-eyebrow" style="color:#ff8f8f;">Danger zone</p>
-                <h2 class="settings-panel-title">Delete your account</h2>
-                <p class="settings-panel-copy">
-                  Deleting your account permanently removes your size charts, shopper data and billing
-                  history. It cannot be undone. Any active subscription will be cancelled.
-                </p>
-                <div class="settings-actions">
-                  <button class="btn-danger settings-delete-account" id="settings-delete-account">Delete account</button>
-                </div>
-                <p class="settings-panel-hint" id="settings-danger-status"></p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="foot">
-      <div class="foot-inner">
-        <span class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-top">
+        <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
           <span class="brand-name">FindMy<b>Size</b></span>
-        </span>
-        <nav class="foot-links" aria-label="Footer">
+        </a>
+        <nav class="footer-nav" aria-label="Footer">
           <a href="%BASE_URL%">Home</a>
           <a href="%BASE_URL%size/">Sizing</a>
           <a href="%BASE_URL%dashboard/">Dashboard</a>
           <a href="%BASE_URL%pricing/">Pricing</a>
         </nav>
       </div>
-      <p class="foot-note">
-        Nothing is saved. Four still frames are measured once and deleted immediately; the video never leaves your customer's phone.
-        Every measurement is an estimate.
-      </p>
-    </footer>
+      <div class="footer-rule" aria-hidden="true"></div>
+      <p class="footer-legal">Nothing is saved. Four still frames are measured once and deleted immediately; the video never leaves your customer&rsquo;s phone. Every measurement is an estimate.</p>
+      <div class="footer-base">
+        <span>&copy; 2026 FindMySize. All rights reserved.</span>
+        <span>Privacy-first by design.</span>
+      </div>
+    </div>
+  </footer>
 
-    <script type="module" src="/src/nav.js"></script>
-    <script type="module" src="/src/settings.js"></script>
+  <script type="module" src="/src/nav.js"></script>
+  <script type="module" src="/src/settings.js"></script>
   </body>
 </html>

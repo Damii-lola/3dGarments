@@ -15,14 +15,25 @@ const body = document.getElementById('settings-body');
 const panels = document.querySelectorAll('.settings-panel');
 const navItems = document.querySelectorAll('.settings-nav-item');
 
+/**
+ * Which panel a nav button opens is written on the button (data-panel), not worked
+ * out from its id: the first one is "nav-account-profile" but its panel is
+ * "panel-account", so deriving one from the other left "Account" opening nothing.
+ */
 function showPanel(id) {
   panels.forEach((p) => p.classList.toggle('settings-panel-active', p.id === `panel-${id}`));
-  navItems.forEach((n) => n.classList.toggle('settings-nav-item-active', n.id === `nav-${id}`));
-  window.scrollTo(0, 0);
+  navItems.forEach((n) => {
+    const on = n.dataset.panel === id;
+    n.classList.toggle('settings-nav-item-active', on);
+    if (on) n.setAttribute('aria-current', 'true');
+    else n.removeAttribute('aria-current');
+  });
+  // The panel, not the top of the page: the hero is tall, and this is a tab, not a new page.
+  document.getElementById('settings-body')?.scrollIntoView({ block: 'start' });
 }
 
 navItems.forEach((n) => {
-  n.addEventListener('click', () => showPanel(n.id.replace('nav-', '')));
+  n.addEventListener('click', () => showPanel(n.dataset.panel));
 });
 
 /* ---------- sign-in gating ---------- */
@@ -194,3 +205,37 @@ document.getElementById('settings-delete-account')?.addEventListener('click', as
 /* ---------- boot ---------- */
 
 getSession().then(paint).catch(() => paint(null));
+
+/* ---------- the page around the panels ----------
+   The account file at the top says who is logged in (its name and email are filled
+   in by paint() above, which is the one place that reads the session); this adds
+   the words around them, and the menu on a phone. */
+getSession().then((session) => {
+  const account = isAccount(session);
+  const label = document.getElementById('af-session');
+  if (label) label.textContent = account ? 'Live session' : 'Not logged in';
+  const foot = document.getElementById('af-foot')?.querySelector('span');
+  if (foot && !account) {
+    foot.replaceChildren('No account on this browser \u00b7 ');
+    const link = document.createElement('a');
+    link.href = new URL('../auth/', location.href).href;
+    link.textContent = 'Log in';
+    foot.append(link);
+  }
+}).catch(() => {});
+
+const menuButton = document.getElementById('nav-menu');
+if (menuButton) {
+  const syncMenu = () => {
+    const open = menuButton.getAttribute('aria-expanded') === 'true';
+    menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    document.body.classList.toggle('is-locked', open);
+  };
+  new MutationObserver(syncMenu).observe(menuButton, { attributes: true, attributeFilter: ['aria-expanded'] });
+  document.querySelector('.nav-demo')?.addEventListener('click', () => {
+    if (menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+  window.matchMedia('(min-width: 961px)').addEventListener('change', (event) => {
+    if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+}
