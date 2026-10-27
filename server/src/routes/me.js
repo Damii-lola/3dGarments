@@ -171,6 +171,77 @@ me.get('/subscription', ah(async (req, res) => {
   });
 }));
 
+/**
+ * Activate a customer's $150/month unlimited plan automatically.
+ *
+ * Selar has no webhooks, so after paying on Selar the customer comes back here,
+ * enters the email they used, and we poll Selar's product API (SELAR_API_KEY) to
+ * confirm a new sale happened (sales count went up) before activating their plan.
+ */
+me.post('/subscription/activate', ah(async (req, res) => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpError(400, 'A valid email is required');
+  }
+
+  const apiKey = process.env.SELAR_API_KEY || '';
+  if (!apiKey) throw new HttpError(503, 'Selar is not configured on the server');
+
+  // Check this customer isn't already active.
+  const { data: existing } = await db().from('subscriptions').select('*').eq('user_id', req.user.id).maybeSingle();
+  if (existing?.status === 'active' && new Date(existing.paid_until) > new Date()) {
+    return res.json({ ok: true, already: true, plan: 'unlimited', status: 'active' });
+  }
+
+  // Poll Selar for the product's current sales count.
+  const selarRes = await fetch('https://api.selar.com/v1/me/products', {
+    headers: { 'api-key': apiKey },
+  });
+  if (!selarRes.ok) throw new HttpError(502, 'Could not reach Selar');
+  const selar = await selarRes.json();
+  const product = Array.isArray(selar.data) ? selar.data.find((p) => String(p.code) === '1w89133gya') : null;
+  if (!product) throw new HttpError(502, 'Could not find the FindMySize Subscription product on Selar');
+
+  const sales = Number(product.sales || 0);
+
+  // Global watermark: the last sales count we processed. Stored in app_settings.
+  const { data: watermarkRow } = await db().from('app_settings').select('value').eq('key', 'selar_sales_watermark').maybeSingle();
+  const lastSeen = watermarkRow?.value?.sales_count ?? 0;
+
+  if (sales <= lastSeen) {
+    throw new HttpError(402, "We couldn't find a new Selar purchase yet. Make sure you paid on Selar and try again.");
+  }
+
+  const now = new Date();
+  const paidUntil = new Date(now);
+  paidUntil.setMonth(paidUntil.getMonth() + 1);
+
+  // Advance the global watermark and activate the plan.
+  await db().from('app_settings').upsert({
+    key: 'selar_sales_watermark',
+    value: { sales_count: sales, updated_at: now.toISOString() },
+    updated_at: now.toISOString(),
+  }, { onConflict: 'key' });
+
+  const { error } = await db()
+    .from('subscriptions')
+    .upsert({
+      user_id: req.user.id,
+      plan: 'unlimited',
+      status: 'active',
+      selar_customer_id: null,
+      selar_transaction_id: null,
+      paid_until: paidUntil.toISOString(),
+      updated_at: now.toISOString(),
+    }, { onConflict: 'user_id' });
+
+  if (error) throw new HttpError(500, error.message);
+
+  res.json({ ok: true, plan: 'unlimited', status: 'active', paid_until: paidUntil.toISOString() });
+}));
+
+/* ---------- appearance ---------- */
+
 /* ---------- appearance ---------- */
 
 me.patch('/appearance', ah(async (req, res) => {

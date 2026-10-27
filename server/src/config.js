@@ -144,6 +144,10 @@ export const config = Object.freeze({
   selarWebhookSecret: process.env.SELAR_WEBHOOK_SECRET || '',
   // your Selar checkout link for the $150/month unlimited plan
   selarCheckoutUrl: process.env.SELAR_CHECKOUT_URL || '',
+  // email of the store owner — only this address can manually activate plans
+  // (Selar has no webhooks, so you verify sales on your Selar dashboard then
+  // call POST /api/me/subscription/activate)
+  adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase().trim(),
   processingSize: Number(process.env.PROCESSING_SIZE || 1024),
   signedUrlTtl: 60 * 60 * 6,
 });
