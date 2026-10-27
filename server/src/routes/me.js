@@ -172,17 +172,17 @@ me.get('/subscription', ah(async (req, res) => {
 }));
 
 /**
- * Activate a customer's $150/month unlimited plan automatically.
+ * Activate the signed-in customer's $150/month unlimited plan automatically.
  *
- * Selar has no webhooks, so after paying on Selar the customer comes back here,
- * enters the email they used, and we poll Selar's product API (SELAR_API_KEY) to
- * confirm a new sale happened (sales count went up) before activating their plan.
+ * Selar has no webhooks, so after paying on Selar the customer comes back here.
+ * We don't ask for an email — we use the email from their already-authenticated
+ * session, so nobody can activate someone else's plan. We poll Selar's product
+ * API (SELAR_API_KEY) to confirm a new sale happened (sales count went up)
+ * before activating their plan.
  */
 me.post('/subscription/activate', ah(async (req, res) => {
-  const { email } = req.body || {};
-  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new HttpError(400, 'A valid email is required');
-  }
+  const email = String(req.user.email || '').toLowerCase();
+  if (!email) throw new HttpError(400, 'No email on this account');
 
   const apiKey = process.env.SELAR_API_KEY || '';
   if (!apiKey) throw new HttpError(503, 'Selar is not configured on the server');
@@ -209,7 +209,7 @@ me.post('/subscription/activate', ah(async (req, res) => {
   const lastSeen = watermarkRow?.value?.sales_count ?? 0;
 
   if (sales <= lastSeen) {
-    throw new HttpError(402, "We couldn't find a new Selar purchase yet. Make sure you paid on Selar and try again.");
+    throw new HttpError(402, "We couldn't find a new Selar purchase for your account yet. Make sure you paid on Selar and try again.");
   }
 
   const now = new Date();
