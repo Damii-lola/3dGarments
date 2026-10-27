@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>FindMySize — Shop preview</title>
+    <style>
+      /* A stand-in for a store's product page, so the button is seen where it will live.
+         Deliberately plain and light: it is the store's page, not ours. */
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f6f5f2; color: #1f1d1a; }
+      header { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; background: #fff; border-bottom: 1px solid #e6e3dd; }
+      header b { font-size: 18px; letter-spacing: 0.04em; }
+      header nav { display: flex; gap: 22px; font-size: 14px; color: #6b665d; }
+      main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 36px; max-width: 980px; margin: 0 auto; padding: 36px 28px 120px; }
+      .photo { aspect-ratio: 4 / 5; border-radius: 6px; background: linear-gradient(160deg, #e5e1d8, #d3cdc0); display: grid; place-items: center; }
+      .photo svg { width: 42%; fill: none; stroke: #9b9484; stroke-width: 1.6; stroke-linejoin: round; }
+      h1 { margin: 0 0 6px; font-size: 26px; font-weight: 600; }
+      .price { margin: 0 0 22px; font-size: 18px; color: #6b665d; }
+      .label { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #6b665d; }
+      .sizes { display: flex; gap: 8px; margin-bottom: 18px; }
+      .sizes span { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid #cfcabf; border-radius: 4px; background: #fff; font-size: 14px; }
+      #inline-slot { margin: 0 0 18px; min-height: 8px; }
+      .buy { display: block; width: 100%; padding: 15px; border: 0; border-radius: 4px; background: #1f1d1a; color: #fff; font: 600 15px system-ui, sans-serif; }
+      p.copy { margin: 22px 0 0; font-size: 14px; line-height: 1.6; color: #6b665d; }
+      @media (max-width: 720px) { main { grid-template-columns: minmax(0, 1fr); padding: 20px 16px 120px; } header { padding: 14px 16px; } header nav { display: none; } }
+    </style>
+  </head>
+  <body>
+    <header><b>YOUR STORE</b><nav><span>New in</span><span>Shop</span><span>About</span></nav></header>
+    <main>
+      <div class="photo" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><path d="M22 8 8 18l6 10 6-3v31h24V25l6 3 6-10-14-10c-2 4-6 6-10 6s-8-2-10-6z"/></svg>
+      </div>
+      <div>
+        <h1>Sample Product</h1>
+        <p class="price">$68.00</p>
+        <p class="label">Size</p>
+        <div class="sizes" aria-hidden="true"><span>XS</span><span>S</span><span>M</span><span>L</span><span>XL</span></div>
+        <!-- where a button pinned inline (data-float="0") would sit -->
+        <div id="inline-slot"></div>
+        <button class="buy" type="button" tabindex="-1">Add to bag</button>
+        <p class="copy">This is what your shoppers see. The FindMySize button opens the size finder over your page.</p>
+      </div>
+    </main>
+
+    <!-- The button is added by src/shop.js, from the settings the dashboard sends. -->
+    <script type="module" src="/src/shop.js"></script>
+  </body>
+</html>

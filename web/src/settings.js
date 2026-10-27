@@ -1,0 +1,340 @@
+/**
+ * The settings page: account, security, notifications, billing, appearance and
+ * the danger zone. Each panel is its own tab inside a sidebar shell.
+ *
+ * Signed out users see a sign-in gate; signed in users see every panel and can
+ * edit anything on it. Changes are echoed to Supabase (profile metadata,
+ * password, notifications) and confirmed with a toast.
+ */
+import { getSession, isAccount, signOut, updateEmail } from './services/auth.js';
+import { api } from './services/api.js';
+import { rememberSettings } from './theme.js';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN = 8; // the server enforces the same number
+
+const gate = document.getElementById('settings-gate');
+const body = document.getElementById('settings-body');
+
+const panels = document.querySelectorAll('.settings-panel');
+const navItems = document.querySelectorAll('.settings-nav-item');
+
+/**
+ * Which panel a nav button opens is written on the button (data-panel), not worked
+ * out from its id: the first one is "nav-account-profile" but its panel is
+ * "panel-account", so deriving one from the other left "Account" opening nothing.
+ */
+function showPanel(id) {
+  panels.forEach((p) => p.classList.toggle('settings-panel-active', p.id === `panel-${id}`));
+  navItems.forEach((n) => {
+    const on = n.dataset.panel === id;
+    n.classList.toggle('settings-nav-item-active', on);
+    if (on) n.setAttribute('aria-current', 'true');
+    else n.removeAttribute('aria-current');
+  });
+  // The panel, not the top of the page: the hero is tall, and this is a tab, not a new page.
+  document.getElementById('settings-body')?.scrollIntoView({ block: 'start' });
+}
+
+navItems.forEach((n) => {
+  n.addEventListener('click', () => showPanel(n.dataset.panel));
+});
+
+/* ---------- sign-in gating ---------- */
+
+function paint(session) {
+  const account = isAccount(session);
+  gate.hidden = account;
+  body.hidden = !account;
+  if (!account) return;
+
+  const name = session.user.user_metadata?.username || session.user.email || 'Account';
+  const email = session.user.email || '';
+
+  document.getElementById('settings-account-name').textContent = name;
+  document.getElementById('settings-account-email').textContent = email;
+  document.getElementById('settings-username').value = session.user.user_metadata?.username || '';
+  document.getElementById('settings-email').value = email;
+
+  // Avatar: first letter of username / email
+  const avatar = document.getElementById('settings-avatar');
+  const letter = (name.charAt(0) || '?').toUpperCase();
+  avatar.textContent = letter;
+
+  accountId = session?.user?.id || '';
+  loadSettings();
+}
+
+/* ---------- what was saved before ---------- */
+
+// The panels that write what loadSettings() reads. Until it has read it they stay shut:
+// saving a half-empty form over a stored one would erase it.
+const SAVE_BUTTONS = ['settings-save-profile', 'settings-save-notifications', 'settings-save-billing', 'settings-save-appearance'];
+const SAVE_LABELS = { 'settings-save-profile': 'Save changes', 'settings-save-notifications': 'Save notification preferences', 'settings-save-billing': 'Save billing details', 'settings-save-appearance': 'Save appearance' };
+const PANEL_STATUS = ['settings-profile-status', 'settings-notifications-status', 'settings-billing-status', 'settings-appearance-status'];
+
+function holdSaving(held) {
+  for (const id of SAVE_BUTTONS) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = held;
+  }
+}
+
+const field = (id) => document.getElementById(id);
+const setValue = (id, value) => { const el = field(id); if (el && value !== undefined && value !== null) el.value = value; };
+const setChecked = (id, value) => { const el = field(id); if (el && typeof value === 'boolean') el.checked = value; };
+
+let accountId = '';
+let loading = null;
+function loadSettings() {
+  if (loading) return loading;
+  holdSaving(true);
+  loading = api('/api/me/settings')
+    .then(({ settings, profile }) => {
+      setValue('settings-username', profile?.username);
+      setValue('settings-full-name', profile?.full_name);
+      setValue('settings-brand-name', profile?.brand_name);
+      if (settings) {
+        setChecked('settings-notify-results', settings.notify_results);
+        setChecked('settings-notify-digest', settings.notify_digest);
+        setChecked('settings-notify-marketing', settings.notify_marketing);
+        setValue('settings-billing-email', settings.billing_email);
+        setValue('settings-tax-id', settings.tax_id);
+        // null = never chosen: the form shows what is in effect (light, the brand orange, inches).
+        setValue('settings-theme', settings.theme || 'light');
+        setValue('settings-accent-colour', settings.accent_colour || window.FMSTheme?.BRAND || '#f0521f');
+        setValue('settings-unit', settings.default_unit || 'in');
+        rememberSettings(settings, accountId);
+      } else {
+        setValue('settings-theme', 'light');
+        setValue('settings-accent-colour', window.FMSTheme?.BRAND || '#f0521f');
+        setValue('settings-unit', 'in');
+      }
+      holdSaving(false);
+    })
+    .catch(() => {
+      loading = null; // a reload may try again
+      for (const id of PANEL_STATUS) {
+        const status = field(id);
+        if (!status) continue;
+        status.textContent = 'Could not load your saved settings, so saving is switched off. Reload the page to try again.';
+        status.className = 'settings-panel-hint settings-panel-hint-error';
+      }
+    });
+  return loading;
+}
+
+/* ---------- profile ---------- */
+
+async function saveProfile() {
+  const username = document.getElementById('settings-username').value.trim();
+  const email = document.getElementById('settings-email').value.trim();
+  const fullName = document.getElementById('settings-full-name').value.trim();
+  const brandName = document.getElementById('settings-brand-name').value.trim();
+  const status = document.getElementById('settings-profile-status');
+  const btn = document.getElementById('settings-save-profile');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const currentEmail = (await getSession())?.user?.email || '';
+    const emailChanged = email.toLowerCase() !== currentEmail.toLowerCase();
+    // Checked first, so a bad address cannot leave the rest half-saved.
+    if (emailChanged && !EMAIL_RE.test(email)) throw new Error('That does not look like an email address.');
+
+    await api('/api/me/profile', {
+      method: 'PATCH',
+      body: { username, full_name: fullName, brand_name: brandName },
+    });
+
+    let note = 'Saved.';
+    let keepFor = 2500;
+    if (emailChanged) {
+      // The address changes only when the link sent there is followed.
+      await updateEmail(email);
+      note = `Saved. We sent a confirmation link to ${email}. Your sign-in email changes once you follow it.`;
+      keepFor = 12000;
+    }
+    status.textContent = note;
+    status.className = 'settings-panel-hint settings-panel-hint-ok';
+    setTimeout(() => { status.textContent = ''; }, keepFor);
+  } catch (err) {
+    status.textContent = err.message || 'Could not save.';
+    status.className = 'settings-panel-hint settings-panel-hint-error';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save changes';
+  }
+}
+document.getElementById('settings-save-profile')?.addEventListener('click', saveProfile);
+
+/* ---------- password ---------- */
+
+async function changePassword() {
+  const current = document.getElementById('settings-current-password').value;
+  const newPass = document.getElementById('settings-new-password').value;
+  const confirm = document.getElementById('settings-confirm-password').value;
+  const status = document.getElementById('settings-password-status');
+  const btn = document.getElementById('settings-save-password');
+  btn.disabled = true; btn.textContent = 'Changing…';
+  try {
+    if (!current) throw new Error('Enter your current password.');
+    if (newPass.length < PASSWORD_MIN) throw new Error(`A new password needs at least ${PASSWORD_MIN} characters.`);
+    if (newPass !== confirm) throw new Error('The two new passwords do not match.');
+    // The server tests the current password before it stores the new one.
+    await api('/api/me/password', { method: 'PATCH', body: { current_password: current, new_password: newPass } });
+    status.textContent = 'Password changed.';
+    status.className = 'settings-panel-hint settings-panel-hint-ok';
+    document.getElementById('settings-current-password').value = '';
+    document.getElementById('settings-new-password').value = '';
+    document.getElementById('settings-confirm-password').value = '';
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (err) {
+    status.textContent = err.message || 'Could not change password.';
+    status.className = 'settings-panel-hint settings-panel-hint-error';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Change password';
+  }
+}
+document.getElementById('settings-save-password')?.addEventListener('click', changePassword);
+
+/* ---------- notifications ---------- */
+
+async function saveNotifications() {
+  const prefs = {
+    results: document.getElementById('settings-notify-results').checked,
+    digest: document.getElementById('settings-notify-digest').checked,
+    marketing: document.getElementById('settings-notify-marketing').checked,
+    security: document.getElementById('settings-notify-security').checked,
+  };
+  const status = document.getElementById('settings-notifications-status');
+  const btn = document.getElementById('settings-save-notifications');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api('/api/me/notifications', { method: 'PATCH', body: prefs });
+    status.textContent = 'Notification preferences saved.';
+    status.className = 'settings-panel-hint settings-panel-hint-ok';
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (err) {
+    status.textContent = err.message || 'Could not save.';
+    status.className = 'settings-panel-hint settings-panel-hint-error';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save notification preferences';
+  }
+}
+document.getElementById('settings-save-notifications')?.addEventListener('click', saveNotifications);
+
+/* ---------- billing ---------- */
+
+async function saveBilling() {
+  const billingEmail = document.getElementById('settings-billing-email').value.trim();
+  const taxId = document.getElementById('settings-tax-id').value.trim();
+  const status = document.getElementById('settings-billing-status');
+  const btn = document.getElementById('settings-save-billing');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api('/api/me/billing', { method: 'PATCH', body: { billing_email: billingEmail, tax_id: taxId } });
+    status.textContent = 'Billing details saved.';
+    status.className = 'settings-panel-hint settings-panel-hint-ok';
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (err) {
+    status.textContent = err.message || 'Could not save.';
+    status.className = 'settings-panel-hint settings-panel-hint-error';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save billing details';
+  }
+}
+document.getElementById('settings-save-billing')?.addEventListener('click', saveBilling);
+
+/* ---------- appearance ---------- */
+
+async function saveAppearance() {
+  const theme = document.getElementById('settings-theme').value;
+  const accent = document.getElementById('settings-accent-colour').value;
+  const unit = document.getElementById('settings-unit').value;
+  const status = document.getElementById('settings-appearance-status');
+  const btn = document.getElementById('settings-save-appearance');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api('/api/me/appearance', { method: 'PATCH', body: { theme, accent_colour: accent, unit } });
+    rememberSettings({ theme, accent_colour: accent, default_unit: unit }, accountId);
+    status.textContent = 'Appearance saved.';
+    status.className = 'settings-panel-hint settings-panel-hint-ok';
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (err) {
+    status.textContent = err.message || 'Could not save.';
+    status.className = 'settings-panel-hint settings-panel-hint-error';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save appearance';
+  }
+}
+document.getElementById('settings-save-appearance')?.addEventListener('click', saveAppearance);
+
+// Choosing a theme or colour shows it at once, on this page and nowhere else: it is kept
+// (on this device and on the account) only when "Save appearance" is pressed, and
+// otherwise the next page load goes back to what was saved.
+function previewAppearance() {
+  window.FMSTheme?.apply({
+    theme: document.getElementById('settings-theme').value,
+    accent: document.getElementById('settings-accent-colour').value,
+  });
+  const status = document.getElementById('settings-appearance-status');
+  status.textContent = 'Previewing. Press "Save appearance" to keep it.';
+  status.className = 'settings-panel-hint';
+}
+document.getElementById('settings-theme')?.addEventListener('change', previewAppearance);
+document.getElementById('settings-accent-colour')?.addEventListener('input', previewAppearance);
+
+/* ---------- danger zone ---------- */
+
+document.getElementById('settings-delete-account')?.addEventListener('click', async () => {
+  if (!confirm('This permanently deletes your account, charts and billing history. It cannot be undone. Continue?')) return;
+  const status = document.getElementById('settings-danger-status');
+  const btn = document.getElementById('settings-delete-account');
+  btn.disabled = true; btn.textContent = 'Deleting…';
+  try {
+    await api('/api/me/account', { method: 'DELETE' });
+    status.textContent = 'Account deleted.';
+    status.className = 'settings-panel-hint settings-panel-hint-ok';
+    setTimeout(() => { signOut(); }, 1200);
+  } catch (err) {
+    status.textContent = err.message || 'Could not delete account.';
+    status.className = 'settings-panel-hint settings-panel-hint-error';
+    btn.disabled = false; btn.textContent = 'Delete account';
+  }
+});
+
+/* ---------- boot ---------- */
+
+getSession().then(paint).catch(() => paint(null));
+
+/* ---------- the page around the panels ----------
+   The account file at the top says who is logged in (its name and email are filled
+   in by paint() above, which is the one place that reads the session); this adds
+   the words around them, and the menu on a phone. */
+getSession().then((session) => {
+  const account = isAccount(session);
+  const label = document.getElementById('af-session');
+  if (label) label.textContent = account ? 'Live session' : 'Not logged in';
+  const foot = document.getElementById('af-foot')?.querySelector('span');
+  if (foot && !account) {
+    foot.replaceChildren('No account on this browser \u00b7 ');
+    const link = document.createElement('a');
+    link.href = new URL('../auth/', location.href).href;
+    link.textContent = 'Log in';
+    foot.append(link);
+  }
+}).catch(() => {});
+
+const menuButton = document.getElementById('nav-menu');
+if (menuButton) {
+  const syncMenu = () => {
+    const open = menuButton.getAttribute('aria-expanded') === 'true';
+    menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    document.body.classList.toggle('is-locked', open);
+  };
+  new MutationObserver(syncMenu).observe(menuButton, { attributes: true, attributeFilter: ['aria-expanded'] });
+  document.querySelector('.nav-demo')?.addEventListener('click', () => {
+    if (menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+  window.matchMedia('(min-width: 961px)').addEventListener('change', (event) => {
+    if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
+  });
+}

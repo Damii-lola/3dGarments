@@ -1,0 +1,486 @@
+/**
+ * The sizing page, on its own: the new page around the scanner.
+ *
+ * The scanner itself (record, trim, calibrate, results) keeps its own stylesheet and
+ * lives inside the dark card below, so everything it does is exactly as before. This
+ * file only changes what is around it, and only when the page is NOT the popup on a
+ * store's site: every rule here is under html:not(.embed), and the popup (?embed=1)
+ * is left alone.
+ *
+ * Sizes are in px on purpose. On phones styles.css scales the root font to 189% so
+ * the scanner's rem-based type is readable; chrome written in rem would be scaled
+ * along with it.
+ */
+@import "@fontsource-variable/fraunces/opsz.css";
+@import "@fontsource-variable/fraunces/opsz-italic.css";
+@import "@fontsource-variable/instrument-sans/index.css";
+@import "@fontsource-variable/instrument-sans/wght-italic.css";
+
+html:not(.embed) body.app {
+  --n-cream: #f5e9d6;
+  --n-paper: #fdf7ea;
+  --n-ink: #191411;
+  --n-ink-2: #221a15;
+  --n-ink-soft: #3b3028;
+  --n-muted: #6b5b4e;
+  --n-dim: #c9b9a4;
+  --n-line: rgba(25, 20, 17, 0.14);
+  --n-line-strong: rgba(25, 20, 17, 0.28);
+  --n-line-dark: rgba(245, 233, 214, 0.16);
+  --n-orange: var(--orange, #f0521f);
+  --n-orange-text: var(--orange-text, #a9330a);
+  --n-on-dark: #f5e9d6;
+  --n-display: "Fraunces Variable", "Fraunces", Georgia, "Times New Roman", serif;
+  --n-body: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+
+  display: block;
+  padding: 0;
+  background: var(--n-cream);
+  background-image: none;
+  color: var(--n-ink);
+  font-family: var(--n-body);
+}
+
+html:not(.embed) body.app.is-locked { overflow: hidden; }
+html:not(.embed) .sky { display: none; }
+
+/* things that exist only on the standalone page */
+html.embed .page-only { display: none !important; }
+
+/* ---------- the bar ---------- */
+
+html:not(.embed) body.app .nav {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  background: rgba(245, 233, 214, 0.94);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--n-line);
+}
+
+html:not(.embed) body.app .nav-inner {
+  position: static;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 1180px;
+  min-height: 76px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 40px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html:not(.embed) body.app .nav-brand { gap: 10px; margin-right: auto; color: var(--n-ink); }
+
+html:not(.embed) body.app .nav-brand .brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  box-shadow: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E") center / 100% no-repeat;
+}
+
+html:not(.embed) body.app .nav-brand .brand-name { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; color: var(--n-ink); }
+html:not(.embed) body.app .nav-brand .brand-name b { color: var(--n-orange-text); font-weight: inherit; }
+
+html:not(.embed) body.app .nav-links { display: flex; align-items: center; gap: 4px; }
+
+html:not(.embed) body.app .nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--n-ink-soft);
+}
+
+html:not(.embed) body.app .nav-link:hover { background: rgba(25, 20, 17, 0.05); color: var(--n-ink); }
+html:not(.embed) body.app .nav-link[aria-current="page"] { background: transparent; color: var(--n-ink); box-shadow: inset 0 -2px 0 var(--n-orange); border-radius: 0; }
+
+html:not(.embed) body.app .nav-menu,
+html:not(.embed) body.app .nav-user {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--n-line-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--n-orange-text);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+html:not(.embed) body.app .nav-menu { display: none; }
+html:not(.embed) body.app .nav-menu:hover,
+html:not(.embed) body.app .nav-user:hover,
+html:not(.embed) body.app .nav-menu[aria-expanded="true"],
+html:not(.embed) body.app .nav-user[aria-expanded="true"] { background: var(--n-orange); border-color: var(--n-orange); color: var(--n-ink); }
+
+html:not(.embed) body.app .nav-menu-icon,
+html:not(.embed) body.app .nav-user-icon { width: 20px; height: 20px; }
+
+html:not(.embed) body.app .nav-account {
+  top: calc(100% - 8px);
+  right: clamp(20px, 4vw, 40px);
+  z-index: 70;
+  width: min(300px, calc(100vw - 32px));
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--n-line-strong);
+  border-radius: 14px;
+  background: var(--n-paper);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 18px 40px -16px rgba(25, 20, 17, 0.35);
+  color: var(--n-ink);
+}
+
+html:not(.embed) body.app .nav-account-note { margin: 0; padding: 8px 12px 10px; border-bottom: 1px solid var(--n-line); font-size: 14px; line-height: 1.45; color: var(--n-ink-soft); overflow-wrap: anywhere; }
+html:not(.embed) body.app .nav-account-note:empty { display: none; }
+
+html:not(.embed) body.app .nav-account-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--n-ink);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+html:not(.embed) body.app .nav-account-item:hover { background: rgba(25, 20, 17, 0.05); color: var(--n-orange-text); }
+
+/* ---------- the scanner's card ----------
+   One card, drawn for two places: the standalone page, and the popup on a store's
+   site (?embed=1). Its colours, corners and type are --pu-* variables whose fallbacks
+   are the design's own values, so with nothing set the card is exactly this one; a
+   store's choices (src/popup-config.js) set the variables and nothing else. */
+
+body.app .stage {
+  box-sizing: border-box;
+  align-items: stretch;
+  text-align: left;
+  border-radius: var(--pu-radius, 28px);
+  background:
+    radial-gradient(90% 55% at 50% 0%, color-mix(in srgb, var(--pu-accent, #f0521f) 20%, transparent), transparent 70%),
+    var(--pu-bg, #221a15);
+  color: var(--pu-text, #f5e9d6);
+  font-family: var(--pu-body, "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif);
+}
+
+html:not(.embed) body.app .stage {
+  width: min(100% - 32px, 680px);
+  max-width: none;
+  margin: clamp(28px, 5vw, 56px) auto clamp(40px, 6vw, 72px);
+  padding: clamp(22px, 4vw, 38px);
+  box-shadow: 0 40px 80px -44px rgba(25, 20, 17, 0.75);
+}
+
+body.app .intro { gap: 14px; }
+
+body.app .intro h1 {
+  font-family: var(--pu-display, var(--n-display, "Fraunces Variable", "Fraunces", Georgia, serif));
+  font-size: clamp(30px, 5vw, 44px);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--pu-text, #f5e9d6);
+}
+
+body.app .intro .lead { font-size: 17px; line-height: 1.55; color: var(--pu-muted, rgba(245, 233, 214, 0.7)); }
+
+/* record */
+body.app .open-camera {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  gap: 14px;
+  padding: 40px 20px 34px;
+  border: 1px dashed color-mix(in srgb, var(--pu-text, #f5e9d6) 30%, transparent);
+  border-radius: calc(var(--pu-radius, 28px) * 0.714);
+  background: radial-gradient(70% 90% at 50% 20%, color-mix(in srgb, var(--pu-accent, #f0521f) 14%, transparent), transparent 75%);
+  color: var(--pu-accent-2, #ff8a5c);
+}
+
+body.app .open-camera:hover {
+  background: radial-gradient(70% 90% at 50% 20%, color-mix(in srgb, var(--pu-accent, #f0521f) 24%, transparent), transparent 75%);
+  color: var(--pu-accent-2, #ffa07a);
+}
+
+body.app .cam-icon {
+  box-sizing: border-box;
+  width: 84px;
+  height: 84px;
+  padding: 23px;
+  border: 1px solid color-mix(in srgb, var(--pu-accent, #f0521f) 50%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--pu-accent, #f0521f) 16%, transparent);
+  stroke-width: 1.5;
+}
+
+body.app .cam-cta {
+  position: relative;
+  padding-bottom: 8px;
+  font-family: var(--pu-display, var(--n-display, "Fraunces Variable", "Fraunces", Georgia, serif));
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--pu-text, #f5e9d6);
+}
+
+body.app .cam-cta::after {
+  content: "";
+  position: absolute;
+  left: -40px;
+  right: -40px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--pu-accent, #f0521f) 55%, transparent), transparent);
+}
+
+body.app .open-camera:hover .cam-cta { color: var(--pu-text, #f5e9d6); }
+.cam-hint { font-size: 15px; color: var(--pu-muted, rgba(245, 233, 214, 0.6)); }
+
+body.app .capture,
+body.app .capture-choice { width: 100%; }
+
+/* "Nothing is saved" */
+body.app .privacy {
+  box-sizing: border-box;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--pu-text, #f5e9d6) 16%, transparent);
+  border-left: 3px solid var(--pu-accent, #f0521f);
+  border-radius: calc(var(--pu-radius, 28px) * 0.5);
+  background: color-mix(in srgb, var(--pu-text, #f5e9d6) 4%, transparent);
+  box-shadow: none;
+}
+
+body.app .privacy-lock { width: 22px; height: 22px; margin-top: 2px; color: var(--pu-text, #f5e9d6); }
+body.app .privacy-body { gap: 6px; }
+body.app .privacy-line { font-size: 16px; font-weight: 600; color: var(--pu-text, #f5e9d6); }
+body.app .privacy-sub { font-size: 15px; line-height: 1.55; color: var(--pu-muted, rgba(245, 233, 214, 0.62)); }
+
+/* the two promises under it (hidden together with the first screen) */
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 16px 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--pu-text, #f5e9d6) 16%, transparent);
+  font-size: 15px;
+  color: var(--pu-muted, rgba(245, 233, 214, 0.78));
+}
+
+#privacy[hidden] + .card-foot,
+.card-foot[data-off="true"] { display: none; }
+.card-foot span { display: inline-flex; align-items: center; gap: 10px; }
+.card-foot svg { width: 17px; height: 17px; fill: none; stroke: var(--pu-accent, #f0521f); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- the same card, as the popup on a store's page ----------
+   The store's page is the frame (embed.js draws it), so the card fills it: no bar,
+   no margins, and sizes in rem, so the popup's own scale (and a store's "text size")
+   moves everything together. */
+
+html.embed body.app { display: block; padding: 0; background: transparent; }
+html.embed body.app .nav,
+html.embed body.app .sky { display: none; }
+
+html.embed { font-size: calc(90.72% * var(--pu-scale, 1)); }
+
+html.embed body.app .stage {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 1.5rem 1.05rem 1.5rem;
+  border-radius: 0;
+  box-shadow: none;
+  gap: 1rem;
+}
+
+html.embed body.app .intro { gap: 0.6rem; padding-right: 2.3rem; }
+html.embed body.app .intro h1 { font-size: 1.95rem; }
+html.embed body.app .intro .lead { font-size: 1.02rem; }
+html.embed body.app .open-camera { gap: 0.8rem; padding: 2.2rem 1rem 1.9rem; }
+html.embed body.app .cam-icon { width: 5.2rem; height: 5.2rem; padding: 1.45rem; }
+html.embed body.app .cam-cta { font-size: 1.7rem; padding-bottom: 0.5rem; }
+html.embed body.app .cam-cta::after { left: -2rem; right: -2rem; }
+html.embed .cam-hint { font-size: 0.95rem; }
+html.embed body.app .privacy { gap: 0.8rem; padding: 1.1rem 1.2rem; }
+html.embed body.app .privacy-lock { width: 1.4rem; height: 1.4rem; }
+html.embed body.app .privacy-line { font-size: 1.02rem; }
+html.embed body.app .privacy-sub { font-size: 0.95rem; }
+html.embed .card-foot { font-size: 0.95rem; padding-top: 1rem; }
+html.embed .card-foot svg { width: 1.05rem; height: 1.05rem; }
+
+/* until a store's own settings have arrived, the card waits rather than flashing the default look */
+html.embed.pu-pending body.app .stage { opacity: 0; }
+html.embed body.app .stage { transition: opacity 0.25s ease; }
+
+/* ---------- ticker, section, footer ---------- */
+
+.page-ticker {
+  overflow: hidden;
+  padding: 18px 0;
+  background: #191411;
+  color: #c9b9a4;
+}
+
+.page-ticker-track { display: flex; width: max-content; animation: page-ticker 36s linear infinite; }
+.page-ticker-group { display: flex; flex: none; }
+
+.page-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 28px;
+  padding-right: 28px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.page-ticker-item::after { content: ""; width: 7px; height: 7px; background: #f0521f; transform: rotate(45deg); }
+@keyframes page-ticker { to { transform: translateX(-50%); } }
+
+.page-orange { background: #f0521f; color: #191411; padding: clamp(56px, 8vw, 104px) 0; }
+
+.page-wrap { box-sizing: border-box; width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 40px); }
+
+.page-orange .kicker { display: inline-flex; align-items: center; gap: 10px; margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.page-orange .kicker::before { content: ""; width: 9px; height: 9px; background: #191411; }
+
+.page-orange h2 {
+  max-width: 14ch;
+  margin: 18px 0 0;
+  font-family: "Fraunces Variable", "Fraunces", Georgia, serif;
+  font-size: clamp(34px, 5vw, 56px);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+
+.page-orange h2 em { font-style: italic; color: #fdf7ea; }
+
+.page-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 40px 0 0; padding: 0; list-style: none; counter-reset: s; }
+
+.page-steps li {
+  counter-increment: s;
+  padding: 24px 22px;
+  border: 1px solid rgba(25, 20, 17, 0.22);
+  border-radius: 16px;
+  background: #fdf7ea;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #3b3028;
+}
+
+.page-steps li::before { content: "0" counter(s); display: block; margin-bottom: 14px; font-family: "Fraunces Variable", "Fraunces", Georgia, serif; font-size: 17px; color: #a9330a; }
+.page-steps b { display: block; margin-bottom: 6px; font-family: "Fraunces Variable", "Fraunces", Georgia, serif; font-size: 21px; font-weight: 400; color: #191411; }
+
+.page-foot { background: #191411; color: #c9b9a4; padding: 44px 0 30px; }
+.page-foot-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
+.page-foot .foot-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 600; color: #f5e9d6; text-decoration: none; }
+.page-foot .foot-brand b { color: #f0521f; font-weight: inherit; }
+.page-foot .foot-mark { width: 32px; height: 32px; border-radius: 9px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E") center / 100% no-repeat; }
+.page-foot nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.page-foot nav a { font-size: 15px; color: #c9b9a4; text-decoration: none; }
+.page-foot nav a:hover { color: #f5e9d6; }
+.page-foot hr { margin: 28px 0 22px; border: 0; border-top: 1px solid rgba(245, 233, 214, 0.16); }
+.page-foot p { max-width: 62ch; margin: 0; font-size: 14px; line-height: 1.6; }
+.page-foot .base { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; margin-top: 22px; font-size: 13px; color: rgba(201, 185, 164, 0.75); }
+
+/* ---------- smaller screens ---------- */
+
+@media (max-width: 960px) {
+  html:not(.embed) body.app .nav-links { display: none; }
+  html:not(.embed) body.app .nav-menu { display: inline-grid; }
+
+  html:not(.embed) body.app .nav-links.open {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 55;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 12px clamp(20px, 4vw, 40px) 22px;
+    border: 0;
+    border-bottom: 1px solid var(--n-line-strong);
+    border-radius: 0;
+    background: var(--n-paper);
+    box-shadow: 0 24px 40px -30px rgba(25, 20, 17, 0.55);
+  }
+
+  html:not(.embed) body.app .nav-links.open .nav-link { min-height: 52px; padding: 0 4px; border-bottom: 1px solid var(--n-line); border-radius: 0; box-shadow: none; font-family: var(--n-display); font-size: 21px; color: var(--n-ink-soft); }
+  html:not(.embed) body.app .nav-links.open .nav-link[aria-current="page"] { color: var(--n-orange-text); }
+}
+
+@media (max-width: 720px) {
+  .page-steps { grid-template-columns: minmax(0, 1fr); }
+  html:not(.embed) body.app .stage { width: calc(100% - 24px); border-radius: 24px; }
+  html:not(.embed) body.app .cam-cta::after { left: -16px; right: -16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-ticker-track { animation: none; }
+}
+
+/* account first, then the menu: the order in the design */
+html:not(.embed) body.app .nav-user { order: 2; }
+html:not(.embed) body.app .nav-menu { order: 3; }
+
+/* ---------- dark theme (see public/theme-init.js; the popup never gets it) ---------- */
+
+html:not(.embed)[data-theme="dark"] body.app {
+  color-scheme: dark;
+  --n-cream: #120e0b;
+  --n-paper: #1b1511;
+  --n-ink: #f5e9d6;
+  --n-ink-soft: #e0d2bd;
+  --n-muted: #b3a28d;
+  --n-line: rgba(245, 233, 214, 0.14);
+  --n-line-strong: rgba(245, 233, 214, 0.3);
+  --n-orange-text: var(--orange-text, #ff8a5c);
+}
+
+html:not(.embed)[data-theme="dark"] body.app .nav { background: rgba(18, 14, 11, 0.92); }
+html:not(.embed)[data-theme="dark"] body.app .nav-link:hover,
+html:not(.embed)[data-theme="dark"] body.app .nav-account-item:hover { background: rgba(245, 233, 214, 0.08); }
+html:not(.embed)[data-theme="dark"] body.app .stage { box-shadow: 0 40px 80px -44px rgba(0, 0, 0, 0.9); border: 1px solid var(--n-line-dark, rgba(245, 233, 214, 0.1)); }
+html:not(.embed)[data-theme="dark"] .page-ticker,
+html:not(.embed)[data-theme="dark"] .page-foot { background: #0b0907; }

@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- No inline scripts (the reveal script is a file), no third-party code except
+         the MediaPipe loader and its model. Everything else is this origin, the API
+         and the signed Supabase storage URLs. Fonts are self-hosted for the same
+         reason: font-src stays 'self'. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#f5e9d6" />
+    <title>FindMySize — Stop losing money on size returns</title>
+    <meta
+      name="description"
+      content="Give your customers an accurate size recommendation in under a minute — using only a quick 360° video. Nothing to install, nothing stored."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/landing.css" />
+    <link rel="stylesheet" href="/src/theme.css" />
+    <script src="%BASE_URL%theme-init.js"></script>
+    <!-- Sets the flag the reveal styles answer to, before anything is painted, and
+         lifts it again if the script below never arrives: a chunk that fails to
+         load must not leave the page invisible. -->
+    <script src="%BASE_URL%reveal.js"></script>
+  </head>
+  <body id="top">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span>FindMySize</span>
+      </a>
+
+      <!-- The links, the account button and the account panel keep the ids nav.js
+           looks for: it marks the current page, fills the panel from the session
+           (Settings + Log out when signed in, "Log in or sign up" when not) and
+           opens/closes the menu and the panel. -->
+      <nav class="nav" id="nav-links" aria-label="Primary">
+        <a class="nav-link" href="%BASE_URL%">Home</a>
+        <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+        <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+        <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        <a class="btn btn--primary nav-demo" href="#book">Book a Demo</a>
+      </nav>
+
+      <button class="avatar" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="8.5" r="3.5"/>
+          <path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/>
+        </svg>
+      </button>
+
+      <button class="menu-btn" id="nav-menu" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-links">
+        <span></span>
+        <span></span>
+      </button>
+
+      <div class="account" id="nav-account" hidden>
+        <p class="account-note" id="nav-account-note"></p>
+        <a class="account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
+        <a class="account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+        <button class="account-item" id="nav-account-out" type="button" hidden>Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+
+    <section class="hero shell" aria-labelledby="hero-title">
+      <p class="eyebrow rise">For clothing brands</p>
+      <h1 id="hero-title" class="rise rise--1">
+        <span class="h1-line">Stop losing money</span>
+        <span class="h1-line">on <em>size returns</em></span>
+      </h1>
+
+      <div class="hero-bottom">
+        <div class="hero-copy rise rise--2">
+          <p class="hero-sub">Give your customers an accurate size recommendation in under a minute — using only a quick 360° video. Nothing to install, nothing stored.</p>
+          <div class="hero-actions">
+            <a class="btn btn--primary" href="#book">
+              Book a Demo
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+            </a>
+            <a class="btn btn--ghost" href="#how">See how it works</a>
+          </div>
+          <p class="hero-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            360° video · No install · Nothing stored
+          </p>
+        </div>
+
+        <div class="console rise rise--3" aria-label="Example size scan result">
+          <div class="console-top">
+            <span class="console-tag">Live size scan</span>
+            <span class="console-time">00:41</span>
+          </div>
+          <div class="console-body">
+            <div class="scan">
+              <span class="scan-ticks" aria-hidden="true"></span>
+              <svg class="scan-arc" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+                <circle cx="100" cy="100" r="94" fill="none" stroke="rgba(245,233,214,0.16)" stroke-width="1.5"/>
+                <circle cx="100" cy="100" r="94" fill="none" stroke="#f0521f" stroke-width="2" stroke-dasharray="140 450" stroke-linecap="round"/>
+                <circle cx="100" cy="6" r="3.2" fill="#f0521f"/>
+              </svg>
+              <div class="scan-center">
+                <span class="scan-kicker">Recommended size</span>
+                <span class="scan-size">M</span>
+                <span class="scan-fit">Oversized Heavy Tee</span>
+              </div>
+            </div>
+
+            <dl class="readouts">
+              <div class="readout">
+                <dt>Chest</dt>
+                <dd>96<span>cm</span></dd>
+              </div>
+              <div class="readout">
+                <dt>Waist</dt>
+                <dd>78<span>cm</span></dd>
+              </div>
+              <div class="readout">
+                <dt>Hip</dt>
+                <dd>101<span>cm</span></dd>
+              </div>
+              <div class="readout">
+                <dt>Inseam</dt>
+                <dd>79<span>cm</span></dd>
+              </div>
+            </dl>
+          </div>
+          <div class="console-foot">
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+              360° capture complete
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/></svg>
+              Frames already deleted
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track">
+        <div class="marquee-group">
+          <span class="marquee-item">Measured in seconds</span>
+          <span class="marquee-item">No app to install</span>
+          <span class="marquee-item">Nothing stored</span>
+          <span class="marquee-item">Works on any product page</span>
+          <span class="marquee-item">Fewer returns, better margins</span>
+          <span class="marquee-item">Built for clothing brands</span>
+        </div>
+        <div class="marquee-group">
+          <span class="marquee-item">Measured in seconds</span>
+          <span class="marquee-item">No app to install</span>
+          <span class="marquee-item">Nothing stored</span>
+          <span class="marquee-item">Works on any product page</span>
+          <span class="marquee-item">Fewer returns, better margins</span>
+          <span class="marquee-item">Built for clothing brands</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="section problem" id="problem" aria-labelledby="problem-title">
+      <div class="shell">
+        <div class="ticks" aria-hidden="true"></div>
+        <div class="problem-grid">
+          <div class="reveal" data-reveal>
+            <p class="eyebrow eyebrow--ink">The problem</p>
+            <h2 id="problem-title">Returns are quietly killing your margins</h2>
+            <p class="lede">Most clothing brands lose thousands every month to size-related returns.</p>
+            <ul class="problem-list">
+              <li>Customers don’t know their real measurements.</li>
+              <li>Size charts vary widely between brands.</li>
+              <li>And “order two sizes and return one” has become normal.</li>
+            </ul>
+          </div>
+
+          <aside class="cost-card reveal" data-reveal style="--d:.1s" aria-label="The cost of a return">
+            <div class="ticks" aria-hidden="true"></div>
+            <h3>Every return costs you</h3>
+            <ul class="cost-items">
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></svg>
+                Double shipping
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/></svg>
+                Restocking fees
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M12 4v6l-3 2 3 2v6"/></svg>
+                Damaged or unsellable product
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7l6 6 4-4 8 8"/><path d="M21 21h-6M21 21v-6"/></svg>
+                Lost profit
+              </li>
+            </ul>
+          </aside>
+        </div>
+
+        <div class="problem-result reveal" data-reveal>
+          <p>The result? Lower margins, higher costs, and frustrated customers.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section solution" id="solution" aria-labelledby="solution-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal" data-reveal>
+            <p class="eyebrow">The solution</p>
+            <h2 id="solution-title">A better way to get the size right</h2>
+          </div>
+          <p class="lede reveal" data-reveal style="--d:.08s">Our tool lets shoppers on your product page record a short 360° video of themselves. It reads their body measurements from that video, then recommends the size for that exact product — in seconds.</p>
+        </div>
+
+        <div class="solve-grid">
+          <article class="solve-card reveal" data-reveal>
+            <div class="micro">
+              <div class="micro-row"><span>Shoulder</span><b>42 cm</b></div>
+              <div class="micro-meter"><span style="--w:72%"></span></div>
+              <div class="micro-row"><span>Chest</span><b>96 cm</b></div>
+              <div class="micro-meter"><span style="--w:64%"></span></div>
+              <p class="micro-note">1 of 6 readings</p>
+            </div>
+            <h3>They see the measurements</h3>
+            <p>Every number is shown, with the reading behind it, so nothing has to be taken on trust.</p>
+          </article>
+
+          <article class="solve-card reveal" data-reveal style="--d:.08s">
+            <div class="micro micro--chips">
+              <div class="size-chips" aria-hidden="true">
+                <span>XS</span><span>S</span><span class="is-on">M</span><span>L</span><span>XL</span>
+              </div>
+              <p class="micro-note">Recommended: M</p>
+            </div>
+            <h3>They get a clear size</h3>
+            <p>Their measurements are scored row by row against the chart you typed for that garment: the worst disagreement decides, not the best one.</p>
+          </article>
+
+          <article class="solve-card reveal" data-reveal style="--d:.16s">
+            <div class="micro micro--zero">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>
+              <span class="zero">0</span>
+              <span class="zero-label">frames kept</span>
+              <p class="micro-note">Deleted at once</p>
+            </div>
+            <h3>Then everything is deleted</h3>
+            <p>The clip is deleted the moment it has been measured. Nothing is kept — not the video, not the frames, not the numbers.</p>
+          </article>
+        </div>
+
+        <div class="promise reveal" data-reveal>
+          <span>No profiles.</span>
+          <span>No saved measurements.</span>
+          <span>No risk.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section how" id="how" aria-labelledby="how-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal" data-reveal>
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">Simple for your customers. <em>Powerful for your brand.</em></h2>
+          </div>
+          <p class="lede reveal" data-reveal style="--d:.08s">From size chart to confident order — five steps, and nothing for the shopper to download.</p>
+        </div>
+
+        <div class="how-grid">
+          <ol class="flow reveal" data-reveal>
+            <li>
+              <span class="flow-num">01</span>
+              <p><strong>Add the garment</strong> in your dashboard and type its size chart.</p>
+            </li>
+            <li>
+              <span class="flow-num">02</span>
+              <p><strong>Paste the snippet</strong> once onto that product page — a “find my size” button appears there.</p>
+            </li>
+            <li>
+              <span class="flow-num">03</span>
+              <p><strong>Your shopper opens it</strong> and records a quick 360° video on their phone.</p>
+            </li>
+            <li>
+              <span class="flow-num">04</span>
+              <p><strong>Their body is measured</strong>, the numbers are shown, and their size comes off your chart.</p>
+            </li>
+            <li>
+              <span class="flow-num">05</span>
+              <p><strong>All of it is deleted immediately.</strong></p>
+            </li>
+          </ol>
+
+          <div class="pdp-wrap reveal" data-reveal style="--d:.1s">
+            <div class="pdp" aria-label="Example product page with the size finder">
+              <div class="pdp-top">
+                <span>Product page · live demo</span>
+                <span class="pdp-flag">Find my size</span>
+              </div>
+              <div class="pdp-meta">
+                <span class="pdp-brand">Oakler &amp; Co.</span>
+                <span class="pdp-price">$68.00</span>
+              </div>
+              <h3>Oversized Heavy Tee</h3>
+              <div class="pdp-plate">
+                <span class="pdp-plate-label">360° scan</span>
+                <svg viewBox="0 0 200 180" aria-hidden="true" focusable="false">
+                  <path d="M63 22l21-10c3 6 8 9 16 9s13-3 16-9l21 10 18 36-21 11-6-15v88H72V54l-6 15-21-11z" fill="#f5e9d6" stroke="#191411" stroke-width="2.2" stroke-linejoin="round"/>
+                  <path d="M84 12c0 8 7 13 16 13s16-5 16-13" fill="none" stroke="#191411" stroke-width="2"/>
+                  <path d="M62 92h76" stroke="#f0521f" stroke-width="1.6" stroke-dasharray="4 4"/>
+                  <path d="M62 86v12M138 86v12" stroke="#f0521f" stroke-width="1.6"/>
+                  <text x="100" y="84" text-anchor="middle" font-family="'Instrument Sans', sans-serif" font-size="8.5" letter-spacing="1.1" fill="#a9330a">CHEST 96 CM</text>
+                </svg>
+              </div>
+              <div class="pdp-sizes" aria-hidden="true">
+                <span>XS</span><span>S</span><span class="is-on">M</span><span>L</span><span>XL</span>
+              </div>
+              <div class="pdp-cta">Find my size</div>
+              <div class="pdp-result">
+                <span class="pdp-result-size">M</span>
+                <span class="pdp-result-label">Recommended</span>
+                <span class="pdp-result-note">Chest 96 · Waist 78 · Hip 101 cm</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="how-result reveal" data-reveal>
+          <p>They never leave your store. You reduce returns. <em>Everyone wins.</em></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section changes" id="changes" aria-labelledby="changes-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal" data-reveal>
+            <p class="eyebrow">What it changes</p>
+            <h2 id="changes-title">Built for clothing brands that care about margins</h2>
+          </div>
+          <p class="lede reveal" data-reveal style="--d:.08s">The difference shows up in your returns rate, your support inbox, and your bottom line.</p>
+        </div>
+
+        <div class="change-grid">
+          <article class="change-card reveal" data-reveal>
+            <span class="change-id">01</span>
+            <h3>Fewer size returns</h3>
+            <p>People order the size that fits, so the parcel does not come back.</p>
+          </article>
+          <article class="change-card reveal" data-reveal style="--d:.06s">
+            <span class="change-id">02</span>
+            <h3>More confident buying</h3>
+            <p>A number they can see beats a chart they have to guess at.</p>
+          </article>
+          <article class="change-card reveal" data-reveal style="--d:.12s">
+            <span class="change-id">03</span>
+            <h3>A better customer experience</h3>
+            <p>No tape measure, no fitting room, no app to install.</p>
+          </article>
+          <article class="change-card reveal" data-reveal style="--d:.18s">
+            <span class="change-id">04</span>
+            <h3>No data to look after</h3>
+            <p>Nothing is stored, so there is nothing to lose and nothing to report.</p>
+          </article>
+        </div>
+
+        <div class="change-wide reveal" data-reveal>
+          <div>
+            <span class="change-id">On any product page</span>
+            <h3>Easy to add anywhere</h3>
+            <p>Paste one snippet onto the product page and the size finder appears in a popover over the store — no new tab for the shopper to get lost in.</p>
+          </div>
+          <div class="popover-demo" aria-hidden="true">
+            <div class="pd-line"></div>
+            <div class="pd-line pd-line--wide"></div>
+            <div class="pd-block"></div>
+            <span class="pd-pill">Find my size</span>
+          </div>
+        </div>
+
+        <div class="changes-result reveal" data-reveal>
+          <span class="quote-mark" aria-hidden="true">“</span>
+          <p>Stop treating returns as “just part of the business”. <em>Fix the root cause.</em></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section privacy" id="privacy" aria-labelledby="privacy-title">
+      <div class="shell">
+        <div class="privacy-card reveal" data-reveal>
+          <div class="ticks" aria-hidden="true"></div>
+          <div>
+            <span class="shield" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            <p class="eyebrow">Privacy</p>
+            <h2 id="privacy-title">Privacy by design</h2>
+          </div>
+          <div class="privacy-copy">
+            <p class="privacy-strong">We never store videos or body measurements.</p>
+            <p>Everything is processed in real time and is gone right after the size recommendation is shown. No body profiles. No saved measurements. No data kept.</p>
+            <p class="privacy-highlight">Your customers stay private. Your brand stays trusted.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section cta" id="book" aria-labelledby="demo-title">
+      <div class="shell cta-grid">
+        <div class="reveal" data-reveal>
+          <p class="eyebrow eyebrow--ink">Book a demo</p>
+          <h2 id="demo-title">Ready to cut size returns?</h2>
+          <p class="lede">See how the tool works on a real product page and get a clear plan for your store. Leave an address and we will reply.</p>
+          <p class="cta-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            One reply from a real person. No newsletter, no sequence.
+          </p>
+        </div>
+
+        <div class="form-card reveal" style="--d:.08s" data-reveal>
+          <!-- The visitor's own mail client is the endpoint (landing.js writes the
+               message and opens it), so there is no server of ours to run and the
+               reply comes back to the address they typed. -->
+          <form id="demo-form" action="mailto:findmysize.us@gmail.com" method="post" enctype="text/plain" novalidate>
+            <div class="form-alert" id="form-alert" role="alert" hidden>
+              <p>Please check the highlighted fields and try again.</p>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="name">Name</label>
+                <input id="name" name="name" type="text" autocomplete="name" placeholder="Sam Okafor" aria-describedby="name-error" required>
+                <span class="field-error" id="name-error" hidden>Enter your name.</span>
+              </div>
+              <div class="field">
+                <label for="store">Store or brand <span class="optional">Optional</span></label>
+                <input id="store" name="store" type="text" autocomplete="organization" placeholder="Oakler &amp; Co.">
+              </div>
+              <div class="field field--full">
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" aria-describedby="email-error" required>
+                <span class="field-error" id="email-error" hidden>Enter a valid email address.</span>
+              </div>
+              <div class="field field--full">
+                <label for="products">What would you like to fix? <span class="optional">Optional</span></label>
+                <textarea id="products" name="message" rows="3" placeholder="Which product, and how bad the returns are."></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn--primary" id="demo-submit" type="submit">
+                Book a Demo
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+              </button>
+              <p class="form-fine">We only use these details to reply to this request.</p>
+            </div>
+          </form>
+
+          <div class="form-success" id="form-success" role="status" aria-live="polite" tabindex="-1" hidden>
+            <span class="success-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            </span>
+            <h3>Your email is ready to send.</h3>
+            <p>Your mail app should have opened with your details filled in. Press send and we will reply to <strong id="success-email">your address</strong>. Nothing opened? Write to us at <a href="mailto:findmysize.us@gmail.com">findmysize.us@gmail.com</a>.</p>
+            <button class="btn btn--ghost btn--small" type="button" id="form-reset">Edit my details</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-top">
+        <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+          <span>FindMySize</span>
+        </a>
+        <nav class="footer-nav" aria-label="Footer">
+          <a href="%BASE_URL%">Home</a>
+          <a href="%BASE_URL%size/">Sizing</a>
+          <a href="%BASE_URL%dashboard/">Dashboard</a>
+          <a href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+      </div>
+      <div class="footer-rule" aria-hidden="true"></div>
+      <p class="footer-legal">Nothing is saved. The video never leaves your customer’s phone; four still frames are measured once and deleted the moment the reading is done. Every measurement is an estimate, and it is shown with the reading behind it so it can be checked.</p>
+      <div class="footer-base">
+        <span>© 2026 FindMySize. All rights reserved.</span>
+        <span>Privacy-first by design.</span>
+      </div>
+    </div>
+  </footer>
+
+    <script type="module" src="/src/landing.js"></script>
+  </body>
+</html>

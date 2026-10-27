@@ -1,0 +1,130 @@
+/**
+ * The dark theme.
+ *
+ * The stylesheets are written in cream and ink, once, and nothing in them knows about
+ * a second theme. This file is the second theme, and it is loaded after the page's own
+ * stylesheet. It does three things, all under html[data-theme="dark"]:
+ *
+ *   1. Turns the page tokens over: cream becomes the page's dark, ink becomes its text.
+ *   2. Restores the original tokens inside every surface that is dark (or the accent
+ *      colour) in BOTH themes - the console cards, ticker, footer, orange sections and
+ *      the like. Inside those, nothing changes, so they need no per-rule care.
+ *   3. Re-colours the few places where a light colour was written out by hand.
+ *
+ * public/theme-init.js decides which theme is on, and sets the accent colour.
+ */
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --cream: #120e0b;
+  --cream-soft: #17120e;
+  --cream-deep: #211a14;
+  --paper: #1b1511;
+  --ink: #f5e9d6;
+  --ink-soft: #e0d2bd;
+  --muted: #b3a28d;
+  --muted-strong: #cbbba5;
+  --line: rgba(245, 233, 214, 0.14);
+  --line-strong: rgba(245, 233, 214, 0.3);
+  --orange-text: #ff8a5c;
+  --error: #ff9b85;
+  --good: #8bd49a;
+}
+
+/* 2. surfaces that keep their look in every theme */
+html[data-theme="dark"] .btn--primary,
+  html[data-theme="dark"] .avatar:hover,
+  html[data-theme="dark"] .avatar[aria-expanded="true"],
+  html[data-theme="dark"] .console,
+  html[data-theme="dark"] .marquee,
+  html[data-theme="dark"] .ticker,
+  html[data-theme="dark"] .problem,
+  html[data-theme="dark"] .promise,
+  html[data-theme="dark"] .how,
+  html[data-theme="dark"] .install,
+  html[data-theme="dark"] .cta,
+  html[data-theme="dark"] .footer,
+  html[data-theme="dark"] .pdp-cta,
+  html[data-theme="dark"] .pdp-result,
+  html[data-theme="dark"] .pd-pill,
+  html[data-theme="dark"] .privacy-card,
+  html[data-theme="dark"] .success-mark,
+  html[data-theme="dark"] .size-chips .is-on,
+  html[data-theme="dark"] .chart-head,
+  html[data-theme="dark"] .code-row,
+  html[data-theme="dark"] .mini-copy,
+  html[data-theme="dark"] .chart-snippet,
+  html[data-theme="dark"] .code-block,
+  html[data-theme="dark"] .dark-card,
+  html[data-theme="dark"] .toast,
+  html[data-theme="dark"] .dialog-bar,
+  html[data-theme="dark"] .pc-phase-switcher button.active,
+  html[data-theme="dark"] .auth-hero,
+  html[data-theme="dark"] .ticket,
+  html[data-theme="dark"] .how-panel,
+  html[data-theme="dark"] .bar-fill--small,
+  html[data-theme="dark"] .account-file,
+  html[data-theme="dark"] .settings-plan-card {
+    --cream: #f5e9d6;
+    --cream-soft: #f9f0df;
+    --cream-deep: #eadcc4;
+    --paper: #fdf7ea;
+    --ink: #191411;
+    --ink-soft: #3b3028;
+    --muted: #6b5b4e;
+    --muted-strong: #4a3c31;
+    --line: rgba(25, 20, 17, 0.14);
+    --line-strong: rgba(25, 20, 17, 0.28);
+}
+
+/* 3. colours that were written out by hand */
+html[data-theme="dark"] .topbar { background: rgba(18, 14, 11, 0.92); }
+
+html[data-theme="dark"] .form-alert,
+html[data-theme="dark"] .notice,
+html[data-theme="dark"] .field input[aria-invalid="true"],
+html[data-theme="dark"] .field textarea[aria-invalid="true"],
+html[data-theme="dark"] .noscript,
+html[data-theme="dark"] .status.error { background: #2b1510; border-color: rgba(255, 155, 133, 0.45); color: #ff9b85; }
+
+html[data-theme="dark"] .status.error::before { background: #44201a; }
+html[data-theme="dark"] .status.ok { background: #14221a; border-color: rgba(139, 212, 154, 0.4); color: #a8e0b4; }
+html[data-theme="dark"] .status.ok::before { background: #1f3527; }
+
+html[data-theme="dark"] .settings-field input,
+html[data-theme="dark"] .settings-field select,
+html[data-theme="dark"] .settings-field textarea { background-color: #241c16; }
+
+html[data-theme="dark"] .settings-field select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5e9d6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+html[data-theme="dark"] .settings-danger { background: #231512; border-color: rgba(255, 155, 133, 0.35); }
+html[data-theme="dark"] .settings-panel-hint-ok { color: #8bd49a; }
+html[data-theme="dark"] .settings-panel-hint-error,
+html[data-theme="dark"] .settings-nav-item.is-danger span,
+html[data-theme="dark"] .settings-danger .panel-kicker { color: #ff9b85; }
+
+html[data-theme="dark"] .field input::placeholder,
+html[data-theme="dark"] .auth-field input::placeholder,
+html[data-theme="dark"] .settings-field input::placeholder { color: rgba(245, 233, 214, 0.42); }
+
+/* the logo mark keeps the brand orange, whatever the accent is */
+
+/* ...but inside a surface that stays light (a form on the orange section) the placeholder stays dark */
+html[data-theme="dark"] :is(.btn--primary, .avatar:hover, .avatar[aria-expanded="true"], .console, .marquee, .ticker, .problem, .promise, .how, .install, .cta, .footer, .pdp-cta, .pdp-result, .pd-pill, .privacy-card, .success-mark, .size-chips .is-on, .chart-head, .code-row, .mini-copy, .chart-snippet, .code-block, .dark-card, .toast, .dialog-bar, .pc-phase-switcher button.active, .auth-hero, .ticket, .how-panel, .bar-fill--small, .account-file, .settings-plan-card) :is(.field, .auth-field, .settings-field) :is(input, textarea)::placeholder { color: #8b7a6b; }
+
+/* the sign-in page's footer is a plain one (a rule above it, no dark band), so it follows the page */
+html[data-theme="dark"] body.auth-page .footer {
+  --cream: #120e0b;
+  --cream-soft: #17120e;
+  --cream-deep: #211a14;
+  --paper: #1b1511;
+  --ink: #f5e9d6;
+  --ink-soft: #e0d2bd;
+  --muted: #b3a28d;
+  --muted-strong: #cbbba5;
+  --line: rgba(245, 233, 214, 0.14);
+  --line-strong: rgba(245, 233, 214, 0.3);
+}

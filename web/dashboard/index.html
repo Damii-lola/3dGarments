@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- No inline scripts (the reveal script is a file), no third-party code except
+         the MediaPipe loader and its model. Everything else is this origin, the API
+         and the signed Supabase storage URLs. Fonts are self-hosted for the same reason. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#f5e9d6" />
+    <title>FindMySize — Dashboard</title>
+    <meta
+      name="description"
+      content="Add a garment, type in its size chart, and get a link that tells your shoppers which size of it to buy."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/dashboard.css" />
+    <link rel="stylesheet" href="/src/theme.css" />
+    <script src="%BASE_URL%theme-init.js"></script>
+    <script src="%BASE_URL%reveal.js"></script>
+  </head>
+  <body id="top">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span class="brand-name">FindMySize</span>
+      </a>
+
+      <!-- ids below are the ones nav.js drives: current page, the account panel
+           (Settings + Log out when signed in, "Log in or sign up" when not) and the menu -->
+      <nav class="nav" id="nav-links" aria-label="Primary">
+        <a class="nav-link" href="%BASE_URL%">Home</a>
+        <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+        <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+        <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        <a class="btn btn--primary nav-demo" href="#add" data-in-only hidden>Start a new chart</a>
+      </nav>
+
+      <a class="btn btn--primary btn--small topbar-cta" href="#add" data-in-only hidden>
+        <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true" style="--od-icon-size:15px"><path d="M12 5v14M5 12h14"/></svg>
+        <span>New<span class="cta-long">&nbsp;chart</span></span>
+      </a>
+
+      <button class="avatar" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="8.5" r="3.5"/>
+          <path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/>
+        </svg>
+      </button>
+
+      <button class="menu-btn" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Open menu">
+        <span></span>
+        <span></span>
+      </button>
+
+      <div class="account" id="nav-account" hidden>
+        <p class="account-note" id="nav-account-note"></p>
+        <a class="account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
+        <a class="account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+        <button class="account-item" id="nav-account-out" type="button" hidden>Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section class="hero shell" aria-labelledby="hero-title">
+      <div class="hero-grid">
+        <div>
+          <p class="eyebrow rise">Dashboard &mdash; size library</p>
+          <h1 id="hero-title" class="rise rise--1">
+            Every size,
+            <em>on the record.</em>
+          </h1>
+          <p class="hero-sub rise rise--2">
+            Type a garment's chart in your own words and save it. You get a link
+            &mdash; and, if you want it, a small piece of code that opens the size
+            finder in a popup on your own product page &mdash; so a shopper is told
+            the right size before they order the wrong one.
+          </p>
+          <div class="hero-actions rise rise--2">
+            <a class="btn btn--primary" href="%BASE_URL%auth/" data-out-only hidden>Log in or sign up</a>
+            <a class="btn btn--ghost" href="%BASE_URL%pricing/" data-out-only hidden>See the price</a>
+            <a class="btn btn--primary" href="#add" data-in-only hidden>
+              Add a garment
+              <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+            </a>
+            <a class="btn btn--ghost" href="#dash-how" data-in-only hidden>See the install</a>
+          </div>
+          <p class="hero-note rise rise--3">
+            <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+            Size is the biggest reason clothing comes back. Answer it before checkout.
+          </p>
+        </div>
+
+        <aside class="console rise rise--3" id="dash-console" aria-label="Size library at a glance" data-in-only hidden>
+          <span class="hang-tag" aria-hidden="true">Size library</span>
+          <div class="console-top">
+            <span class="console-tag"><span class="live-dot"></span>In your account</span>
+            <span class="console-time">Live</span>
+          </div>
+          <div class="stats" id="dash-stats">
+            <div class="stat">
+              <p class="stat-value" id="stat-garments">0</p>
+              <p class="stat-label">Garments</p>
+            </div>
+            <div class="stat">
+              <p class="stat-value" id="stat-sizes">0</p>
+              <p class="stat-label">Sizes total</p>
+            </div>
+            <div class="stat">
+              <p class="stat-value" id="stat-updated">&mdash;</p>
+              <p class="stat-label">Last saved</p>
+            </div>
+          </div>
+          <div class="ticks" aria-hidden="true"></div>
+          <p class="console-note">
+            Every chart here powers the popup your shoppers see &mdash; one link,
+            one line of code, no account for them.
+          </p>
+          <div class="console-foot">
+            <span>Fit, answered before checkout.</span>
+            <span aria-hidden="true">FM / 01</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <div class="ticker" role="presentation">
+      <div class="ticker-track">
+        <div class="ticker-group">
+          <span class="ticker-item">Fewer wrong-size orders</span>
+          <span class="ticker-item">Fewer returns, by design</span>
+          <span class="ticker-item">Your sizes, your words</span>
+          <span class="ticker-item">One line to install</span>
+          <span class="ticker-item">No shopper account</span>
+          <span class="ticker-item">Nothing stored</span>
+        </div>
+        <div class="ticker-group" aria-hidden="true">
+          <span class="ticker-item">Fewer wrong-size orders</span>
+          <span class="ticker-item">Fewer returns, by design</span>
+          <span class="ticker-item">Your sizes, your words</span>
+          <span class="ticker-item">One line to install</span>
+          <span class="ticker-item">No shopper account</span>
+          <span class="ticker-item">Nothing stored</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="section shell" id="dash-anon" aria-labelledby="anon-title" data-reveal hidden>
+      <!-- Signed out is a state, not an error: the way in sits beside it. -->
+      <div class="ledger anon-card">
+        <div class="ledger-head">
+          <div class="ledger-title">
+            <span class="ledger-index" aria-hidden="true">A</span>
+            <h3 id="anon-title">Log in to add your clothing</h3>
+          </div>
+          <span class="ledger-badge">No account on this browser</span>
+        </div>
+        <p class="hint">
+          A username, an email and a password. Your size charts belong to that
+          account; a customer opening a link from your product page needs no
+          account of their own.
+        </p>
+        <div class="btn-row">
+          <a class="btn btn--primary" href="%BASE_URL%auth/">Log in or sign up</a>
+          <a class="btn btn--ghost" href="%BASE_URL%pricing/">See the price</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Signed in but not yet subscribed: points at the $150/month plan. -->
+    <section class="section shell" id="dash-unsubscribed" aria-labelledby="unsub-title" data-reveal hidden>
+      <div class="ledger anon-card">
+        <div class="ledger-head">
+          <div class="ledger-title">
+            <span class="ledger-index" aria-hidden="true">B</span>
+            <h3 id="unsub-title">One flat price — then you can add charts</h3>
+          </div>
+          <span class="ledger-badge">$150 / month · Unlimited charts</span>
+        </div>
+        <p class="hint">
+          FindMySize is $150 per store per month, for unlimited clothing size
+          charts. Pay once on Selar, and every chart you type here is live on
+          your product pages.
+        </p>
+        <div class="btn-row">
+          <a class="btn btn--primary" id="dash-go-pay" href="%BASE_URL%pricing/">Subscribe $150 / month</a>
+          <a class="btn btn--ghost" href="%BASE_URL%pricing/">See the price</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="dash-in" aria-labelledby="add-title" hidden>
+        <span id="add" aria-hidden="true"></span>
+
+        <div class="account-bar" id="account-bar">
+          <span class="account-label">Signed in as</span>
+          <span class="account-name" id="dash-name">&mdash;</span>
+          <span class="account-email" id="dash-mail">&mdash;</span>
+          <button class="account-out btn btn--ghost btn--small" id="dash-out" type="button">Log out</button>
+        </div>
+        <div class="section-head" data-reveal>
+          <div>
+            <p class="eyebrow">01 &mdash; The chart</p>
+            <h2 id="add-title">Type it once. <em>Get it right.</em></h2>
+          </div>
+          <p class="lede">
+            Copy the chart off your product page. The size names and numbers are
+            yours &mdash; the order only matters for a tie: type them smallest
+            first.
+          </p>
+        </div>
+
+        <div class="notice" id="dash-setup" role="note" hidden>
+          <h3>The size-chart table is not in this project yet</h3>
+          <p>
+            Open your Supabase project, go to SQL Editor, paste all of
+            <code>supabase/setup.sql</code> and run it (README, step 4), then
+            reload this page. Saving is off until then &mdash; nothing else here
+            needs it, and the scanner is unaffected.
+          </p>
+        </div>
+
+        <form class="ledger" id="chart-form" autocomplete="off" novalidate data-reveal>
+          <div class="ledger-head">
+            <div class="ledger-title">
+              <span class="ledger-index" aria-hidden="true">A</span>
+              <h3 id="chart-form-title">Add a garment</h3>
+            </div>
+            <span class="ledger-badge"><span class="live-dot"></span><span id="ledger-badge-text">New chart</span></span>
+          </div>
+
+          <p class="hint">
+            The size names are yours &mdash; <em>XS&hellip;XXL</em>,
+            <em>38/40/42</em>, <em>Small</em> &mdash; and the numbers are the
+            finished garment's, in whichever unit you already print.
+          </p>
+
+          <div class="field-grid">
+            <label class="field field--wide">
+              <span class="field-label">Garment</span>
+              <input id="chart-name" type="text" maxlength="60" placeholder="Oxford Shirt" />
+            </label>
+            <label class="field">
+              <span class="field-label">Made for</span>
+              <select id="chart-sex">
+                <option value="male">Men</option>
+                <option value="female">Women</option>
+                <option value="unisex">Anyone</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Numbers in</span>
+              <select id="chart-unit">
+                <option value="in">Inches</option>
+                <option value="cm">Centimetres</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="columns-bar">
+            <p class="hint">
+              Each column is one measurement. The first measurable column decides
+              the size; the others are checked for fit or shown as extra detail.
+            </p>
+            <button class="btn btn--ghost" id="chart-add-col" type="button">+ Add a column</button>
+          </div>
+
+          <div class="chart-table" id="chart-table">
+            <div class="chart-row chart-head" id="chart-head"></div>
+            <div id="chart-rows"></div>
+          </div>
+          <p class="table-hint">Swipe the table sideways to reach every column.</p>
+
+          <div class="form-actions">
+            <button class="btn btn--ghost" id="chart-add" type="button">+ Add a size</button>
+            <button class="btn btn--primary" id="chart-save" type="submit">Save and get the link</button>
+            <button class="btn btn--ghost" id="chart-cancel" type="button" hidden>Cancel edit</button>
+          </div>
+          <p class="chart-status" id="chart-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+    <section class="section shell" id="dash-list-section" aria-labelledby="library-title" hidden>
+        <span id="library" aria-hidden="true"></span>
+        <div class="library-head" data-reveal>
+          <div>
+            <p class="eyebrow">02 &mdash; The library</p>
+            <h2 id="library-title">Your size charts</h2>
+            <p class="lede">
+              Each one has a link of its own. Follow it to check it yourself: it is
+              exactly what a customer sees.
+            </p>
+          </div>
+          <div class="toolbar">
+            <label class="search-field">
+              <span class="sr-only">Search garments</span>
+              <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+              <input id="chart-search" type="search" placeholder="Search garments" autocomplete="off" />
+            </label>
+            <label>
+              <span class="sr-only">Sort garments</span>
+              <select id="chart-sort">
+                <option value="name">Name A&ndash;Z</option>
+                <option value="newest">Newest first</option>
+                <option value="sizes">Most sizes</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="charts" id="dash-list"></div>
+
+        <p class="honest">
+          A chart is the garment's numbers, never anybody's. A shopper's clip is
+          measured on their own phone, nothing from it is stored, and nothing from
+          it reaches you &mdash; the only thing that travels is the chart you
+          typed, going the other way.
+        </p>
+      </section>
+
+    <section class="install" id="dash-how" aria-labelledby="install-title" hidden>
+      <div class="shell">
+        <div class="install-head" data-reveal>
+          <div>
+            <p class="eyebrow">03 &mdash; Go live</p>
+            <h2 id="install-title">One line. <em>Then it's live.</em></h2>
+          </div>
+          <p class="lede">
+            One line of HTML per garment. No install, no build step, no account for
+            your customers.
+          </p>
+        </div>
+
+        <div class="ticks" aria-hidden="true"></div>
+
+        <div class="install-grid">
+          <article class="step-card" data-reveal>
+            <div class="step-top"><span class="step-num">01</span><h3>Copy the code</h3></div>
+            <p>
+              Each garment card above has a box labelled <b>Popup code for your
+              product page</b>. Use its <b>Copy the popup code</b> button. The line
+              looks like this:
+            </p>
+            <pre class="code-block"><code>&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE" data-label="Find My Size"&gt;&lt;/script&gt;</code></pre>
+            <p>That single line is the entire integration. The <code>data-chart</code> part tells it which size chart to use; everything else is optional.</p>
+          </article>
+
+          <article class="step-card" data-reveal style="--d:0.05s">
+            <div class="step-top"><span class="step-num">02</span><h3>Paste it at the top of your product page</h3></div>
+            <p>
+              Open your product page's HTML (or your platform's "Custom HTML",
+              "Additional scripts", or "Code injection" box) and paste that line
+              <b>at the very top of your <code>&lt;body&gt;</code></b>, before anything
+              else. The button will float bottom-right as a FAB.
+            </p>
+            <ul>
+              <li><b>Shopify:</b> Online Store &rarr; Themes &rarr; Edit code &rarr; product page template &rarr; paste at the top of <code>&lt;body&gt;</code>.</li>
+              <li><b>WordPress / WooCommerce:</b> Use a "Custom HTML" block or "Code injection" box on the product page.</li>
+              <li><b>Squarespace:</b> Use a Code block set to "Embed" and paste the line.</li>
+              <li><b>Any other site:</b> Paste the <code>&lt;script&gt;</code> tag right after the opening <code>&lt;body&gt;</code> tag.</li>
+            </ul>
+            <p>Paste it once per garment. A page selling three garments gets three floating buttons, one per size chart.</p>
+          </article>
+
+          <article class="step-card" data-reveal>
+            <div class="step-top"><span class="step-num">03</span><h3>Test it first</h3></div>
+            <p>
+              Before publishing, click <b>Preview &amp; Customise Popup</b> on a garment
+              card. The real popup opens over this dashboard, running the same code
+              your customers will get, and you can change its colours and wording
+              there. If it looks right here, it will look right on your site.
+            </p>
+          </article>
+
+          <article class="step-card" data-reveal style="--d:0.05s">
+            <div class="step-top"><span class="step-num">04</span><h3>Customise (all optional)</h3></div>
+            <p>
+              Open the chart card's <b>Preview &amp; Customise Popup</b> panel to
+              style the floating button and every screen of the size finder to match
+              your brand. Then copy the updated snippet below.
+            </p>
+            <ul>
+              <li><b>Button text:</b> <code>data-label="Find my fit"</code></li>
+              <li><b>Colour:</b> <code>data-color="#2563eb"</code> (any CSS colour)</li>
+            </ul>
+            <p>Example: a green button that says "Find My Size":</p>
+            <pre class="code-block"><code>&lt;script src="https://damii-lola.github.io/3dGarments/embed.js" data-chart="YOUR_CODE" data-label="Find My Size" data-color="#16a34a"&gt;&lt;/script&gt;</code></pre>
+          </article>
+
+          <article class="step-card" data-reveal>
+            <div class="step-top"><span class="step-num">05</span><h3>Or just use the link</h3></div>
+            <p>
+              The <b>The link</b> field on each card works on its own &mdash; drop
+              it into a product description, an Instagram bio, or an order
+              confirmation email. It opens the same size finder and still knows
+              which garment it is for. No button, no code.
+            </p>
+          </article>
+
+          <article class="step-card dark-card" data-reveal style="--d:0.05s">
+            <div class="step-top"><span class="step-num">06</span><h3>What the shopper does</h3></div>
+            <p>
+              They click the button, a popup opens over your page (no new tab,
+              basket untouched), they record one slow 360&deg; turn on their phone,
+              and they are shown their measurements and which size of
+              <strong>your</strong> garment to buy.
+            </p>
+            <p>
+              Nothing is saved &mdash; their video never leaves their phone.
+            </p>
+          </article>
+
+          <article class="step-card dark-card install-wide" data-reveal>
+            <div class="step-top"><span class="step-num">07</span><h3>If the button doesn't appear</h3></div>
+            <ul>
+              <li>Paste as <b>HTML / code</b>, not into a visual text editor that strips <code>&lt;script&gt;</code> tags.</li>
+              <li>Shopify, WordPress, Squarespace: use their "Custom HTML", "Additional scripts", or "Code injection" box.</li>
+              <li>If your site has a strict Content-Security-Policy, allow <code>https://damii-lola.github.io</code> in <code>script-src</code> and <code>frame-src</code>.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="install-foot" data-reveal>
+          <p>Start with the chart above. The link and the code appear the moment you save.</p>
+          <a class="btn btn--primary" href="#add">Add your next garment</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-top">
+        <span class="brand">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+          <span class="brand-name">FindMySize</span>
+        </span>
+        <nav class="footer-nav" aria-label="Footer">
+          <a href="%BASE_URL%">Home</a>
+          <a href="%BASE_URL%size/">Sizing</a>
+          <a href="%BASE_URL%dashboard/">Dashboard</a>
+          <a href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+      </div>
+      <div class="footer-rule" aria-hidden="true"></div>
+      <p class="footer-legal">
+        Nothing is saved. Four still frames are measured once and deleted
+        immediately; the video never leaves the shopper's phone. Your account holds
+        a name and an email; your charts hold the garments' numbers and nothing
+        about a body.
+      </p>
+      <div class="footer-base">
+        <span>&copy; 2026 FindMySize</span>
+        <span>Fit, answered before checkout.</span>
+      </div>
+    </div>
+  </footer>
+
+  <div class="toast" id="dash-toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="confirm-dialog" class="dialog--confirm" aria-labelledby="confirm-title">
+    <div class="dialog-card">
+      <div class="dialog-bar">
+        <span>Delete chart</span>
+        <button class="dialog-close" type="button" data-close="confirm-dialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="confirm-body">
+        <h2 id="confirm-title">Delete this chart?</h2>
+        <p id="confirm-text">Its link and popup code will stop working. This cannot be undone.</p>
+        <div class="confirm-actions">
+          <button class="btn btn--ghost" type="button" data-close="confirm-dialog" id="confirm-cancel">Keep it</button>
+          <button class="btn btn--danger" type="button" id="confirm-delete">Delete</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+    <!-- The popup script is loaded by src/dashboard.js the way a store loads it, so
+         "Preview & Customise Popup" runs the real thing rather than a mock-up of it. -->
+    <script type="module" src="/src/dashboard.js"></script>
+  </body>
+</html>

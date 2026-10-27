@@ -1,0 +1,70 @@
+<!--
+  The "Confirm signup" email.
+
+  Paste this into Supabase -> Authentication -> Email Templates -> Confirm signup
+  (see supabase/emails/README.md). `{{ .ConfirmationURL }}` is the link that
+  carries the session; it lands on the account screen, which opens the scanner.
+
+  Nothing here is a marketing claim made up for an email: it is the same promise
+  the page makes before the camera opens.
+-->
+<div style="margin:0;padding:24px 12px;background:#0b0c10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#15181f;border:1px solid rgba(255,255,255,0.10);border-radius:16px;overflow:hidden;">
+
+    <div style="padding:22px 24px 0;">
+      <span style="display:inline-block;width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#ff5b3a,#ff2e63);vertical-align:-4px;"></span>
+      <span style="color:#eef0f4;font-size:17px;font-weight:700;letter-spacing:-0.02em;margin-left:8px;">
+        FindMy<span style="color:#ff5b3a;">Size</span>
+      </span>
+    </div>
+
+    <div style="padding:20px 24px 4px;">
+      <h1 style="margin:0 0 10px;color:#eef0f4;font-size:22px;line-height:1.25;font-weight:700;letter-spacing:-0.02em;">
+        One click, and the camera opens
+      </h1>
+      <p style="margin:0 0 18px;color:#8b90a0;font-size:15px;line-height:1.6;">
+        {{ .Data.username }}, your account is ready. Confirm this address and you
+        go straight to the scanner.
+      </p>
+    </div>
+
+    <div style="padding:0 24px 8px;">
+      <a href="{{ .ConfirmationURL }}"
+         style="display:inline-block;padding:14px 22px;border-radius:12px;background:linear-gradient(180deg,#ff8a5c,#ff5b3a);color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">
+        Confirm and open the scanner
+      </a>
+    </div>
+
+    <div style="padding:14px 24px 4px;">
+      <p style="margin:0;color:#5d6272;font-size:12px;line-height:1.6;">
+        If the button does not work, paste this into your browser:<br />
+        <span style="color:#8b90a0;word-break:break-all;">{{ .ConfirmationURL }}</span>
+      </p>
+    </div>
+
+    <div style="margin-top:20px;padding:16px 24px 4px;border-top:1px solid rgba(255,255,255,0.10);">
+      <p style="margin:0 0 10px;color:#eef0f4;font-size:13px;font-weight:600;">What the scanner asks of you</p>
+      <p style="margin:0;color:#8b90a0;font-size:13px;line-height:1.7;">
+        Stand still. Turn slowly, once, all the way round. Thirty seconds at most.
+        Then it tells you the size to buy &mdash; and says plainly that every
+        measurement is an estimate.
+      </p>
+    </div>
+
+    <div style="margin-top:18px;padding:16px 24px;border-top:1px solid rgba(255,255,255,0.10);background:rgba(61,220,151,0.06);">
+      <p style="margin:0;color:#3ddc97;font-size:13px;font-weight:600;">Nothing is saved.</p>
+      <p style="margin:6px 0 0;color:#8b90a0;font-size:12px;line-height:1.6;">
+        Your video never leaves your phone and is never uploaded. It is measured
+        there, then forgotten. Every measurement it shows you is an estimate.
+      </p>
+    </div>
+
+    <div style="padding:14px 24px 22px;">
+      <p style="margin:0;color:#5d6272;font-size:12px;line-height:1.6;">
+        If this was not you, ignore this email and nothing happens &mdash; no account
+        is opened until the link above is used.
+      </p>
+    </div>
+
+  </div>
+</div>

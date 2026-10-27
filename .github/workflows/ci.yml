@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only by default: a test job has no reason to write to the repo or use a
+# token with more reach than checking the code out.
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: API — check & test
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: server } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci
+      - run: npm run check
+      - name: Geometry — the measurement arithmetic, on synthetic bodies with known answers
+        run: node scripts/geometry-check.mjs
+      - run: npm test
+
+  web:
+    name: Web — build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  lab:
+    name: Lab (/test) — build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: test } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            test/package-lock.json
+            web/package-lock.json
+      # the lab imports web/src, whose dependencies resolve from web/node_modules
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+      - run: npm run build

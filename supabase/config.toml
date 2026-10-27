@@ -1,0 +1,43 @@
+# Supabase CLI project config. CI runs `supabase link` + `supabase db push`.
+project_id = "3dgarments"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["https://damii-lola.github.io/3dGarments/"]
+
+# Passwords: 8+ chars, mixed case + digits. Leaked-password (HIBP) protection is
+# not expressible here; enable it via the Management API / Dashboard (see below).
+minimum_password_length = 8
+password_requirements = "lower_upper_letters_digits"
+
+# Rotate refresh tokens and reuse only briefly.
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+# Email confirmation stays on (signup requires a confirmed email).
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = true
+max_frequency = "1m"
+otp_length = 8
+otp_expiry = 600
+
+[auth.rate_limit]
+# Tightened from defaults for a small app: 5-minute windows per IP.
+sign_in_sign_ups = 10
+token_verifications = 10
+token_refresh = 60
+anonymous_users = 10
+web3 = 10

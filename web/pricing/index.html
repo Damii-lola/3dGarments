@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- No inline scripts (the reveal script is a file), no third-party code except
+         the MediaPipe loader and its model. Everything else is this origin, the API
+         and the signed Supabase storage URLs. Fonts are self-hosted for the same reason. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#f5e9d6" />
+    <title>FindMySize — Pricing</title>
+    <meta
+      name="description"
+      content="What FindMySize includes, how it is added to a product page, and how a quote works. Nothing is stored and nothing is charged per return avoided."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/pricing.css" />
+    <link rel="stylesheet" href="/src/theme.css" />
+    <script src="%BASE_URL%theme-init.js"></script>
+    <script src="%BASE_URL%reveal.js"></script>
+  </head>
+  <body id="top">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span>FindMySize</span>
+      </a>
+
+      <!-- ids below are the ones nav.js drives: current page, the account panel
+           (Settings + Log out when signed in, "Log in or sign up" when not) and the menu -->
+      <nav class="nav" id="nav-links" aria-label="Primary">
+        <a class="nav-link" href="%BASE_URL%">Home</a>
+        <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+        <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+        <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        <a class="btn btn--primary nav-demo" href="%BASE_URL%#book">Book a Demo</a>
+      </nav>
+
+      <button class="avatar" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="8.5" r="3.5"/>
+          <path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/>
+        </svg>
+      </button>
+
+      <button class="menu-btn" id="nav-menu" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-links">
+        <span></span>
+        <span></span>
+      </button>
+
+      <div class="account" id="nav-account" hidden>
+        <p class="account-note" id="nav-account-note"></p>
+        <a class="account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
+        <a class="account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+        <button class="account-item" id="nav-account-out" type="button" hidden>Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+
+    <section class="hero shell" aria-labelledby="hero-title">
+      <div class="hero-grid">
+        <div class="rise">
+          <p class="eyebrow">Pricing</p>
+          <h1 id="hero-title">
+            <span class="h1-line"><span class="price-word">One flat price.</span></span>
+            <span class="h1-line"><em>Unlimited</em> size charts</span>
+          </h1>
+
+          <div class="hero-copy">
+            <p class="hero-sub">
+              One price per store, for unlimited clothing size charts. Add every
+              product you sell, type each one&rsquo;s chart, and put the size finder
+              on as many product pages as you like &mdash; the price does not move
+              with how many you have. That&rsquo;s just 2.5% to 15% of the total
+              money shop owners lose on size returns per month.
+            </p>
+
+            <div class="hero-actions">
+              <a class="btn btn--primary" href="%BASE_URL%dashboard/">
+                Add your first garment
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+              </a>
+              <a class="btn btn--ghost" href="%BASE_URL%#book">Book a Demo</a>
+            </div>
+
+            <p class="hero-note">
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                One flat price
+              </span>
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                Unlimited charts
+              </span>
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                Nothing stored
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <div class="ticket rise rise--2" aria-label="Price summary">
+          <span class="ticket-tag">Unlimited charts</span>
+          <div class="ticket-top">
+            <span class="ticket-tagline">Per store</span>
+            <span class="ticket-chip">No per-return fees</span>
+          </div>
+
+          <div class="ticket-price">
+            <span class="ticket-num" data-count="150">$150</span>
+            <span class="ticket-per">/ month</span>
+          </div>
+          <p class="ticket-line">Unlimited clothing size charts</p>
+
+          <div class="ticks" aria-hidden="true"></div>
+
+          <dl class="ticket-rows">
+            <div class="ticket-row">
+              <dt>Size charts</dt>
+              <dd>Unlimited</dd>
+            </div>
+            <div class="ticket-row">
+              <dt>Per return</dt>
+              <dd>$0</dd>
+            </div>
+            <div class="ticket-row">
+              <dt>Data stored</dt>
+              <dd>None</dd>
+            </div>
+            <div class="ticket-row">
+              <dt>Setup</dt>
+              <dd>On a call</dd>
+            </div>
+          </dl>
+
+          <p class="ticket-foot">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+            Billing is next &mdash; today a store is set up with us on a call.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track">
+        <div class="marquee-group">
+          <span class="marquee-item">Unlimited clothing size charts</span>
+          <span class="marquee-item">One price per store</span>
+          <span class="marquee-item">No per-return fees</span>
+          <span class="marquee-item">Nothing stored</span>
+          <span class="marquee-item">Works on any product page</span>
+          <span class="marquee-item">Built for clothing brands</span>
+        </div>
+        <div class="marquee-group">
+          <span class="marquee-item">Unlimited clothing size charts</span>
+          <span class="marquee-item">One price per store</span>
+          <span class="marquee-item">No per-return fees</span>
+          <span class="marquee-item">Nothing stored</span>
+          <span class="marquee-item">Works on any product page</span>
+          <span class="marquee-item">Built for clothing brands</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="section" id="plan" aria-labelledby="plan-title">
+      <div class="shell">
+        <div class="section-head">
+          <div class="reveal" data-reveal>
+            <p class="eyebrow">The plan</p>
+            <h2 id="plan-title">Everything, for one price per store</h2>
+          </div>
+          <p class="lede reveal" data-reveal style="--d:.08s">
+            Add every product you sell, type each one&rsquo;s chart, and put the
+            size finder on as many product pages as you like &mdash; the price
+            does not move with how many you have.
+          </p>
+        </div>
+
+        <div class="plan-grid">
+          <div class="price-panel reveal" data-reveal>
+            <p class="price-eyebrow">Per store</p>
+
+            <p class="price-amount">
+              <span class="price-num" data-count="150">$150</span>
+              <span class="price-per">/ month</span>
+            </p>
+            <p class="price-line">Unlimited clothing size charts</p>
+
+            <div class="price-rule" aria-hidden="true"></div>
+
+            <ul class="ticks-list">
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                <span>The scanner, on the phone the shopper already has</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                <span>A size scored row by row against <em>your</em> chart</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                <span>Measurements shown with the reading behind each one</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                <span>A link per garment, and a snippet for the popup</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+                <span>Nothing stored, so nothing to look after</span>
+              </li>
+            </ul>
+
+            <div class="price-rule" aria-hidden="true"></div>
+
+            <div class="actions">
+              <a class="btn btn--primary" href="%BASE_URL%dashboard/">
+                Add your first garment
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+              </a>
+              <a class="btn btn--ghost" href="%BASE_URL%#book">Book a Demo</a>
+            </div>
+
+            <p class="price-note">
+              <strong>Nothing is charged on this site yet:</strong> billing is the
+              next thing we build, so today a store is set up with us on a call.
+              $150/month is just 2.5% to 15% of the total money you lose on size
+              returns per month.
+            </p>
+          </div>
+
+          <aside class="how-panel reveal" data-reveal style="--d:.1s" aria-labelledby="how-title">
+            <h3 id="how-title">How it is added</h3>
+            <div class="ticks" aria-hidden="true"></div>
+            <ol class="steps">
+              <li class="step">
+                <span class="step-n" aria-hidden="true">01</span>
+                <p><strong>You type each garment&rsquo;s size chart</strong> in your dashboard.</p>
+              </li>
+              <li class="step">
+                <span class="step-n" aria-hidden="true">02</span>
+                <p><strong>Paste the snippet onto the product page</strong> &mdash; a button appears there.</p>
+              </li>
+              <li class="step">
+                <span class="step-n" aria-hidden="true">03</span>
+                <p><strong>The shopper takes one slow turn</strong> and is shown their size in that garment.</p>
+              </li>
+            </ol>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="section math" id="math" aria-labelledby="math-title">
+      <div class="shell math-grid">
+        <div class="math-copy reveal" data-reveal>
+          <p class="eyebrow eyebrow--ink">The math</p>
+          <h2 id="math-title">The price is the small number</h2>
+          <p>
+            Size returns cost far more than the subscription ever will.
+            $150 a month is just 2.5% to 15% of the total money shop owners lose
+            on size returns per month.
+          </p>
+          <p class="math-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7"/></svg>
+            The rest of that money stays in the business.
+          </p>
+        </div>
+
+        <div class="bars reveal" data-reveal style="--d:.1s" aria-label="Price compared with size-return losses">
+          <div>
+            <div class="bar-head">
+              <span>Lost to size returns each month</span>
+              <b>100%</b>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-fill--full">What returns take</div>
+            </div>
+            <p class="bar-caption">The full cost of wrong-size orders, returns and exchanges.</p>
+          </div>
+
+          <div>
+            <div class="bar-head">
+              <span>FindMySize, per store</span>
+              <b>2.5&ndash;15%</b>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-fill--small">$150</div>
+            </div>
+            <p class="bar-caption">One flat monthly price, for unlimited clothing size charts.</p>
+          </div>
+
+          <div class="bars-foot">
+            <span>One price. No per-return fees.</span>
+            <b>$150 / month</b>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="questions" aria-labelledby="faq-title">
+      <div class="shell faq-grid">
+        <div class="faq-intro reveal" data-reveal>
+          <p class="eyebrow">Questions</p>
+          <h2 id="faq-title">What brands ask first</h2>
+          <p>Short, plain answers about privacy, setup and what a store actually gets.</p>
+          <a class="btn btn--ghost" href="%BASE_URL%#book">Book a Demo</a>
+        </div>
+
+        <div class="faq reveal" data-reveal style="--d:.08s">
+          <details>
+            <summary>Do you store my customers&rsquo; videos or measurements?</summary>
+            <div class="faq-body">
+              <p>
+                No. The clip is sent to us, read once, and deleted the moment it has
+                been measured &mdash; and nothing is kept afterwards: no video, no
+                frames, no measurements, no history. There is no body profile to
+                leak, because there is no bit of one anywhere.
+              </p>
+            </div>
+          </details>
+          <details>
+            <summary>Do my customers need an app?</summary>
+            <div class="faq-body">
+              <p>
+                No. They tap a button and use the camera they already have. The whole
+                exchange is one slow turn on the spot, and about ten seconds of
+                waiting while the numbers are read.
+              </p>
+            </div>
+          </details>
+          <details>
+            <summary>Is it a plugin for my store?</summary>
+            <div class="faq-body">
+              <p>
+                Not a packaged one yet. You get a snippet to paste onto a product
+                page, which opens the size finder in a popup over that page &mdash;
+                your theme is not touched, and the shopper is never sent to a new tab.
+                Packaged plugins for the large platforms are the next piece of work.
+              </p>
+            </div>
+          </details>
+          <details>
+            <summary>How am I charged?</summary>
+            <div class="faq-body">
+              <p>
+                $150 per store per month, for unlimited clothing size charts.
+                That&rsquo;s just 2.5% to 15% of the total money shop owners lose on
+                size returns per month. There is no checkout on this site yet &mdash;
+                the subscription is the next thing we build &mdash; so today a store
+                is set up with us on a call.
+              </p>
+            </div>
+          </details>
+          <details>
+            <summary>What does it need?</summary>
+            <div class="faq-body">
+              <p>
+                A phone with a camera, and a video of the customer turning all the
+                way around &mdash; thirty seconds is the limit, ten is a good clip. On a
+                desktop, a video already on the device can be uploaded instead.
+              </p>
+            </div>
+          </details>
+          <details>
+            <summary>How accurate is it?</summary>
+            <div class="faq-body">
+              <p>
+                It is an estimate, and it says so, in those words, on the result. Every
+                measurement is shown with the reading behind it, and the size is scored
+                against the chart row by row: the worst disagreement decides, so a
+                marginal call lands on the smaller size rather than a hopeful larger
+                one.
+              </p>
+            </div>
+          </details>
+          <details>
+            <summary>Can I try it before talking to anyone?</summary>
+            <div class="faq-body">
+              <p>
+                Yes, and please do. <a href="%BASE_URL%size/">The scanner</a> on this
+                site is the same one your customers would use.
+              </p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta" id="book" aria-labelledby="cta-title">
+      <svg class="cta-pencil" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <g transform="rotate(45 16 16)">
+          <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#191411"/>
+          <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f5e9d6"/>
+          <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#191411"/>
+          <path d="M12.5 22.8h7L16 28z" fill="#191411"/>
+          <path d="M14.9 26.3h2.2L16 28z" fill="#f5e9d6"/>
+        </g>
+      </svg>
+
+      <div class="shell cta-inner">
+        <div class="reveal" data-reveal>
+          <p class="eyebrow eyebrow--ink">Ready when you are</p>
+          <h2 id="cta-title">Ready to cut size returns?</h2>
+          <p>
+            See how the tool works on a real product page and get a clear plan for
+            your store.
+          </p>
+        </div>
+
+        <div class="cta-actions reveal" data-reveal style="--d:.08s">
+          <a class="btn btn--primary" href="%BASE_URL%#book">
+            Book a Demo
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn--ghost" href="%BASE_URL%size/">Try the scanner</a>
+          <p class="cta-fine">One reply from a real person. No newsletter, no sequence.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-top">
+        <a class="brand" href="%BASE_URL%" aria-label="FindMySize home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <rect width="32" height="32" rx="9" fill="#f0521f"/>
+            <g transform="rotate(45 16 16)">
+              <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+              <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+              <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+              <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+              <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+            </g>
+          </svg>
+          <span>FindMySize</span>
+        </a>
+        <nav class="footer-nav" aria-label="Footer">
+          <a href="%BASE_URL%">Home</a>
+          <a href="%BASE_URL%size/">Sizing</a>
+          <a href="%BASE_URL%dashboard/">Dashboard</a>
+          <a href="%BASE_URL%pricing/">Pricing</a>
+        </nav>
+      </div>
+      <div class="footer-rule" aria-hidden="true"></div>
+      <p class="footer-legal">Nothing is saved. Four still frames are measured once and deleted immediately; the video never leaves your customer&rsquo;s phone. Every measurement is an estimate.</p>
+      <div class="footer-base">
+        <span>&copy; 2026 FindMySize. All rights reserved.</span>
+        <span>Privacy-first by design.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/pricing.js"></script>
+  </body>
+</html>

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- No inline scripts, no third-party code except the MediaPipe loader and its model.
+         Everything else is this origin, the API and the signed Supabase storage URLs.
+         Fonts are self-hosted for the same reason. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net https://storage.googleapis.com ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:; frame-src 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#f5e9d6" />
+    <title>FindMySize — Your account</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/auth.css" />
+    <link rel="stylesheet" href="/src/theme.css" />
+    <script src="%BASE_URL%theme-init.js"></script>
+    <noscript>
+      <style>
+        .nav { display: flex !important; flex-wrap: wrap; gap: 12px; }
+        .menu-btn, .avatar, .topbar-cta { display: none !important; }
+        .auth-card-wrap, .auth-hero { animation: none !important; }
+      </style>
+    </noscript>
+  </head>
+  <body id="top" class="auth-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="%BASE_URL%" aria-label="FindMySize — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span class="brand-name">FindMy<b>Size</b></span>
+      </a>
+
+      <!-- ids below are the ones nav.js drives: current page, the account panel
+           (Settings + Log out when signed in, "Log in or sign up" when not) and the menu -->
+      <nav class="nav" id="nav-links" aria-label="Primary">
+        <a class="nav-link" href="%BASE_URL%">Home</a>
+        <a class="nav-link" href="%BASE_URL%size/">Sizing</a>
+        <a class="nav-link" href="%BASE_URL%dashboard/">Dashboard</a>
+        <a class="nav-link" href="%BASE_URL%pricing/">Pricing</a>
+        <a class="btn btn--primary nav-demo" href="%BASE_URL%dashboard/">Open the dashboard</a>
+      </nav>
+
+      <a class="btn btn--ghost btn--small topbar-cta" href="%BASE_URL%dashboard/">
+        Dashboard
+        <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+      </a>
+
+      <button class="avatar" id="nav-user" type="button" aria-expanded="false" aria-controls="nav-account" aria-label="Account and settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="8.5" r="3.5"/>
+          <path d="M5 20c.8-3.4 3.6-5.2 7-5.2s6.2 1.8 7 5.2"/>
+        </svg>
+      </button>
+
+      <button class="menu-btn" id="nav-menu" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Open menu">
+        <span></span>
+        <span></span>
+      </button>
+
+      <div class="account" id="nav-account" hidden>
+        <p class="account-note" id="nav-account-note"></p>
+        <a class="account-item" id="nav-account-settings" href="%BASE_URL%settings/" hidden>Settings</a>
+        <a class="account-item" id="nav-account-in" href="%BASE_URL%auth/">Log in or sign up</a>
+        <button class="account-item" id="nav-account-out" type="button" hidden>Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="auth-main shell" tabindex="-1">
+    <div class="auth-grid">
+      <div class="auth-card-wrap">
+        <section class="auth-card" aria-labelledby="auth-title">
+          <div class="card-bar">
+            <span class="card-tag"><span class="dot"></span>Account</span>
+            <span class="card-secure">
+              <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8"/>
+                <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4"/>
+              </svg>
+              Two-step login
+            </span>
+          </div>
+
+          <div class="card-body">
+            <noscript>
+              <p class="noscript">This page needs JavaScript to sign you in. Turn it on and reload.</p>
+            </noscript>
+
+            <header class="auth-head" id="auth-head">
+              <h1 id="auth-title">Create your account</h1>
+              <p class="auth-lead" id="auth-lead">A name, an email and a password. Confirm the address once, and after that every log in is your password plus a code we email you — nothing to install.</p>
+            </header>
+
+            <div class="auth-entry" id="auth-entry">
+              <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="Create an account or log in">
+                <button class="auth-tab on" id="tab-signup" type="button" role="tab" aria-selected="true" aria-controls="signup-form" data-tab="signup">Sign up</button>
+                <button class="auth-tab" id="tab-login" type="button" role="tab" aria-selected="false" aria-controls="login-form" data-tab="login">Log in</button>
+              </div>
+
+              <form class="auth-form" id="signup-form" role="tabpanel" aria-labelledby="tab-signup" novalidate>
+                <div class="auth-field">
+                  <div class="field-top">
+                    <label for="signup-username">Username</label>
+                    <span class="field-note">3–20 characters</span>
+                  </div>
+                  <input id="signup-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="e.g. sam.okafor" required aria-describedby="username-help username-state">
+                  <p class="field-hint" id="username-help">Letters, numbers, dot, dash or underscore.</p>
+                  <p class="auth-hint" id="username-state" aria-live="polite"></p>
+                </div>
+
+                <div class="auth-field">
+                  <label for="signup-email">Email</label>
+                  <input id="signup-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" required>
+                </div>
+
+                <div class="field-row">
+                  <div class="auth-field">
+                    <div class="field-top">
+                      <label for="signup-password">Password</label>
+                      <span class="field-note">6+ characters</span>
+                    </div>
+                    <input id="signup-password" name="password" type="password" autocomplete="new-password" required>
+                  </div>
+                  <div class="auth-field">
+                    <label for="signup-confirm">Confirm password</label>
+                    <input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" required>
+                  </div>
+                </div>
+
+                <div class="security-note">
+                  <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8"/>
+                    <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4"/>
+                  </svg>
+                  <p>We send one confirmation link now. After that, every log in asks for the code we email you — a password alone is not enough.</p>
+                </div>
+
+                <button class="btn btn--primary btn--block" id="signup-submit" type="submit">
+                  Create account
+                  <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+                </button>
+              </form>
+
+              <form class="auth-form" id="login-form" role="tabpanel" aria-labelledby="tab-login" hidden novalidate>
+                <div class="auth-field">
+                  <label for="login-email">Email</label>
+                  <input id="login-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" required>
+                </div>
+
+                <div class="auth-field">
+                  <label for="login-password">Password</label>
+                  <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                </div>
+
+                <div class="form-aside">
+                  <button class="link-btn" id="forgot-btn" type="button">Forgot password?</button>
+                </div>
+
+                <button class="btn btn--primary btn--block" id="login-submit" type="submit">
+                  Log in
+                  <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+                </button>
+              </form>
+            </div>
+
+            <section class="auth-step" id="auth-code" hidden>
+              <form class="auth-form" id="code-form" novalidate>
+                <div class="auth-field">
+                  <div class="field-top">
+                    <label for="code-input">Code from the email</label>
+                    <span class="field-note">6–10 digits</span>
+                  </div>
+                  <input class="auth-code-input" id="code-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" placeholder="••••••" required aria-describedby="code-help">
+                  <p class="field-hint" id="code-help">Paste the whole code. Older codes stop working once a new one is sent.</p>
+                </div>
+
+                <button class="btn btn--primary btn--block" id="code-submit" type="submit">
+                  Verify and open the scanner
+                  <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+                </button>
+              </form>
+
+              <div class="step-actions">
+                <button class="btn btn--ghost" id="code-resend" type="button">Send a new code</button>
+                <button class="btn btn--quiet" id="code-back" type="button">Use a different account</button>
+              </div>
+            </section>
+
+            <section class="auth-step" id="auth-sent" hidden>
+              <p class="sent-note" id="sent-note"></p>
+              <div class="step-actions">
+                <button class="btn btn--primary" id="sent-resend" type="button">Send the email again</button>
+                <button class="btn btn--quiet" id="sent-back" type="button">Back to log in</button>
+              </div>
+            </section>
+
+            <section class="auth-step" id="auth-recover" hidden>
+              <form class="auth-form" id="recovery-form" novalidate>
+                <div class="field-row">
+                  <div class="auth-field">
+                    <label for="recovery-password">New password</label>
+                    <input id="recovery-password" name="password" type="password" autocomplete="new-password" required>
+                  </div>
+                  <div class="auth-field">
+                    <label for="recovery-confirm">Confirm new password</label>
+                    <input id="recovery-confirm" name="confirm" type="password" autocomplete="new-password" required>
+                  </div>
+                </div>
+
+                <button class="btn btn--primary btn--block" id="recovery-submit" type="submit">
+                  Set the password
+                  <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+                </button>
+              </form>
+            </section>
+
+            <p class="status" id="auth-status" role="status" aria-live="polite"></p>
+
+            <div class="auth-local" id="auth-local" hidden>
+              <button class="btn btn--primary btn--block" id="auth-skip" type="button">Continue to the scanner</button>
+            </div>
+
+            <p class="privacy-line">
+              <svg class="od-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.2 10.2V7.4a4.8 4.8 0 0 1 9.6 0v2.8"/>
+                <rect x="4.9" y="10.2" width="14.2" height="9.3" rx="2.4"/>
+              </svg>
+              Nothing is saved — the frames are deleted the moment they have been measured.
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <aside class="auth-hero" aria-label="Why an account">
+        <div class="hero-inner">
+          <div class="hero-top">
+            <span class="hero-eyebrow">Fit library</span>
+            <span class="hero-index" aria-hidden="true">01 / 01</span>
+          </div>
+
+          <p class="hero-statement">Fit, answered <em>before checkout.</em></p>
+
+          <p class="hero-lede">One account keeps every garment’s measurements, link and popup code in one place — and keeps the shopper’s body out of it.</p>
+
+          <ul class="trust-list">
+            <li>
+              <span class="trust-num" aria-hidden="true">01</span>
+              <div>
+                <b>One library</b>
+                <p>Every chart, link and popup code in one place.</p>
+              </div>
+            </li>
+            <li>
+              <span class="trust-num" aria-hidden="true">02</span>
+              <div>
+                <b>Two-step login</b>
+                <p>A password, then a code to your inbox.</p>
+              </div>
+            </li>
+            <li>
+              <span class="trust-num" aria-hidden="true">03</span>
+              <div>
+                <b>Bodies stay out</b>
+                <p>Charts hold garment numbers, never a body.</p>
+              </div>
+            </li>
+          </ul>
+
+          <div class="hero-tag" aria-hidden="true">
+            <div class="tag-brand">
+              <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <rect width="32" height="32" rx="9" fill="#f0521f"/>
+                <g transform="rotate(45 16 16)">
+                  <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+                  <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+                  <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+                  <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+                  <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+                </g>
+              </svg>
+              FindMySize
+            </div>
+            <p class="tag-title">Fit library</p>
+            <p class="tag-sub">One account · every chart</p>
+          </div>
+        </div>
+        <div class="hero-tape" aria-hidden="true"></div>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <span class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span class="brand-name">FindMy<b>Size</b></span>
+      </span>
+      <p class="footer-note">Fit, answered before checkout.</p>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="%BASE_URL%">Home</a>
+        <a href="%BASE_URL%size/">Sizing</a>
+        <a href="%BASE_URL%dashboard/">Dashboard</a>
+        <a href="%BASE_URL%pricing/">Pricing</a>
+      </nav>
+      <span class="footer-copy">&copy; 2026 FindMySize</span>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/auth.js"></script>
+  </body>
+</html>
