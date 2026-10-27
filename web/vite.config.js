@@ -32,6 +32,7 @@ export default defineConfig({
         dashboard: page('dashboard/index.html'),
         settings: page('settings/index.html'),
         shop: page('shop/index.html'),
+        train: page('../train/index.html'),
       },
       output: { manualChunks: { three: ['three'], supabase: ['@supabase/supabase-js'] } },
     },

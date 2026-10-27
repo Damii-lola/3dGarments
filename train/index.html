@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FindMySize — AI Training Lab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f0521f'/%3E%3Cg transform='rotate(45 16 16)'%3E%3Crect x='12.5' y='6' width='7' height='3.2' rx='1' fill='%23fdf7ea'/%3E%3Crect x='12.5' y='9.2' width='7' height='1.4' fill='%23f0521f'/%3E%3Crect x='12.5' y='10.6' width='7' height='12.2' rx='0.6' fill='%23fdf7ea'/%3E%3Cpath d='M12.5 22.8h7L16 28z' fill='%23fdf7ea'/%3E%3Cpath d='M14.9 26.3h2.2L16 28z' fill='%23191411'/%3E%3C/g%3E%3C/svg%3E" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob:; connect-src 'self' https://threedgarments.onrender.com https://*.supabase.co https://cdn.jsdelivr.net ws://localhost:5173 http://localhost:5173; worker-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' mailto:;" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="theme-color" content="#f5e9d6" />
+  <link rel="stylesheet" href="/src/training.css" />
+  <script src="%BASE_URL%theme-init.js"></script>
+</head>
+<body id="top">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="/" aria-label="FindMySize — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#f0521f"/>
+          <g transform="rotate(45 16 16)">
+            <rect x="12.5" y="6" width="7" height="3.2" rx="1" fill="#fdf7ea"/>
+            <rect x="12.5" y="9.2" width="7" height="1.4" fill="#f0521f"/>
+            <rect x="12.5" y="10.6" width="7" height="12.2" rx="0.6" fill="#fdf7ea"/>
+            <path d="M12.5 22.8h7L16 28z" fill="#fdf7ea"/>
+            <path d="M14.9 26.3h2.2L16 28z" fill="#191411"/>
+          </g>
+        </svg>
+        <span>FindMySize — AI Training</span>
+      </a>
+      <a class="btn btn--primary" href="/size/" data-out-only>Back to Scanner</a>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="shell" style="max-width: 1400px;">
+      <h1 class="eyebrow">AI Training Data — Teach the size finder</h1>
+
+      <!-- The model is our perfect test subject: we set the proportions, we know the answer. -->
+      <p class="intro">
+        Set a body's exact proportions → render from 4 angles → the AI sees the photos and guesses
+        the measurements → we compare its guess to the model's real numbers. No mistakes, because
+        <strong>we set the ground truth ourselves.</strong>
+      </p>
+
+      <div class="training-grid">
+        <!-- Left: 3D model view -->
+        <div class="view-panel">
+          <div class="canvas-wrap" id="canvas-wrap">
+            <canvas id="train-canvas"></canvas>
+            <div class="view-overlay" id="view-overlay"></div>
+          </div>
+
+          <div class="view-controls">
+            <button class="view-btn active" data-angle="front">Front</button>
+            <button class="view-btn" data-angle="three">¾</button>
+            <button class="view-btn" data-angle="side">Side</button>
+            <button class="view-btn" data-angle="back">Back</button>
+          </div>
+
+          <div class="capture-controls">
+            <button class="btn btn--primary" id="capture-angle">Capture This Angle</button>
+            <div class="angle-status" id="angle-status"></div>
+          </div>
+
+          <div class="canvas-hint">
+            <small>Render at the angle, then capture. The AI trains on photo → measurement pairs.</small>
+          </div>
+        </div>
+
+        <!-- Right: proportions + measurements -->
+        <div class="controls-panel">
+          <section class="proportions">
+            <h3>Body Proportions (known ground truth)</h3>
+            <div class="field">
+              <label>Sex</label>
+              <div class="sex-toggle">
+                <button class="sex-btn active" data-sex="female">Female</button>
+                <button class="sex-btn" data-sex="male">Male</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Shoulder Width (cm)</label>
+              <input type="range" id="width-slider" min="30" max="52" step="0.5" value="34" />
+              <output id="width-out">34 cm</output>
+            </div>
+            <div class="field">
+              <label>Height</label>
+              <input type="range" id="height-slider" min="58" max="82" step="0.5" value="68" />
+              <output id="height-out">68 in</output>
+            </div>
+            <div class="field">
+              <label>Body Fat (−1 … +1)</label>
+              <input type="range" id="fat-slider" min="-1" max="1.5" step="0.1" value="0" />
+              <output id="fat-out">0</output>
+            </div>
+            <div class="field">
+              <label>Muscle Tone (−1 … +1)</label>
+              <input type="range" id="muscle-slider" min="-1" max="0.8" step="0.1" value="0" />
+              <output id="muscle-out">0</output>
+            </div>
+            <div class="field">
+              <label>Abdomen</label>
+              <select id="abdomen-select">
+                <option value="flat">Flat</option>
+                <option value="soft">Soft belly</option>
+                <option value="toned">Toned</option>
+                <option value="curved">Curved</option>
+              </select>
+            </div>
+            <div class="shape-row">
+              <div class="field small">
+                <label>Waist (−1 … +1)</label>
+                <input type="range" id="waist-slider" min="-1" max="1" step="0.1" value="0" />
+                <output id="waist-out">0</output>
+              </div>
+              <div class="field small">
+                <label>Bust (−1 … +1)</label>
+                <input type="range" id="bust-slider" min="-1" max="1" step="0.1" value="0" />
+                <output id="bust-out">0</output>
+              </div>
+              <div class="field small">
+                <label>Chest (−1 … +1)</label>
+                <input type="range" id="chest-slider" min="-1" max="1" step="0.1" value="0" />
+                <output id="chest-out">0</output>
+              </div>
+              <div class="field small">
+                <label>Glutes (−1 … +1)</label>
+                <input type="range" id="glutes-slider" min="-0.8" max="0.9" step="0.1" value="0" />
+                <output id="glutes-out">0</output>
+              </div>
+              <div class="field small">
+                <label>Hips (−1 … +1)</label>
+                <input type="range" id="hips-slider" min="-1" max="1" step="0.1" value="0" />
+                <output id="hips-out">0</output>
+              </div>
+              <div class="field small">
+                <label>Thighs (−1 … +1)</label>
+                <input type="range" id="thighs-slider" min="-1" max="1" step="0.1" value="0" />
+                <output id="thighs-out">0</output>
+              </div>
+            </div>
+            <div class="preset-row">
+              <button class="btn btn--ghost" id="preset-female-avg">Female Avg</button>
+              <button class="btn btn--ghost" id="preset-female-plus">Female Plus</button>
+              <button class="btn btn--ghost" id="preset-male-avg">Male Avg</button>
+              <button class="btn btn--ghost" id="preset-male-plus">Male Plus</button>
+              <button class="btn btn--ghost" id="preset-reset">Reset</button>
+            </div>
+          </section>
+
+          <section class="ground-truth">
+            <h3>Ground Truth (model knows exactly)</h3>
+            <div class="truth-grid">
+              <div class="truth-item">
+                <span class="label">Height</span>
+                <span class="value" id="gt-height">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">Weight</span>
+                <span class="value" id="gt-weight">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">BMI</span>
+                <span class="value" id="gt-bmi">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">Bust</span>
+                <span class="value" id="gt-bust">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">Waist</span>
+                <span class="value" id="gt-waist">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">Hips</span>
+                <span class="value" id="gt-hips">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">Thigh</span>
+                <span class="value" id="gt-thigh">—</span>
+              </div>
+              <div class="truth-item">
+                <span class="label">Underbust</span>
+                <span class="value" id="gt-underbust">—</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="dataset">
+            <h3>Training Dataset</h3>
+            <div class="field">
+              <label>Images captured</span>
+              <output id="capture-count">0 / 4</output>
+            </div>
+            <button class="btn btn--primary" id="save-sample">Save Sample to Dataset</button>
+            <div class="dataset-actions">
+              <button class="btn btn--ghost" id="export-ds">Export JSON</button>
+              <button class="btn btn--ghost" id="import-ds">Import JSON</button>
+              <button class="btn btn--ghost" id="clear-ds">Clear All</button>
+            </div>
+            <div id="ds-message" class="msg"></div>
+          </section>
+        </div>
+      </div>
+
+      <!-- AI comparison section -->
+      <section class="ai-comparison" id="ai-comparison" hidden>
+        <h2>AI Prediction vs Ground Truth</h2>
+        <p class="intro">Enter the AI's predicted measurements and compare with the model's real numbers.</p>
+        <div class="comparison-grid">
+          <div class="field">
+            <label>AI — Bust (cm)</label>
+            <input type="number" id="ai-bust" step="0.1" />
+          </div>
+          <div class="field">
+            <label>AI — Waist (cm)</label>
+            <input type="number" id="ai-waist" step="0.1" />
+          </div>
+          <div class="field">
+            <label>AI — Hips (cm)</label>
+            <input type="number" id="ai-hips" step="0.1" />
+          </div>
+          <div class="field">
+            <label>AI — Thigh (cm)</label>
+            <input type="number" id="ai-thigh" step="0.1" />
+          </div>
+          <div class="field">
+            <label>AI — Weight (kg)</label>
+            <input type="number" id="ai-weight" step="0.1" />
+          </div>
+          <button class="btn btn--primary" id="compare-btn">Compare</button>
+        </div>
+        <div class="results" id="compare-results"></div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { createStage } from '@web/scene/stage.js';
+    import { Human } from '@web/human/human.js';
+    import { ModelController, RANGES, SHAPE_DEFAULTS, LIMITS, IN, cmToIn } from '@web/human/body.js';
+    import { composePose } from '@web/human/poses.js';
+    import {
+      saveSample, loadSamples, countSamples, clearSamples, exportDataset, importDataset,
+      generateGroundTruth, PRESETS, TRAINING_ANGLES,
+    } from '@web/training/data.js';
+
+    const canvas = document.getElementById('train-canvas');
+    const stage = createStage(canvas);
+    const human = await Human.load();
+    const sexBtns = document.querySelectorAll('.sex-btn');
+    let sex = 'female';
+    let angle = 'front';
+    const captured = {}; // angle -> dataUrl
+    const model = { sex, width: 34, height: 68, tone: 0.5, fat: 0, build: null, muscle: 0, abdomen: 'flat', waist: 0, bust: 0, chest: 0, glutes: 0, hips: 0, thighs: 0 };
+    const mc = new ModelController(human, model);
+    mc.apply();
+    stage.root.add(human.object);
+    stage.setView(angle, { instant: true });
+
+    // Wire sliders
+    const wire = (id, key, fmt = (v) => v) => {
+      const el = document.getElementById(id);
+      const out = document.getElementById(id + '-out');
+      el.addEventListener('input', () => {
+        const v = +el.value;
+        model[key] = v;
+        out.textContent = fmt(v);
+        mc.applyShape();
+        human.setPose(pose);
+        stage.invalidate();
+        updateGroundTruth();
+      });
+      return () => el.value;
+    };
+    const pose = composePose('stand');
+
+    wire('width-slider', 'width', (v) => v.toFixed(1) + ' cm');
+    wire('height-slider', 'height', (v) => {
+      const i = Math.round(v);
+      return i + ' in · ' + Math.floor(i / 12) + '′' + (i % 12) + '″';
+    });
+    wire('fat-slider', 'fat', (v) => v.toFixed(1));
+    wire('muscle-slider', 'muscle', (v) => v.toFixed(1));
+    wire('waist-slider', 'waist', (v) => v.toFixed(1));
+    wire('bust-slider', 'bust', (v) => v.toFixed(1));
+    wire('chest-slider', 'chest', (v) => v.toFixed(1));
+    wire('glutes-slider', 'glutes', (v) => v.toFixed(1));
+    wire('hips-slider', 'hips', (v) => v.toFixed(1));
+    wire('thighs-slider', 'thighs', (v) => v.toFixed(1));
+
+    document.getElementById('abdomen-select').addEventListener('change', (e) => {
+      model.abdomen = e.target.value;
+      mc.applyShape();
+      human.setPose(pose);
+      stage.invalidate();
+      updateGroundTruth();
+    });
+
+    // Sex toggle
+    sexBtns.forEach((b) => {
+      b.addEventListener('click', () => {
+        sexBtns.forEach((b2) => b2.classList.toggle('active', b2 === b));
+        sex = b.dataset.sex;
+        model.sex = sex;
+        model.width = sex === 'male' ? 44 : 34;
+        model.height = sex === 'male' ? 72 : 68;
+        document.getElementById('width-slider').value = model.width;
+        document.getElementById('height-slider').value = model.height;
+        document.getElementById('width-out').textContent = model.width + ' cm';
+        const i = Math.round(model.height);
+        document.getElementById('height-out').textContent = i + ' in · ' + Math.floor(i / 12) + '′' + (i % 12) + '″';
+        mc.setSex(sex);
+        mc.apply();
+        human.setPose(pose);
+        stage.setSubjectHeight(human.heightM);
+        stage.invalidate();
+        updateGroundTruth();
+      });
+    });
+
+    // View controls
+    document.querySelectorAll('.view-btn').forEach((b) => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.view-btn').forEach((b2) => b2.classList.toggle('active', b2 === b));
+        angle = b.dataset.angle;
+        stage.setView(angle);
+        stage.invalidate();
+      });
+    });
+
+    // Capture angle
+    document.getElementById('capture-angle').addEventListener('click', async () => {
+      const btn = document.getElementById('capture-angle');
+      btn.disabled = true;
+      btn.textContent = 'Rendering…';
+      await new Promise((r) => setTimeout(r, 100));
+      // Render a full frame
+      stage.invalidate(1, true);
+      await new Promise((r) => setTimeout(r, 800));
+      const dataUrl = canvas.toDataURL('image/png');
+      captured[angle] = dataUrl;
+      btn.disabled = false;
+      btn.textContent = 'Captured: ' + angle.toUpperCase();
+      btn.classList.add('done');
+      updateCaptureCount();
+      updateGroundTruth();
+    });
+
+    function updateCaptureCount() {
+      const n = Object.keys(captured).length;
+      document.getElementById('capture-count').textContent = n + ' / ' + TRAINING_ANGLES.length;
+      const status = document.getElementById('angle-status');
+      const missing = TRAINING_ANGLES.filter((a) => !captured[a]);
+      status.textContent = missing.length ? 'Missing: ' + missing.join(', ') : 'All angles captured ✓';
+      status.style.color = missing.length ? '#a9330a' : '#2e7d32';
+    }
+
+    function updateGroundTruth() {
+      const gt = generateGroundTruth(mc);
+      document.getElementById('gt-height').textContent = model.height + ' in';
+      document.getElementById('gt-weight').textContent = gt.weight_kg.toFixed(1) + ' kg';
+      document.getElementById('gt-bmi').textContent = gt.bmi.toFixed(1);
+      document.getElementById('gt-bust').textContent = gt.chest_cm.toFixed(1) + ' cm';
+      document.getElementById('gt-waist').textContent = gt.waist_cm.toFixed(1) + ' cm';
+      document.getElementById('gt-hips').textContent = gt.hips_cm.toFixed(1) + ' cm';
+      document.getElementById('gt-thigh').textContent = gt.thigh_cm.toFixed(1) + ' cm';
+      document.getElementById('gt-underbust').textContent = gt.underbust_cm.toFixed(1) + ' cm';
+
+      // Pre-fill AI comparison inputs
+      document.getElementById('ai-bust').value = gt.chest_cm.toFixed(1);
+      document.getElementById('ai-waist').value = gt.waist_cm.toFixed(1);
+      document.getElementById('ai-hips').value = gt.hips_cm.toFixed(1);
+      document.getElementById('ai-thigh').value = gt.thigh_cm.toFixed(1);
+      document.getElementById('ai-weight').value = gt.weight_kg.toFixed(1);
+    }
+
+    // Presets
+    document.getElementById('preset-female-avg').addEventListener('click', () => applyPreset(PRESETS.female_avg));
+    document.getElementById('preset-female-plus').addEventListener('click', () => applyPreset(PRESETS.female_plus));
+    document.getElementById('preset-male-avg').addEventListener('click', () => applyPreset(PRESETS.male_avg));
+    document.getElementById('preset-male-plus').addEventListener('click', () => applyPreset(PRESETS.male_plus));
+    document.getElementById('preset-reset').addEventListener('click', () => {
+      model.sex = 'female';
+      model.width = 34; model.height = 68; model.fat = 0; model.build = null; model.muscle = 0; model.abdomen = 'flat';
+      model.waist = 0; model.bust = 0; model.chest = 0; model.glutes = 0; model.hips = 0; model.thighs = 0;
+      document.getElementById('width-slider').value = 34;
+      document.getElementById('height-slider').value = 68;
+      document.getElementById('fat-slider').value = 0;
+      document.getElementById('muscle-slider').value = 0;
+      document.getElementById('abdomen-select').value = 'flat';
+      document.getElementById('waist-slider').value = 0;
+      document.getElementById('bust-slider').value = 0;
+      document.getElementById('chest-slider').value = 0;
+      document.getElementById('glutes-slider').value = 0;
+      document.getElementById('hips-slider').value = 0;
+      document.getElementById('thighs-slider').value = 0;
+      document.getElementById('width-out').textContent = '34 cm';
+      document.getElementById('height-out').textContent = '68 in · 5′8″';
+      document.getElementById('fat-out').textContent = '0';
+      document.getElementById('muscle-out').textContent = '0';
+      document.getElementById('waist-out').textContent = '0';
+      document.getElementById('bust-out').textContent = '0';
+      document.getElementById('chest-out').textContent = '0';
+      document.getElementById('glutes-out').textContent = '0';
+      document.getElementById('hips-out').textContent = '0';
+      document.getElementById('thighs-out').textContent = '0';
+      sexBtns[0].classList.add('active'); sexBtns[1].classList.remove('active');
+      mc.setSex('female'); mc.apply(); human.setPose(pose); stage.invalidate();
+      updateGroundTruth();
+    });
+
+    function applyPreset(p) {
+      sexBtns.forEach((b) => b.classList.toggle('active', b.dataset.sex === p.sex));
+      sex = p.sex; model.sex = p.sex;
+      model.width = p.widthCm; model.height = p.heightIn; model.fat = p.fat;
+      model.build = p.build; model.muscle = p.muscle; model.abdomen = p.abdomen;
+      document.getElementById('width-slider').value = p.widthCm;
+      document.getElementById('height-slider').value = p.heightIn;
+      document.getElementById('fat-slider').value = p.fat;
+      document.getElementById('muscle-slider').value = p.muscle;
+      document.getElementById('abdomen-select').value = p.abdomen;
+      document.getElementById('width-out').textContent = p.widthCm + ' cm';
+      const i = Math.round(p.heightIn);
+      document.getElementById('height-out').textContent = i + ' in · ' + Math.floor(i / 12) + '′' + (i % 12) + '″';
+      document.getElementById('fat-out').textContent = p.fat;
+      document.getElementById('muscle-out').textContent = p.muscle;
+      mc.setSex(p.sex); mc.apply(); human.setPose(pose); stage.setSubjectHeight(human.heightM); stage.invalidate();
+      updateGroundTruth();
+    }
+
+    // Save sample
+    document.getElementById('save-sample').addEventListener('click', async () => {
+      const btn = document.getElementById('save-sample');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      const gt = generateGroundTruth(mc);
+      const sample = {
+        sex: model.sex,
+        widthCm: model.width,
+        heightIn: model.height,
+        fat: model.fat,
+        build: model.build,
+        muscle: model.muscle,
+        abdomen: model.abdomen,
+        waist: model.waist, bust: model.bust, chest: model.chest,
+        glutes: model.glutes, hips: model.hips, thighs: model.thighs,
+        images: { ...captured },
+        measurements: gt,
+        weight: gt.weight_kg,
+        bmi: gt.bmi,
+      };
+      try {
+        await saveSample(sample);
+        btn.textContent = 'Saved ✓';
+        setTimeout(() => { btn.textContent = 'Save Sample to Dataset'; btn.disabled = false; btn.classList.remove('done'); }, 1500);
+        document.getElementById('ds-message').textContent = 'Sample saved to training dataset.';
+        document.getElementById('ds-message').style.color = '#2e7d32';
+        const n = await countSamples();
+        document.getElementById('ai-comparison').hidden = false;
+      } catch (e) {
+        btn.textContent = 'Save Failed';
+        document.getElementById('ds-message').textContent = e.message;
+        document.getElementById('ds-message').style.color = '#a9330a';
+        setTimeout(() => { btn.textContent = 'Save Sample to Dataset'; btn.disabled = false; }, 1500);
+      }
+    });
+
+    // Export / Import / Clear
+    document.getElementById('export-ds').addEventListener('click', async () => {
+      const data = await exportDataset();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'findmysize-training-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.click();
+    });
+
+    document.getElementById('import-ds').addEventListener('click', async () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        try {
+          const data = JSON.parse(text);
+          await importDataset(data);
+          document.getElementById('ds-message').textContent = 'Imported ' + (data.samples?.length || 0) + ' samples.';
+          document.getElementById('ds-message').style.color = '#2e7d32';
+        } catch (err) {
+          document.getElementById('ds-message').textContent = 'Import failed: ' + err.message;
+          document.getElementById('ds-message').style.color = '#a9330a';
+        }
+      };
+      input.click();
+    });
+
+    document.getElementById('clear-ds').addEventListener('click', async () => {
+      if (!confirm('Clear all training samples?')) return;
+      await clearSamples();
+      document.getElementById('ds-message').textContent = 'Dataset cleared.';
+      document.getElementById('ds-message').style.color = '#a9330a';
+    });
+
+    // AI comparison
+    document.getElementById('compare-btn').addEventListener('click', () => {
+      const gt = generateGroundTruth(mc);
+      const ai = {
+        bust: +document.getElementById('ai-bust').value || 0,
+        waist: +document.getElementById('ai-waist').value || 0,
+        hips: +document.getElementById('ai-hips').value || 0,
+        thigh: +document.getElementById('ai-thigh').value || 0,
+        weight: +document.getElementById('ai-weight').value || 0,
+      };
+      const results = document.getElementById('compare-results');
+      const rows = [
+        { label: 'Bust (cm)', ai: ai.bust, gt: gt.chest_cm },
+        { label: 'Waist (cm)', ai: ai.waist, gt: gt.waist_cm },
+        { label: 'Hips (cm)', ai: ai.hips, gt: gt.hips_cm },
+        { label: 'Thigh (cm)', ai: ai.thigh, gt: gt.thigh_cm },
+        { label: 'Weight (kg)', ai: ai.weight, gt: gt.weight_kg },
+      ];
+      let html = '<table><tr><th>Measurement</th><th>AI Predicted</th><th>Ground Truth</th><th>Error</th></tr>';
+      let totalErr = 0;
+      for (const r of rows) {
+        const err = Math.abs(r.ai - r.gt);
+        totalErr += err;
+        const ok = err < 1;
+        html += '<tr><td>' + r.label + '</td><td>' + r.ai.toFixed(1) + '</td><td>' + r.gt.toFixed(1) + '</td><td style="color:' + (ok ? '#2e7d32' : '#a9330a') + '">' + err.toFixed(1) + ' ' + (ok ? '✓' : '✗') + '</td></tr>';
+      }
+      html += '<tr><td><strong>Avg Error</strong></td><td colspan="3">' + (totalErr / rows.length).toFixed(2) + '</td></tr></table>';
+      results.innerHTML = html;
+    });
+
+    // Expose for console debugging
+    window.__train = { mc, human, stage, captured, saveSample, generateGroundTruth };
+
+    // Initial render
+    updateGroundTruth();
+    updateCaptureCount();
+  </script>
+</body>
+</html>
