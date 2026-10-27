@@ -14,7 +14,9 @@
  *   GMAIL_IMAP_HOST = imap.gmail.com  (optional)
  *   GMAIL_IMAP_PORT = 993             (optional)
  */
-import { Imap } from 'imap';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const Imap = require('imap');
 import { config } from '../config.js';
 import { db } from '../lib/supabase.js';
 
