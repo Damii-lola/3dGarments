@@ -148,6 +148,15 @@ export const config = Object.freeze({
   // (Selar has no webhooks, so you verify sales on your Selar dashboard then
   // call POST /api/me/subscription/activate)
   adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase().trim(),
+  // Gmail IMAP credentials for monitoring Selar payment emails.
+  // GMAIL_USER is the inbox (e.g. findmysize.us@gmail.com),
+  // GMAIL_API is a 16-char Gmail App Password (NOT your regular password).
+  gmail: Object.freeze({
+    user: process.env.GMAIL_USER || '',
+    pass: process.env.GmailAPI || process.env.GMAIL_API || '',
+    imapHost: process.env.GMAIL_IMAP_HOST || 'imap.gmail.com',
+    imapPort: Number(process.env.GMAIL_IMAP_PORT || 993),
+  }),
   processingSize: Number(process.env.PROCESSING_SIZE || 1024),
   signedUrlTtl: 60 * 60 * 6,
 });

@@ -107,10 +107,12 @@ The migration in `supabase/migrations` creates the tables, RLS policies and the 
 Go to Cloudflare dashboard → **AI → Workers AI → Use REST API**. Create a token with *Workers AI* permissions and copy the **Account ID** and the **API token**.
 
 ### 3. Render (live)
-The API is running at **https://threedgarments.onrender.com**. Its secrets are stored only as Render environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `SELAR_WEBHOOK_SECRET` and `SELAR_CHECKOUT_URL`. There are no `.env` files in this repo. Render redeploys on every push to `main` once CI passes.
+The API is running at **https://threedgarments.onrender.com**. Its secrets are stored only as Render environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `SELAR_API_KEY`, `SELAR_CHECKOUT_URL`, `GMAIL_USER` and `GmailAPI`. There are no `.env` files in this repo. Render redeploys on every push to `main` once CI passes.
 
-`SELAR_WEBHOOK_SECRET` — shared secret Zapier sends on each `POST /api/webhooks/selar`, so only Zapier can activate a store's plan.
+`SELAR_API_KEY` — your Selar Third Party Integration API key (used to poll the product's sales count and detect new purchases).
 `SELAR_CHECKOUT_URL` — your Selar checkout link for the $150/month unlimited plan (the pricing page points unpaid stores at it).
+`GMAIL_USER` — your Gmail inbox (e.g. findmysize.us@gmail.com) used to monitor Selar payment emails as a backup activation path.
+`GmailAPI` — a 16-char Gmail App Password (NOT your regular Gmail password). Create one at Google Account → Security → 2-Step Verification → App Passwords → Mail.
 
 **Who reads the frames** is one variable. `MISTRAL_API_KEY` (plus optional `MISTRAL_MODEL`, default `ministral-14b-latest`) makes the scan use Mistral's vision model; without it the scan uses Workers AI exactly as before. `VISION_PROVIDER=mistral|cloudflare` forces the choice when both keys exist. Whichever model runs, it only ever reports *where the landmarks are* — every centimetre after that is arithmetic in `server/src/lib/bodyGeometry.js`, on this server. `/health` says whether the server is up and `ready` (every required variable present); the per-integration detail moved behind `/health/deep`.
 

@@ -16,6 +16,7 @@ import { websiteAnalysis } from './routes/website-analysis.js';
 import { selarWebhook } from './routes/webhook-selar.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
+import { startGmailPoll } from './services/gmail-poll.js';
 
 const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy
@@ -78,6 +79,8 @@ const server = app.listen(config.port, () => {
     recoverStaleJobs().catch((e) => console.warn('stale-job recovery skipped:', e.message));
     recoverStaleGroups().catch((e) => console.warn('stale-group recovery skipped:', e.message));
   }
+  // Start polling Gmail for Selar payment emails (only if credentials are set).
+  startGmailPoll();
 });
 
 for (const sig of ['SIGTERM', 'SIGINT']) {
