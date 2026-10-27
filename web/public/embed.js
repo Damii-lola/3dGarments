@@ -63,12 +63,12 @@
   var STYLE_ID = 'threeDG-embed-style';
   var CSS = [
     '.threeDG-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(6,7,10,.74);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:threeDG-fade .2s ease-out}',
-    '.threeDG-panel{position:relative;width:min(27.5rem,100%);height:min(48rem,94vh);display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.14);border-radius:1.35rem;background:#15181f;box-shadow:0 2.5rem 6rem rgba(0,0,0,.65);animation:threeDG-rise .3s cubic-bezier(.22,1,.36,1)}',
+    '.threeDG-panel{position:relative;width:min(27.5rem,100%);height:min(48rem,94vh);display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.14);border-radius:var(--threeDG-panel-radius,1.75rem);background:var(--threeDG-panel-bg,#221a15);box-shadow:0 2.5rem 6rem rgba(0,0,0,.65);animation:threeDG-rise .3s cubic-bezier(.22,1,.36,1)}',
     '.threeDG-panel:focus{outline:none}',
-    '.threeDG-frame{flex:1;min-height:0;width:100%;display:block;border:0;background:#15181f}',
+    '.threeDG-frame{flex:1;min-height:0;width:100%;display:block;border:0;background:var(--threeDG-panel-bg,#221a15)}',
     '.threeDG-close{position:absolute;top:.55rem;right:.55rem;z-index:2;width:2.15rem;height:2.15rem;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:.7rem;background:rgba(12,13,17,.86);color:#eef0f4;font:400 1.2rem/1 system-ui,sans-serif;cursor:pointer}',
     '.threeDG-close:hover{background:rgba(255,255,255,.14);color:#fff}',
-    '.threeDG-button{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.1rem;border:0;border-radius:.8rem;background:var(--threeDG-accent,linear-gradient(180deg,#ff6a4a,#f04a29));color:#fff;font:650 .95rem/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:-.01em;cursor:pointer;box-shadow:0 .5rem 1.4rem var(--threeDG-shadow,rgba(240,74,41,.28))}',
+    '.threeDG-button{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.1rem;border:0;border-radius:var(--threeDG-radius,.8rem);background:var(--threeDG-accent,linear-gradient(180deg,#ff6a4a,#f04a29));color:var(--threeDG-text,#fff);font:650 .95rem/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:-.01em;cursor:pointer;box-shadow:0 .5rem 1.4rem var(--threeDG-shadow,rgba(240,74,41,.28))}',
     '.threeDG-button:hover{filter:brightness(1.06)}',
     '.threeDG-button svg{width:1.05rem;height:1.05rem;flex:0 0 auto}',
     '@keyframes threeDG-fade{from{opacity:0}to{opacity:1}}',
@@ -76,6 +76,7 @@
     '@media (max-width:520px){.threeDG-overlay{padding:0}.threeDG-panel{width:100%;height:100%;border:0;border-radius:0}}',
     '@media (prefers-reduced-motion:reduce){.threeDG-overlay,.threeDG-panel{animation:none}}',
     '.threeDG-float{position:fixed;right:1.1rem;bottom:1.1rem;z-index:2147482000}',
+    '.threeDG-float.threeDG-left{left:1.1rem;right:auto}',
     '.threeDG-float .threeDG-button{box-shadow:0 .7rem 2rem rgba(0,0,0,.35),0 .5rem 1.4rem var(--threeDG-shadow,rgba(240,74,41,.3))}',
   ].join('');
 
@@ -88,6 +89,7 @@
   }
 
   var overlay = null;
+  var panelEl = null;
   var opener = null;
   var bodyOverflow = null;
   var scrollY = 0;
@@ -118,6 +120,7 @@
     var panel = document.createElement('div');
     panel.className = 'threeDG-panel';
     panel.tabIndex = -1;
+    panelEl = panel;
 
     var frame = document.createElement('iframe');
     frame.className = 'threeDG-frame';
@@ -162,6 +165,7 @@
     bodyOverflow = null;
     overlay.remove();
     overlay = null;
+    panelEl = null;
     try { window.scrollTo(0, scrollY); } catch (e) { /* ignore */ }
     if (opener && opener.focus) { try { opener.focus(); } catch (e) { /* ignore */ } }
     opener = null;
@@ -173,6 +177,13 @@
     if (!overlay || event.origin !== siteOrigin()) return;
     var data = event.data;
     if (data && data.source === '3dg' && data.type === 'close') close();
+    // The card inside the popup says what colour and corners it has been given (the store's
+    // own choice), and the frame around it follows, so no stray corner of the old colour shows.
+    if (data && data.source === '3dg' && data.type === 'frame' && panelEl) {
+      if (/^#[0-9a-f]{6}$/i.test(data.background || '')) panelEl.style.setProperty('--threeDG-panel-bg', data.background);
+      var radius = Number(data.radius);
+      if (isFinite(radius)) panelEl.style.setProperty('--threeDG-panel-radius', Math.max(0, Math.min(40, radius)) + 'px');
+    }
   });
 
   var CAMERA = 'M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A2 2 0 0 1 10.4 3.5h3.2a2 2 0 0 1 1.7 1L16.3 6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5zM12 8.6a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z';
@@ -190,6 +201,10 @@
       button.style.setProperty('--threeDG-accent', opts.color);
       button.style.setProperty('--threeDG-shadow', shadowFor(opts.color));
     }
+    // data-text-color: the label's colour. data-radius: the corners, in px (0 = square, 32 = pill).
+    if (opts && opts.textColor) button.style.setProperty('--threeDG-text', opts.textColor);
+    var radius = opts && opts.radius !== '' && opts.radius != null ? Number(opts.radius) : NaN;
+    if (isFinite(radius)) button.style.setProperty('--threeDG-radius', Math.max(0, Math.min(32, radius)) + 'px');
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
@@ -215,7 +230,7 @@
     var inHead = !parent || parent === document.head || parent.nodeName === 'HEAD';
     if ((opts && opts.float) || inHead) {
       var wrap = document.createElement('div');
-      wrap.className = 'threeDG-float';
+      wrap.className = 'threeDG-float' + (opts && opts.side === 'left' ? ' threeDG-left' : '');
       wrap.appendChild(button);
       (document.body || document.documentElement).appendChild(wrap);
     } else {
@@ -242,6 +257,9 @@
       label: spec.label || 'Find My Size',
       base: spec.base || '',
       color: spec.color || spec.accent || '',
+      textColor: spec.textColor || '',
+      radius: spec.radius || '',
+      side: spec.side === 'left' ? 'left' : 'right',
       // Floating is the default: a tag at the top of <body> becomes a FAB.
       // Only data-float="0" pins it inline instead.
       float: spec.float !== '0' && spec.float !== 'false',

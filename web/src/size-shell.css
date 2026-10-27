@@ -174,106 +174,117 @@ html:not(.embed) body.app .nav-account-item {
 
 html:not(.embed) body.app .nav-account-item:hover { background: rgba(25, 20, 17, 0.05); color: var(--n-orange-text); }
 
-/* ---------- the page: a heading, then the scanner in its card ---------- */
+/* ---------- the scanner's card ----------
+   One card, drawn for two places: the standalone page, and the popup on a store's
+   site (?embed=1). Its colours, corners and type are --pu-* variables whose fallbacks
+   are the design's own values, so with nothing set the card is exactly this one; a
+   store's choices (src/popup-config.js) set the variables and nothing else. */
+
+body.app .stage {
+  box-sizing: border-box;
+  align-items: stretch;
+  text-align: left;
+  border-radius: var(--pu-radius, 28px);
+  background:
+    radial-gradient(90% 55% at 50% 0%, color-mix(in srgb, var(--pu-accent, #f0521f) 20%, transparent), transparent 70%),
+    var(--pu-bg, #221a15);
+  color: var(--pu-text, #f5e9d6);
+  font-family: var(--pu-body, "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif);
+}
 
 html:not(.embed) body.app .stage {
-  box-sizing: border-box;
   width: min(100% - 32px, 680px);
   max-width: none;
   margin: clamp(28px, 5vw, 56px) auto clamp(40px, 6vw, 72px);
   padding: clamp(22px, 4vw, 38px);
-  align-items: stretch;
-  text-align: left;
-  border-radius: 28px;
-  background:
-    radial-gradient(90% 55% at 50% 0%, rgba(240, 82, 31, 0.2), transparent 70%),
-    var(--n-ink-2);
-  color: var(--n-on-dark);
   box-shadow: 0 40px 80px -44px rgba(25, 20, 17, 0.75);
 }
 
-html:not(.embed) body.app .intro { gap: 14px; }
+body.app .intro { gap: 14px; }
 
-html:not(.embed) body.app .intro h1 {
-  font-family: var(--n-display);
+body.app .intro h1 {
+  font-family: var(--pu-display, var(--n-display, "Fraunces Variable", "Fraunces", Georgia, serif));
   font-size: clamp(30px, 5vw, 44px);
   font-weight: 400;
   line-height: 1.05;
   letter-spacing: -0.02em;
-  color: var(--n-on-dark);
+  color: var(--pu-text, #f5e9d6);
 }
 
-html:not(.embed) body.app .intro .lead { font-size: 17px; line-height: 1.55; color: rgba(245, 233, 214, 0.7); }
+body.app .intro .lead { font-size: 17px; line-height: 1.55; color: var(--pu-muted, rgba(245, 233, 214, 0.7)); }
 
 /* record */
-html:not(.embed) body.app .open-camera {
+body.app .open-camera {
   position: relative;
   width: 100%;
   box-sizing: border-box;
   gap: 14px;
   padding: 40px 20px 34px;
-  border: 1px dashed rgba(245, 233, 214, 0.3);
-  border-radius: 20px;
-  background: radial-gradient(70% 90% at 50% 20%, rgba(240, 82, 31, 0.14), transparent 75%);
-  color: #ff8a5c;
+  border: 1px dashed color-mix(in srgb, var(--pu-text, #f5e9d6) 30%, transparent);
+  border-radius: calc(var(--pu-radius, 28px) * 0.714);
+  background: radial-gradient(70% 90% at 50% 20%, color-mix(in srgb, var(--pu-accent, #f0521f) 14%, transparent), transparent 75%);
+  color: var(--pu-accent-2, #ff8a5c);
 }
 
-html:not(.embed) body.app .open-camera:hover { background: radial-gradient(70% 90% at 50% 20%, rgba(240, 82, 31, 0.24), transparent 75%); color: #ffa07a; }
+body.app .open-camera:hover {
+  background: radial-gradient(70% 90% at 50% 20%, color-mix(in srgb, var(--pu-accent, #f0521f) 24%, transparent), transparent 75%);
+  color: var(--pu-accent-2, #ffa07a);
+}
 
-html:not(.embed) body.app .cam-icon {
+body.app .cam-icon {
   box-sizing: border-box;
   width: 84px;
   height: 84px;
   padding: 23px;
-  border: 1px solid rgba(240, 82, 31, 0.5);
+  border: 1px solid color-mix(in srgb, var(--pu-accent, #f0521f) 50%, transparent);
   border-radius: 50%;
-  background: rgba(240, 82, 31, 0.16);
+  background: color-mix(in srgb, var(--pu-accent, #f0521f) 16%, transparent);
   stroke-width: 1.5;
 }
 
-html:not(.embed) body.app .cam-cta {
+body.app .cam-cta {
   position: relative;
   padding-bottom: 8px;
-  font-family: var(--n-display);
+  font-family: var(--pu-display, var(--n-display, "Fraunces Variable", "Fraunces", Georgia, serif));
   font-size: 28px;
   font-weight: 400;
   letter-spacing: -0.01em;
   text-transform: none;
-  color: var(--n-on-dark);
+  color: var(--pu-text, #f5e9d6);
 }
 
-html:not(.embed) body.app .cam-cta::after {
+body.app .cam-cta::after {
   content: "";
   position: absolute;
   left: -40px;
   right: -40px;
   bottom: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(240, 82, 31, 0.55), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--pu-accent, #f0521f) 55%, transparent), transparent);
 }
 
-html:not(.embed) body.app .open-camera:hover .cam-cta { color: var(--n-on-dark); }
-.cam-hint { font-size: 15px; color: rgba(245, 233, 214, 0.6); }
+body.app .open-camera:hover .cam-cta { color: var(--pu-text, #f5e9d6); }
+.cam-hint { font-size: 15px; color: var(--pu-muted, rgba(245, 233, 214, 0.6)); }
 
-html:not(.embed) body.app .capture,
-html:not(.embed) body.app .capture-choice { width: 100%; }
+body.app .capture,
+body.app .capture-choice { width: 100%; }
 
 /* "Nothing is saved" */
-html:not(.embed) body.app .privacy {
+body.app .privacy {
   box-sizing: border-box;
   gap: 14px;
   padding: 18px 20px;
-  border: 1px solid var(--n-line-dark);
-  border-left: 3px solid var(--n-orange);
-  border-radius: 14px;
-  background: rgba(245, 233, 214, 0.04);
+  border: 1px solid color-mix(in srgb, var(--pu-text, #f5e9d6) 16%, transparent);
+  border-left: 3px solid var(--pu-accent, #f0521f);
+  border-radius: calc(var(--pu-radius, 28px) * 0.5);
+  background: color-mix(in srgb, var(--pu-text, #f5e9d6) 4%, transparent);
   box-shadow: none;
 }
 
-html:not(.embed) body.app .privacy-lock { width: 22px; height: 22px; margin-top: 2px; color: var(--n-on-dark); }
-html:not(.embed) body.app .privacy-body { gap: 6px; }
-html:not(.embed) body.app .privacy-line { font-size: 16px; font-weight: 600; color: var(--n-on-dark); }
-html:not(.embed) body.app .privacy-sub { font-size: 15px; line-height: 1.55; color: rgba(245, 233, 214, 0.62); }
+body.app .privacy-lock { width: 22px; height: 22px; margin-top: 2px; color: var(--pu-text, #f5e9d6); }
+body.app .privacy-body { gap: 6px; }
+body.app .privacy-line { font-size: 16px; font-weight: 600; color: var(--pu-text, #f5e9d6); }
+body.app .privacy-sub { font-size: 15px; line-height: 1.55; color: var(--pu-muted, rgba(245, 233, 214, 0.62)); }
 
 /* the two promises under it (hidden together with the first screen) */
 .card-foot {
@@ -286,14 +297,56 @@ html:not(.embed) body.app .privacy-sub { font-size: 15px; line-height: 1.55; col
   box-sizing: border-box;
   margin: 0;
   padding: 16px 4px 0;
-  border-top: 1px solid var(--n-line-dark, rgba(245, 233, 214, 0.16));
+  border-top: 1px solid color-mix(in srgb, var(--pu-text, #f5e9d6) 16%, transparent);
   font-size: 15px;
-  color: rgba(245, 233, 214, 0.78);
+  color: var(--pu-muted, rgba(245, 233, 214, 0.78));
 }
 
-#privacy[hidden] + .card-foot { display: none; }
+#privacy[hidden] + .card-foot,
+.card-foot[data-off="true"] { display: none; }
 .card-foot span { display: inline-flex; align-items: center; gap: 10px; }
-.card-foot svg { width: 17px; height: 17px; fill: none; stroke: #f0521f; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.card-foot svg { width: 17px; height: 17px; fill: none; stroke: var(--pu-accent, #f0521f); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- the same card, as the popup on a store's page ----------
+   The store's page is the frame (embed.js draws it), so the card fills it: no bar,
+   no margins, and sizes in rem, so the popup's own scale (and a store's "text size")
+   moves everything together. */
+
+html.embed body.app { display: block; padding: 0; background: transparent; }
+html.embed body.app .nav,
+html.embed body.app .sky { display: none; }
+
+html.embed { font-size: calc(90.72% * var(--pu-scale, 1)); }
+
+html.embed body.app .stage {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 1.5rem 1.05rem 1.5rem;
+  border-radius: 0;
+  box-shadow: none;
+  gap: 1rem;
+}
+
+html.embed body.app .intro { gap: 0.6rem; padding-right: 2.3rem; }
+html.embed body.app .intro h1 { font-size: 1.95rem; }
+html.embed body.app .intro .lead { font-size: 1.02rem; }
+html.embed body.app .open-camera { gap: 0.8rem; padding: 2.2rem 1rem 1.9rem; }
+html.embed body.app .cam-icon { width: 5.2rem; height: 5.2rem; padding: 1.45rem; }
+html.embed body.app .cam-cta { font-size: 1.7rem; padding-bottom: 0.5rem; }
+html.embed body.app .cam-cta::after { left: -2rem; right: -2rem; }
+html.embed .cam-hint { font-size: 0.95rem; }
+html.embed body.app .privacy { gap: 0.8rem; padding: 1.1rem 1.2rem; }
+html.embed body.app .privacy-lock { width: 1.4rem; height: 1.4rem; }
+html.embed body.app .privacy-line { font-size: 1.02rem; }
+html.embed body.app .privacy-sub { font-size: 0.95rem; }
+html.embed .card-foot { font-size: 0.95rem; padding-top: 1rem; }
+html.embed .card-foot svg { width: 1.05rem; height: 1.05rem; }
+
+/* until a store's own settings have arrived, the card waits rather than flashing the default look */
+html.embed.pu-pending body.app .stage { opacity: 0; }
+html.embed body.app .stage { transition: opacity 0.25s ease; }
 
 /* ---------- ticker, section, footer ---------- */
 

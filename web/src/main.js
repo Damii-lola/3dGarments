@@ -15,11 +15,24 @@
 import { extractFrames, extractPoster, readDuration } from './body-scan/frames.js';
 import { analyzeBody, analyzeGeometry, analyzeVideo } from './body-scan/analyze.js';
 import { createTrimmer } from './body-scan/trim.js';
+import { applyPopupConfig, popupText } from './popup-config.js';
 import { createCalibrator } from './body-scan/calibrate.js';
 import { showNote } from './body-scan/notes.js';
 import { chartByCode, chartColumns } from './services/charts.js';
 
 const params = new URLSearchParams(location.search);
+
+/**
+ * ?embed=1&preview=record|results — the dashboard's "Preview & Customise Popup" frame.
+ * It is this same popup, so what is previewed is what ships; only a page the dashboard
+ * itself opened may ask for it (it has no use for a shopper, and shows canned numbers).
+ */
+const previewPhase = (() => {
+  if (params.get('embed') !== '1') return '';
+  const phase = params.get('preview');
+  if (phase !== 'record' && phase !== 'results') return '';
+  try { return new URL(document.referrer).origin === location.origin ? phase : ''; } catch { return ''; }
+})();
 
 /**
  * ?local=1 — measure with the pose model on the device instead of on the server.
@@ -130,6 +143,11 @@ let garment = null;
 if (chartCode) {
   garmentPromise.then((chart) => {
     garment = chart;
+    // The popup on a store's page is drawn the way that store chose (Dashboard > Preview &
+    // Customise Popup). Until now this was never read: the settings were saved and ignored.
+    // The dashboard's own preview frame draws a draft it is sent, not what was saved.
+    if (params.get('embed') === '1' && !previewPhase) applyPopupConfig(chart && chart.popup);
+    document.documentElement.classList.remove('pu-pending');
     applyChartSex(chart);
     if (!garmentEl) return;
     garmentEl.hidden = false;
@@ -648,7 +666,7 @@ function renderVerdict(data) {
 
   verdictEl.hidden = false;
   verdictEl.classList.toggle('verdict-none', !size);
-  verdictEyebrow.textContent = size ? 'Your size' : 'No size from this clip';
+  verdictEyebrow.textContent = size ? (popupText().sizeLabel || 'Your size') : 'No size from this clip';
   verdictSize.textContent = size || '';
   verdictFor.textContent = name ? `for ${name}` : '';
   verdictNote.textContent = size
@@ -929,13 +947,13 @@ if (local && !params.has('demo')) {
  * ?demo=1 — render a canned analysis so the results screen can be seen and
  * checked without recording a video. Local only; it touches no network.
  */
-if (new URLSearchParams(location.search).has('demo')) {
+function showDemo(storeChart) {
   // ?demo=1&store=1 — the same results screen with a store's own chart behind it
   // and a size card on it, so that half of the page can be checked without a
-  // link, a video, or a cloud.
-  const demoStore = new URLSearchParams(location.search).has('store');
+  // link, a video, or a cloud. The dashboard's preview passes the store's real chart.
+  const demoStore = Boolean(storeChart) || new URLSearchParams(location.search).has('store');
   if (demoStore) {
-    garment = {
+    garment = storeChart || {
       name: 'Oxford Shirt',
       sex: 'male',
       unit: 'in',
@@ -952,14 +970,15 @@ if (new URLSearchParams(location.search).has('demo')) {
     };
     if (garmentEl) {
       garmentEl.hidden = false;
-      garmentEl.textContent = 'Sizing for Oxford Shirt.';
+      garmentEl.textContent = `Sizing for ${garment.name || 'this garment'}.`;
     }
   }
+  const rows = Array.isArray(garment && garment.rows) ? garment.rows : [];
   renderAnalysis({
-    size: 'M',
+    size: (rows[Math.floor(rows.length / 2)] && String(rows[Math.floor(rows.length / 2)].key)) || 'M',
     sizeBasis: 'male',
     sizeSource: demoStore ? 'store' : 'reference',
-    sizeName: demoStore ? 'Oxford Shirt' : null,
+    sizeName: demoStore ? ((garment && garment.name) || 'Oxford Shirt') : null,
     reconciled: true,
     frameCount: 6,
     gender: { guess: 'male', confidence: 1, chosen: true },
@@ -998,3 +1017,7 @@ if (new URLSearchParams(location.search).has('demo')) {
     views: ['front', 'three-quarter', 'side', 'back', 'side', 'front'],
   });
 }
+
+if (new URLSearchParams(location.search).has('demo')) showDemo(null);
+if (previewPhase === 'results') garmentPromise.then((chart) => showDemo(chart));
+if (previewPhase) import('./popup-preview.js').then((m) => m.startPreview(previewPhase));

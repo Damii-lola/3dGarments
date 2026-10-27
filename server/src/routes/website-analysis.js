@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { HttpError, ah } from '../lib/errors.js';
 import { requireUser } from '../middleware/auth.js';
 import { runModel } from '../lib/cloudflare.js';
+import { config } from '../config.js';
 
 /**
  * Website appearance analysis endpoint.

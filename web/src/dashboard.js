@@ -23,7 +23,8 @@
 import './nav.js';
 import { MEASURES } from '@shared/measures.js';
 import { getSession, isAccount, signOut } from './services/auth.js';
-import { api } from './services/api.js';
+import { openPopupEditor } from './popup-editor.js';
+import { buttonAttributeString } from './popup-config.js';
 import { chartColumns, checkChartColumns, listCharts, notSetUp, removeChart, saveChart } from './services/charts.js';
 
 const signInSection = document.getElementById('dash-anon');
@@ -43,12 +44,6 @@ const statUpdated = document.getElementById('stat-updated');
 const searchInput = document.getElementById('chart-search');
 const sortSelect = document.getElementById('chart-sort');
 const toastEl = document.getElementById('dash-toast');
-const pcOverlay = document.getElementById('pc-overlay');
-const pcLeft = document.getElementById('pc-left');
-const pcRight = document.getElementById('pc-right');
-const pcIframe = document.getElementById('pc-iframe');
-const pcClose = document.getElementById('pc-close');
-const pcSave = document.getElementById('pc-save');
 const form = document.getElementById('chart-form');
 const formTitle = document.getElementById('chart-form-title');
 const nameInput = document.getElementById('chart-name');
@@ -548,12 +543,8 @@ function card(chart, index = 0) {
   const snippetLabel = document.createElement('p');
   snippetLabel.className = 'chart-snippet-label';
   snippetLabel.textContent = 'Popup code for your product page';
-  const fab = (chart && chart.popup && chart.popup.fabButton) || {};
-  const fabAttrs = [];
-  if (fab.label) fabAttrs.push(`data-label="${String(fab.label).replace(/"/g, '&quot;')}"`);
-  if (fab.bg) fabAttrs.push(`data-color="${String(fab.bg).replace(/"/g, '&quot;')}"`);
-  if (fab.float === false) fabAttrs.push('data-float="0"');
-  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}" ${fabAttrs.join(' ')}></script>`;
+  // Only the button's settings that differ from the defaults go into the tag.
+  const snippetText = `<script src="${EMBED}" data-chart="${chart.code}"${buttonAttributeString(chart.popup)}></script>`;
   const snippetBox = document.createElement('textarea');
   snippetBox.className = 'chart-snippet-box';
   snippetBox.readOnly = true;
@@ -657,505 +648,37 @@ async function refresh() {
 
 /* ---------- popup customiser ---------- */
 
-let pcChart = null;
-let pcConfig = null;
-let pcPhase = 1;
-
 /**
- * The popup's starting colours. When the account has picked an accent colour (Settings >
- * Appearance), the buttons start in it; a chart that already has its own saved colours
- * keeps them, and with no accent chosen nothing here changes.
+ * "Preview & Customise Popup". The editor (popup-editor.js) shows the real popup in
+ * frames and edits the settings object; this only hands it the chart, and stores
+ * what comes back. The settings are read by the popup itself (popup-config.js), so
+ * what is saved here is what a shopper sees.
  */
-function pcDefaults() {
-  const accent = window.FMSTheme?.read?.().accent;
-  const chosen = /^#[0-9a-f]{6}$/i.test(accent || '') && accent.toLowerCase() !== window.FMSTheme.BRAND;
-  if (!chosen) return PC_DEFAULTS;
-  const copy = JSON.parse(JSON.stringify(PC_DEFAULTS));
-  copy.global.primaryColor = accent;
-  copy.fabButton.bg = accent;
-  copy.phase0.bg = accent;
-  copy.phase1.recordButton.bg = accent;
-  copy.phase2.primaryCta.bg = accent;
-  return copy;
-}
-
-const PC_DEFAULTS = {
-  global: {
-    logo: '', primaryColor: '#ff6a4a', secondaryColor: '#ff8a5c', accentColor: '#ff5b3a',
-    backgroundColor: '#15181f', overlayBlur: 6, borderRadius: 1.35, fontFamily: 'system-ui',
-    textSize: 1, mode: 'dark',
-  },
-  fabButton: {
-    label: 'Find My Size',
-    bg: '#ff6a4a',
-    textColor: '#fff',
-    radius: 0.8,
-    float: true,
-  },
-  phase0: {
-    label: 'Find My Size',
-    bg: '#ff6a4a',
-    textColor: '#fff',
-    radius: 0.8,
-    float: true,
-  },
-  phase1: {
-    headline: { text: 'Find your size', color: '#eef0f4', size: 1.5, weight: 650 },
-    instruction: { text: 'Record a 360° video of yourself, turning slowly all the way around: stand still, whole body in frame, arms a hand’s width from your sides.', color: '#8b90a0', size: 1, lineHeight: 1.5 },
-    productPill: { bg: '#1d212a', color: '#eef0f4', size: 0.9, radius: 0.8, border: 'rgba(255,255,255,0.1)' },
-    recordButton: { bg: '#ff6a4a', color: '#fff', size: 1, radius: 0.8, hover: '#f04a29' },
-    cameraIcon: { color: '#fff', size: 1.05 },
-    privacyBox: { bg: 'rgba(0,0,0,0.2)', border: 'rgba(255,255,255,0.1)', color: '#8b90a0', size: 0.78, iconColor: '#8b90a0' },
-    closeButton: { color: '#eef0f4', size: 1.2, hover: '#fff' },
-  },
-  phase2: {
-    resultsHeadline: { text: 'Your size', color: '#eef0f4', size: 1.5, weight: 650 },
-    recommendedSize: { color: '#3ddc97', size: 2.7, weight: 700 },
-    secondaryText: { color: '#8b90a0', size: 0.85 },
-    primaryCta: { bg: '#ff6a4a', color: '#fff', size: 1, radius: 0.8, hover: '#f04a29' },
-    secondaryButton: { bg: 'transparent', color: '#eef0f4', size: 1, border: 'rgba(255,255,255,0.16)' },
-  },
-};
-
-function deepMerge(base, over) {
-  if (!over || typeof over !== 'object' || Array.isArray(over)) return base;
-  const out = Array.isArray(base) ? base.slice() : { ...base };
-  for (const k of Object.keys(over)) {
-    out[k] = (base && typeof base[k] === 'object' && !Array.isArray(base[k]))
-      ? deepMerge(base[k], over[k])
-      : over[k];
-  }
-  return out;
-}
-
 function openCustomizer(chart) {
   try {
-    pcChart = chart;
-    pcConfig = deepMerge(pcDefaults(), chart && chart.popup ? chart.popup : {});
-    if (!pcOverlay) return;
-    pcOverlay.hidden = false;
-    document.body.style.overflow = 'hidden';
-    buildPcPanels();
-    loadPcIframe();
+    openPopupEditor({
+      chart,
+      siteUrl: SITE,
+      toast: showToast,
+      onSave: async (popup) => {
+        const saved = await saveChart({
+          id: chart.id,
+          name: chart.name,
+          sex: chart.sex,
+          unit: chart.unit,
+          columns: chart.columns,
+          rows: chart.rows,
+          popup,
+        });
+        chart.popup = saved.popup || popup;
+        await refresh(); // the card's popup code carries the button's settings
+      },
+    });
   } catch (e) {
     console.error('openCustomizer failed:', e);
     showToast('Could not open the customiser.', 'error');
   }
 }
-
-function closeCustomizer() {
-  if (pcOverlay) pcOverlay.hidden = true;
-  document.body.style.overflow = '';
-  pcChart = null;
-}
-
-function loadPcIframe() {
-  if (!pcIframe || !pcChart) return;
-  pcIframe.addEventListener('load', () => applyPcToIframe(), { once: true });
-  // Phase 0 previews the shop page (just the floating button on a blank shop screen).
-  // Phases 1 and 2 preview the scanner popup embedded in the page.
-  const url = pcPhase === 0
-    ? `${SITE}shop/?g=${encodeURIComponent(pcChart.code)}`
-    : `${SITE}size/?g=${encodeURIComponent(pcChart.code)}&embed=1`;
-  pcIframe.src = url;
-}
-
-/* ---------- panel builders ---------- */
-
-function pcField(parent, label, control) {
-  const wrap = document.createElement('div');
-  wrap.className = 'pc-field';
-  const lab = document.createElement('label');
-  lab.textContent = label;
-  wrap.append(lab, control);
-  parent.append(wrap);
-  return wrap;
-}
-
-function pcColor(parent, label, get, set) {
-  const inp = document.createElement('input');
-  inp.type = 'color';
-  inp.value = get();
-  inp.addEventListener('input', () => { set(inp.value); applyPcToIframe(); });
-  pcField(parent, label, inp);
-}
-
-function pcText(parent, label, get, set) {
-  const inp = document.createElement('input');
-  inp.type = 'text';
-  inp.value = get();
-  inp.addEventListener('input', () => { set(inp.value); applyPcToIframe(); });
-  pcField(parent, label, inp);
-}
-
-function pcNumber(parent, label, get, set, { min = 0, max = 4, step = 0.05 } = {}) {
-  const inp = document.createElement('input');
-  inp.type = 'range';
-  inp.min = min; inp.max = max; inp.step = step;
-  inp.value = get();
-  const val = document.createElement('span');
-  val.className = 'pc-val';
-  val.textContent = Number(get()).toFixed(2);
-  inp.addEventListener('input', () => { set(Number(inp.value)); val.textContent = Number(inp.value).toFixed(2); applyPcToIframe(); });
-  const row = document.createElement('div');
-  row.className = 'pc-row';
-  row.append(inp, val);
-  pcField(parent, label, row);
-}
-
-function pcSelect(parent, label, get, set, options) {
-  const sel = document.createElement('select');
-  for (const [v, t] of options) {
-    const o = document.createElement('option');
-    o.value = v; o.textContent = t;
-    sel.append(o);
-  }
-  sel.value = get();
-  sel.addEventListener('change', () => { set(sel.value); applyPcToIframe(); });
-  pcField(parent, label, sel);
-}
-
-function pcSection(parent, title) {
-  const h = document.createElement('h4');
-  h.className = 'pc-section';
-  h.textContent = title;
-  parent.append(h);
-}
-
-function rebuildPcPanels() {
-  buildPcPanels();
-}
-
-function buildPcPanels() {
-  if (!pcLeft || !pcRight) return;
-  pcLeft.replaceChildren();
-  pcRight.replaceChildren();
-
-  // ---- Left: website analysis ----
-  const g = pcConfig.global;
-  const f = pcConfig.fabButton;
-
-  pcSection(pcLeft, 'Match your website');
-  const urlWrap = document.createElement('div');
-  urlWrap.className = 'pc-field';
-  const urlLab = document.createElement('label');
-  urlLab.textContent = 'Your homepage URL';
-  const urlInp = document.createElement('input');
-  urlInp.id = 'pc-website-url';
-  urlInp.type = 'text';
-  urlInp.placeholder = 'https://your-store.com';
-  urlInp.value = pcConfig.websiteUrl || '';
-  urlInp.addEventListener('change', () => { pcConfig.websiteUrl = urlInp.value; });
-  const analyzeBtn = document.createElement('button');
-  analyzeBtn.id = 'pc-analyze-btn';
-  analyzeBtn.type = 'button';
-  analyzeBtn.className = 'btn btn--primary btn--small';
-  analyzeBtn.textContent = 'Analyze with AI';
-  analyzeBtn.addEventListener('click', analyzeWebsite);
-  urlWrap.append(urlLab, urlInp, analyzeBtn);
-  pcLeft.append(urlWrap);
-
-  const status = document.createElement('p');
-  status.className = 'chart-status';
-  status.textContent = 'Paste your homepage URL and the AI will read its colours, fonts and vibe, then set every phase of the popup and the floating button to match.';
-  status.style.fontSize = '0.8rem';
-  status.style.color = 'var(--muted)';
-  status.style.marginTop = '0.5rem';
-  pcLeft.append(status);
-
-  pcLeft.append(document.createElement('hr'));
-
-  // Global styles collapsed into read-only summary (driven by AI)
-  pcSection(pcLeft, 'Resulting palette (auto-set by AI)');
-  pcColor(pcLeft, 'Primary', () => g.primaryColor, (v) => { g.primaryColor = v; });
-  pcColor(pcLeft, 'Background', () => g.backgroundColor, (v) => { g.backgroundColor = v; });
-  pcText(pcLeft, 'Font family', () => g.fontFamily, (v) => { g.fontFamily = v; });
-  pcSelect(pcLeft, 'Mode', () => g.mode, (v) => { g.mode = v; }, [['dark', 'Dark'], ['light', 'Light']]);
-
-  // ---- Right: phase tabs ----
-  const switcher = document.createElement('div');
-  switcher.className = 'pc-phase-switcher';
-  const b0 = document.createElement('button'); b0.textContent = 'Phase 0 (Button)';
-  const b1 = document.createElement('button'); b1.textContent = 'Phase 1 (Recording)';
-  const b2 = document.createElement('button'); b2.textContent = 'Phase 2 (Results)';
-  switcher.append(b0, b1, b2);
-  pcRight.append(switcher);
-
-  const phase0 = document.createElement('div');
-  const phase1 = document.createElement('div');
-  const phase2 = document.createElement('div');
-  phase1.hidden = true;
-  phase2.hidden = true;
-  pcRight.append(phase0, phase1, phase2);
-
-  function showPhase(n) {
-    pcPhase = n;
-    phase0.hidden = n !== 0;
-    phase1.hidden = n !== 1;
-    phase2.hidden = n !== 2;
-    b0.classList.toggle('active', n === 0);
-    b1.classList.toggle('active', n === 1);
-    b2.classList.toggle('active', n === 2);
-    applyPcToIframe();
-  }
-  b0.addEventListener('click', () => showPhase(0));
-  b1.addEventListener('click', () => showPhase(1));
-  b2.addEventListener('click', () => showPhase(2));
-  showPhase(0);
-
-  // Phase 0 — Floating button
-  const p0 = pcConfig.fabButton;
-  pcSection(phase0, 'Floating button');
-  pcText(phase0, 'Button text', () => p0.label, (v) => { p0.label = v; });
-  pcColor(phase0, 'Button colour', () => p0.bg, (v) => { p0.bg = v; });
-  pcColor(phase0, 'Text colour', () => p0.textColor, (v) => { p0.textColor = v; });
-  pcNumber(phase0, 'Border radius', () => p0.radius, (v) => { p0.radius = v; }, { min: 0, max: 2, step: 0.05 });
-  pcSelect(phase0, 'Position', () => p0.float ? 'float' : 'inline', (v) => { p0.float = v === 'float'; }, [['float', 'Floating bottom-right (FAB)'], ['inline', 'Inline where the tag sits']]);
-
-  // Phase 1 — Recording
-  const p1 = pcConfig.phase1;
-  pcSection(phase1, 'Headline');
-  pcText(phase1, 'Text', () => p1.headline.text, (v) => { p1.headline.text = v; });
-  pcColor(phase1, 'Text colour', () => p1.headline.color, (v) => { p1.headline.color = v; });
-  pcNumber(phase1, 'Text size', () => p1.headline.size, (v) => { p1.headline.size = v; }, { min: 0.8, max: 3, step: 0.05 });
-  pcSelect(phase1, 'Font weight', () => String(p1.headline.weight), (v) => { p1.headline.weight = Number(v); }, [['400','400'],['500','500'],['600','600'],['650','650'],['700','700']]);
-
-  pcSection(phase1, 'Instruction paragraph');
-  pcText(phase1, 'Text', () => p1.instruction.text, (v) => { p1.instruction.text = v; });
-  pcColor(phase1, 'Text colour', () => p1.instruction.color, (v) => { p1.instruction.color = v; });
-  pcNumber(phase1, 'Text size', () => p1.instruction.size, (v) => { p1.instruction.size = v; }, { min: 0.7, max: 1.6, step: 0.05 });
-  pcNumber(phase1, 'Line height', () => p1.instruction.lineHeight, (v) => { p1.instruction.lineHeight = v; }, { min: 1, max: 2, step: 0.05 });
-
-  pcSection(phase1, 'Product pill');
-  pcColor(phase1, 'Background', () => p1.productPill.bg, (v) => { p1.productPill.bg = v; });
-  pcColor(phase1, 'Text colour', () => p1.productPill.color, (v) => { p1.productPill.color = v; });
-  pcNumber(phase1, 'Text size', () => p1.productPill.size, (v) => { p1.productPill.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
-  pcNumber(phase1, 'Border radius', () => p1.productPill.radius, (v) => { p1.productPill.radius = v; }, { min: 0, max: 2, step: 0.05 });
-  pcText(phase1, 'Border colour', () => p1.productPill.border, (v) => { p1.productPill.border = v; });
-
-  pcSection(phase1, 'Record button');
-  pcColor(phase1, 'Background', () => p1.recordButton.bg, (v) => { p1.recordButton.bg = v; });
-  pcColor(phase1, 'Text colour', () => p1.recordButton.color, (v) => { p1.recordButton.color = v; });
-  pcNumber(phase1, 'Text size', () => p1.recordButton.size, (v) => { p1.recordButton.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
-  pcNumber(phase1, 'Border radius', () => p1.recordButton.radius, (v) => { p1.recordButton.radius = v; }, { min: 0, max: 2, step: 0.05 });
-  pcColor(phase1, 'Hover colour', () => p1.recordButton.hover, (v) => { p1.recordButton.hover = v; });
-
-  pcSection(phase1, 'Camera icon');
-  pcColor(phase1, 'Colour', () => p1.cameraIcon.color, (v) => { p1.cameraIcon.color = v; });
-  pcNumber(phase1, 'Size', () => p1.cameraIcon.size, (v) => { p1.cameraIcon.size = v; }, { min: 0.5, max: 2, step: 0.05 });
-
-  pcSection(phase1, 'Privacy box');
-  pcColor(phase1, 'Background', () => p1.privacyBox.bg, (v) => { p1.privacyBox.bg = v; });
-  pcText(phase1, 'Border colour', () => p1.privacyBox.border, (v) => { p1.privacyBox.border = v; });
-  pcColor(phase1, 'Text colour', () => p1.privacyBox.color, (v) => { p1.privacyBox.color = v; });
-  pcNumber(phase1, 'Text size', () => p1.privacyBox.size, (v) => { p1.privacyBox.size = v; }, { min: 0.6, max: 1.2, step: 0.05 });
-  pcColor(phase1, 'Icon colour', () => p1.privacyBox.iconColor, (v) => { p1.privacyBox.iconColor = v; });
-
-  pcSection(phase1, 'Close button (X)');
-  pcColor(phase1, 'Colour', () => p1.closeButton.color, (v) => { p1.closeButton.color = v; });
-  pcNumber(phase1, 'Size', () => p1.closeButton.size, (v) => { p1.closeButton.size = v; }, { min: 0.8, max: 2, step: 0.05 });
-  pcColor(phase1, 'Hover colour', () => p1.closeButton.hover, (v) => { p1.closeButton.hover = v; });
-
-  // Phase 2 — Results
-  const p2 = pcConfig.phase2;
-  pcSection(phase2, 'Results headline');
-  pcText(phase2, 'Text', () => p2.resultsHeadline.text, (v) => { p2.resultsHeadline.text = v; });
-  pcColor(phase2, 'Colour', () => p2.resultsHeadline.color, (v) => { p2.resultsHeadline.color = v; });
-  pcNumber(phase2, 'Size', () => p2.resultsHeadline.size, (v) => { p2.resultsHeadline.size = v; }, { min: 0.8, max: 3, step: 0.05 });
-  pcSelect(phase2, 'Weight', () => String(p2.resultsHeadline.weight), (v) => { p2.resultsHeadline.weight = Number(v); }, [['400','400'],['500','500'],['600','600'],['650','650'],['700','700']]);
-
-  pcSection(phase2, 'Recommended size');
-  pcColor(phase2, 'Colour', () => p2.recommendedSize.color, (v) => { p2.recommendedSize.color = v; });
-  pcNumber(phase2, 'Size', () => p2.recommendedSize.size, (v) => { p2.recommendedSize.size = v; }, { min: 1.5, max: 4, step: 0.05 });
-  pcSelect(phase2, 'Weight', () => String(p2.recommendedSize.weight), (v) => { p2.recommendedSize.weight = Number(v); }, [['400','400'],['500','500'],['600','600'],['700','700'],['800','800']]);
-
-  pcSection(phase2, 'Secondary text');
-  pcColor(phase2, 'Colour', () => p2.secondaryText.color, (v) => { p2.secondaryText.color = v; });
-  pcNumber(phase2, 'Size', () => p2.secondaryText.size, (v) => { p2.secondaryText.size = v; }, { min: 0.6, max: 1.4, step: 0.05 });
-
-  pcSection(phase2, 'Primary CTA button');
-  pcColor(phase2, 'Background', () => p2.primaryCta.bg, (v) => { p2.primaryCta.bg = v; });
-  pcColor(phase2, 'Text colour', () => p2.primaryCta.color, (v) => { p2.primaryCta.color = v; });
-  pcNumber(phase2, 'Text size', () => p2.primaryCta.size, (v) => { p2.primaryCta.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
-  pcNumber(phase2, 'Border radius', () => p2.primaryCta.radius, (v) => { p2.primaryCta.radius = v; }, { min: 0, max: 2, step: 0.05 });
-  pcColor(phase2, 'Hover colour', () => p2.primaryCta.hover, (v) => { p2.primaryCta.hover = v; });
-
-  pcSection(phase2, 'Secondary button');
-  pcColor(phase2, 'Background', () => p2.secondaryButton.bg, (v) => { p2.secondaryButton.bg = v; });
-  pcColor(phase2, 'Text colour', () => p2.secondaryButton.color, (v) => { p2.secondaryButton.color = v; });
-  pcNumber(phase2, 'Text size', () => p2.secondaryButton.size, (v) => { p2.secondaryButton.size = v; }, { min: 0.7, max: 1.4, step: 0.05 });
-  pcText(phase2, 'Border colour', () => p2.secondaryButton.border, (v) => { p2.secondaryButton.border = v; });
-}
-
-/* ---------- website analysis ---------- */
-
-async function analyzeWebsite() {
-  const urlInp = document.getElementById('pc-website-url');
-  if (!urlInp) return;
-  const url = urlInp.value.trim();
-  if (!url) { showToast('Enter a homepage URL first.', 'error'); return; }
-
-  const analyzeBtn = document.getElementById('pc-analyze-btn');
-  const origText = analyzeBtn.textContent;
-  analyzeBtn.disabled = true;
-  analyzeBtn.textContent = 'Analyzing…';
-
-  try {
-    const result = await api('/api/website-analysis/analyze', {
-      method: 'POST',
-      body: { url },
-    });
-
-    if (!result) throw new Error('No response');
-
-    // Apply AI suggestion to config
-    const g = pcConfig.global;
-    const f = pcConfig.fabButton;
-
-    g.primaryColor = result.primaryColor || g.primaryColor;
-    g.secondaryColor = result.secondaryColor || g.secondaryColor;
-    g.accentColor = result.accentColor || g.accentColor;
-    g.backgroundColor = result.backgroundColor || g.backgroundColor;
-    g.textColor = result.textColor || g.textColor;
-    g.fontFamily = result.fontFamily || g.fontFamily;
-    g.mode = result.mode || g.mode;
-    g.borderRadius = result.borderRadius !== undefined ? result.borderRadius : g.borderRadius;
-
-    f.bg = result.accentColor || f.bg;
-    f.textColor = result.textColor || f.textColor;
-    f.radius = result.borderRadius !== undefined ? result.borderRadius : f.radius;
-
-    rebuildPcPanels();
-    applyPcToIframe();
-
-    showToast(`Website analyzed (${result.source}). Palette applied to all phases.`, 'ok');
-  } catch (err) {
-    showToast(err.message || 'Could not analyze that website.', 'error');
-  } finally {
-    analyzeBtn.disabled = false;
-    analyzeBtn.textContent = origText;
-  }
-}
-
-function applyPcToIframe() {
-  if (!pcIframe || !pcConfig) return;
-  if (!pcIframe.contentDocument) {
-    // iframe not ready yet — retry shortly
-    setTimeout(applyPcToIframe, 250);
-    return;
-  }
-  const doc = pcIframe.contentDocument;
-  let g, p0, p1, p2;
-  try {
-    g = pcConfig.global;
-    p0 = pcConfig.fabButton;
-    p1 = pcConfig.phase1;
-    p2 = pcConfig.phase2;
-  } catch (e) {
-    console.error('applyPcToIframe config read failed:', e);
-    return;
-  }
-  // Make sure the iframe's document is ready for manipulation
-  if (!doc.body) {
-    setTimeout(applyPcToIframe, 250);
-    return;
-  }
-  let css = '';
-  // global - override the real variables the size page uses
-  css += ':root { --accent:' + g.primaryColor + ' !important; --accent-2:' + g.secondaryColor + ' !important; --bg:' + g.backgroundColor + ' !important; --panel:' + g.backgroundColor + ' !important; --text:' + (g.mode === 'light' ? '#1a1d24' : '#eef0f4') + ' !important; --muted:' + (g.mode === 'light' ? '#5a5f6e' : '#8b90a0') + ' !important; --radius:' + g.borderRadius + 'rem !important; }' + "\n";
-  css += 'body { background:' + g.backgroundColor + ' !important; font-family:' + g.fontFamily + ',system-ui,sans-serif !important; font-size:calc(100% * ' + g.textSize + ') !important; }' + "\n";
-  if (g.mode === 'light') css += 'body { color-scheme: light; }' + "\n";
-  // phase 0 — floating button
-  css += '.threeDG-float { position: fixed !important; right: 1.1rem !important; bottom: 1.1rem !important; z-index: 2147482000 !important; display: ' + (p0.float ? 'block' : 'none') + ' !important; }' + "\n";
-  css += '.threeDG-button { background: ' + p0.bg + ' !important; color: ' + p0.textColor + ' !important; border-radius: ' + p0.radius + 'rem !important; }' + "\n";
-  // phase 1
-  css += '.intro h1 { color:' + p1.headline.color + ' !important; font-size:' + p1.headline.size + 'rem !important; font-weight:' + p1.headline.weight + ' !important; }' + "\n";
-  css += '.intro .lead { color:' + p1.instruction.color + ' !important; font-size:' + p1.instruction.size + 'rem !important; line-height:' + p1.instruction.lineHeight + ' !important; }' + "\n";
-  css += '.garment { background:' + p1.productPill.bg + ' !important; color:' + p1.productPill.color + ' !important; font-size:' + p1.productPill.size + 'rem !important; border-radius:' + p1.productPill.radius + 'rem !important; border-color:' + p1.productPill.border + ' !important; }' + "\n";
-  css += '#open-camera, .open-camera { background:' + p1.recordButton.bg + ' !important; color:' + p1.recordButton.color + ' !important; font-size:' + p1.recordButton.size + 'rem !important; border-radius:' + p1.recordButton.radius + 'rem !important; }' + "\n";
-  css += '#open-camera:hover, .open-camera:hover { background:' + p1.recordButton.hover + ' !important; }' + "\n";
-  css += '#open-camera svg, .open-camera svg, .cam-icon { color:' + p1.cameraIcon.color + ' !important; width:' + p1.cameraIcon.size + 'rem !important; height:' + p1.cameraIcon.size + 'rem !important; }' + "\n";
-  css += '#privacy, .privacy { background:' + p1.privacyBox.bg + ' !important; border-color:' + p1.privacyBox.border + ' !important; color:' + p1.privacyBox.color + ' !important; font-size:' + p1.privacyBox.size + 'rem !important; }' + "\n";
-  css += '#privacy svg, .privacy svg { color:' + p1.privacyBox.iconColor + ' !important; }' + "\n";
-  // phase 2
-  css += '.verdict-eyebrow { color:' + p2.resultsHeadline.color + ' !important; font-size:' + p2.resultsHeadline.size + 'rem !important; font-weight:' + p2.resultsHeadline.weight + ' !important; }' + "\n";
-  css += '.verdict-size { color:' + p2.recommendedSize.color + ' !important; font-size:' + p2.recommendedSize.size + 'rem !important; font-weight:' + p2.recommendedSize.weight + ' !important; }' + "\n";
-  css += '.verdict-row, .verdict-note { color:' + p2.secondaryText.color + ' !important; font-size:' + p2.secondaryText.size + 'rem !important; }' + "\n";
-  const pcCenter = document.querySelector('.pc-center');
-  if (pcCenter) pcCenter.style.backdropFilter = 'blur(' + g.overlayBlur + 'px)';
-  // inject
-  let style = doc.getElementById('pc-injected');
-  if (!style) {
-    style = doc.createElement('style');
-    style.id = 'pc-injected';
-    (doc.head || doc.documentElement).appendChild(style);
-  }
-  style.textContent = css;
-  // apply headline text
-  const h1 = doc.querySelector('.intro h1');
-  if (h1 && p1.headline.text) h1.textContent = p1.headline.text;
-  const lead = doc.querySelector('.intro .lead');
-  if (lead && p1.instruction.text) lead.textContent = p1.instruction.text;
-  const eyebrow = doc.querySelector('.verdict-eyebrow');
-  if (eyebrow && p2.resultsHeadline.text) eyebrow.textContent = p2.resultsHeadline.text;
-
-  // Toggle between the recording view (Phase 1) and the results view (Phase 2)
-  // so the store can preview either state of the popup.
-  const intro = doc.querySelector('.intro');
-  const captureEl = doc.getElementById('capture') || doc.querySelector('[data-step="camera"]');
-  const privacy = doc.getElementById('privacy');
-  const verdictEl = doc.getElementById('verdict');
-  const analysisEl = doc.getElementById('analysis');
-  if (pcPhase === 1) {
-    if (intro) intro.hidden = false;
-    if (privacy) privacy.hidden = false;
-    if (captureEl) captureEl.hidden = false;
-    if (verdictEl) verdictEl.hidden = true;
-    if (analysisEl) analysisEl.hidden = true;
-  } else {
-    if (intro) intro.hidden = true;
-    if (privacy) privacy.hidden = true;
-    if (captureEl) captureEl.hidden = true;
-    if (verdictEl) verdictEl.hidden = false;
-    if (analysisEl) analysisEl.hidden = false;
-    // populate sample result so the preview looks real
-    const verdictSize = doc.getElementById('verdict-size');
-    if (verdictSize && !verdictSize.textContent) verdictSize.textContent = 'M';
-    const verdictFor = doc.getElementById('verdict-for');
-    if (verdictFor && !verdictFor.textContent) verdictFor.textContent = 'for Sample Garment';
-    const verdictRow = doc.getElementById('verdict-row');
-    if (verdictRow) verdictRow.hidden = false;
-  }
-}
-
-async function savePc() {
-  if (!pcChart) return;
-  pcSave.disabled = true;
-  pcSave.textContent = 'Saving…';
-  try {
-    const saved = await saveChart({
-      id: pcChart.id,
-      name: pcChart.name,
-      sex: pcChart.sex,
-      unit: pcChart.unit,
-      columns: pcChart.columns,
-      rows: pcChart.rows,
-      popup: pcConfig,
-    });
-    pcChart.popup = saved.popup || pcConfig;
-    await refresh();
-    showToast('Popup customization saved', 'ok');
-  } catch (err) {
-    showToast(err.message || 'Could not save', 'error');
-  } finally {
-    pcSave.disabled = false;
-    pcSave.textContent = 'Save customization';
-  }
-}
-
-/* ---------- popup customizer wiring ---------- */
-pcClose?.addEventListener('click', closeCustomizer);
-pcSave?.addEventListener('click', savePc);
 
 /* ---------- the wiring ---------- */
 

@@ -476,19 +476,6 @@
     </div>
   </dialog>
 
-  <!-- Popup customiser: left = global styles, centre = the real popup, right = element styles. -->
-  <div class="pc-overlay" id="pc-overlay" hidden>
-    <div class="pc-left" id="pc-left"></div>
-    <div class="pc-center">
-      <iframe id="pc-iframe" title="Popup preview"></iframe>
-    </div>
-    <div class="pc-right" id="pc-right"></div>
-    <div class="pc-toolbar">
-      <button class="btn btn--ghost" id="pc-close" type="button">Close</button>
-      <button class="btn btn--primary" id="pc-save" type="button">Save customization</button>
-    </div>
-  </div>
-
     <!-- The popup script is loaded by src/dashboard.js the way a store loads it, so
          "Preview & Customise Popup" runs the real thing rather than a mock-up of it. -->
     <script type="module" src="/src/dashboard.js"></script>

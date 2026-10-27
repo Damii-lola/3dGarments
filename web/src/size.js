@@ -22,6 +22,7 @@
 import './nav.js';
 import { cloudConfig } from './services/config.js';
 import { getSession, isAccount } from './services/auth.js';
+import { applyPopupConfig, DEFAULTS } from './popup-config.js';
 
 /** A cold API can take a while to say where the cloud is; past this, the scanner opens. */
 const CONFIG_WAIT = 4000;
@@ -46,6 +47,9 @@ if (embedded) {
   // read, not pressed: following it would open our site inside the store's popup.
   // Without an href it is a mark, not a link.
   document.querySelector('.nav-brand')?.removeAttribute('href');
+  // The popup is the /size card, in the /size words, until a store's own settings arrive
+  // (main.js applies those once the chart has been read).
+  applyPopupConfig({});
 }
 
 if (!embedded) {
@@ -53,8 +57,8 @@ if (!embedded) {
   // original wording (stores restyle and reword that one from the dashboard).
   const heading = document.querySelector('#intro h1');
   const lead = document.querySelector('#intro .lead');
-  if (heading) heading.textContent = 'Record one slow turn';
-  if (lead) lead.textContent = 'Turn all the way around, slowly. Stand still, whole body in frame, arms a hand\u2019s width from your sides \u2014 that gap is how we tell your arms from your torso. Max 30 seconds.';
+  if (heading) heading.textContent = DEFAULTS.record.headline;
+  if (lead) lead.textContent = DEFAULTS.record.instruction;
 
   // The menu on a phone: the page behind it stops scrolling while it is open.
   const menuButton = document.getElementById('nav-menu');
