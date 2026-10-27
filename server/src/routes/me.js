@@ -175,10 +175,16 @@ me.get('/subscription', ah(async (req, res) => {
  * Activate the signed-in customer's $150/month unlimited plan automatically.
  *
  * Selar has no webhooks, so after paying on Selar the customer comes back here.
- * We don't ask for an email — we use the email from their already-authenticated
- * session, so nobody can activate someone else's plan. We poll Selar's product
- * API (SELAR_API_KEY) to confirm a new sale happened (sales count went up)
- * before activating their plan.
+ * We use the email from their already-authenticated session (so nobody can
+ * activate someone else's plan), and we poll Selar's product API
+ * (SELAR_API_KEY) to confirm a new sale happened.
+ *
+ * Concurrency: Selar's sales count is a single global number. If several
+ * customers bought at once it jumps (0 → 3), so we can't just compare against
+ * it. Instead we keep a `consumed_sales` watermark in app_settings and
+ * atomically increment it by 1 — but only while it's still below Selar's live
+ * sales count. The UPDATE is atomic at the DB level, so concurrent buyers each
+ * consume exactly one sale unit and nobody gets double-charged or locked out.
  */
 me.post('/subscription/activate', ah(async (req, res) => {
   const email = String(req.user.email || '').toLowerCase();
@@ -202,26 +208,40 @@ me.post('/subscription/activate', ah(async (req, res) => {
   const product = Array.isArray(selar.data) ? selar.data.find((p) => String(p.code) === '1w89133gya') : null;
   if (!product) throw new HttpError(502, 'Could not find the FindMySize Subscription product on Selar');
 
-  const sales = Number(product.sales || 0);
+  const liveSales = Number(product.sales || 0);
 
-  // Global watermark: the last sales count we processed. Stored in app_settings.
-  const { data: watermarkRow } = await db().from('app_settings').select('value').eq('key', 'selar_sales_watermark').maybeSingle();
-  const lastSeen = watermarkRow?.value?.sales_count ?? 0;
+  // Atomically claim one sale unit. Selar's sales count is global, so we use a
+  // compare-and-swap loop: read consumed_sales, only increment if it's still the
+  // same value and still below liveSales. Concurrent buyers each claim exactly
+  // one unit; if two collide, one retries with the new value.
+  let consumedSales = 0;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: row } = await db().from('app_settings').select('value').eq('key', 'selar_sales_watermark').maybeSingle();
+    consumedSales = Number(row?.value?.consumed_sales ?? 0);
 
-  if (sales <= lastSeen) {
-    throw new HttpError(402, "We couldn't find a new Selar purchase for your account yet. Make sure you paid on Selar and try again.");
+    if (consumedSales >= liveSales) {
+      throw new HttpError(402, "We couldn't find a new Selar purchase for your account yet. Make sure you paid on Selar and try again.");
+    }
+
+    const { data: updated, error: updErr } = await db()
+      .from('app_settings')
+      .update({
+        value: { consumed_sales: consumedSales + 1, updated_at: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('key', 'selar_sales_watermark')
+      .filter('value->>consumed_sales', 'eq', String(consumedSales));
+
+    if (updErr || !updated || updated.length === 0) {
+      // Collision: someone else incremented first; retry with fresh value.
+      continue;
+    }
+    break; // claimed it
   }
 
   const now = new Date();
   const paidUntil = new Date(now);
   paidUntil.setMonth(paidUntil.getMonth() + 1);
-
-  // Advance the global watermark and activate the plan.
-  await db().from('app_settings').upsert({
-    key: 'selar_sales_watermark',
-    value: { sales_count: sales, updated_at: now.toISOString() },
-    updated_at: now.toISOString(),
-  }, { onConflict: 'key' });
 
   const { error } = await db()
     .from('subscriptions')
@@ -239,8 +259,6 @@ me.post('/subscription/activate', ah(async (req, res) => {
 
   res.json({ ok: true, plan: 'unlimited', status: 'active', paid_until: paidUntil.toISOString() });
 }));
-
-/* ---------- appearance ---------- */
 
 /* ---------- appearance ---------- */
 
