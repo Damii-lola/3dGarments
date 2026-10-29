@@ -1,9 +1,9 @@
 /**
- * FAST AI Training Data Generator (Image-Based)
+ * FAST AI Training Data Generator (Image-Based, RESUMABLE)
  * ===============================================
  * Uses Playwright but loads the page ONCE and captures via JS evaluation.
- * No button clicking, no page reloads between samples.
- * Runs overnight, generates thousands of samples with real photos.
+ * Saves after every sample — if your laptop dies, just re-run and it picks
+ * up exactly where it left off.
  *
  * Usage:
  *   cd C:\Users\SIFON\3dGarments
@@ -15,6 +15,7 @@
  */
 
 import { chromium } from 'playwright';
+import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 
 const BASE_URL = 'http://localhost:5173/train/';
 const OUT_FILE = 'training_dataset_images.json';
@@ -29,19 +30,43 @@ const MUSCLES = [-1, -0.5, 0, 0.5];
 const ABDOMENS = ['flat', 'soft', 'toned', 'curved'];
 const ANGLES = ['front', 'three', 'side', 'back'];
 
+// --- Resume: load existing samples if file exists ---
+let samples = [];
+let count = 0;
+let startTime = Date.now();
+
+if (existsSync(OUT_FILE)) {
+  try {
+    const existing = JSON.parse(readFileSync(OUT_FILE, 'utf-8'));
+    samples = existing.samples || [];
+    count = samples.length;
+    console.log(`Resuming from ${count} existing samples...`);
+  } catch (e) {
+    console.log(`Could not read existing file, starting fresh: ${e.message}`);
+  }
+}
+
+// Build a set of already-completed combinations for fast lookup
+const doneSet = new Set();
+for (const s of samples) {
+  const p = s.proportions;
+  const key = `${p.sex}|${p.width}|${p.height}|${p.fat}|${p.muscle}|${p.abdomen}`;
+  doneSet.add(key);
+}
+
+console.log(`Already completed: ${count} samples. Starting from where we left off...\n`);
+
 async function waitForReady(page) {
   await page.waitForFunction(() => window.__train && window.__train.mc, { timeout: 60000 });
-  await page.waitForTimeout(1500); // let Three.js fully initialize
+  await page.waitForTimeout(1500);
 }
 
 /** Set all sliders at once via JS evaluation. */
 async function setProportions(page, sex, width, height, fat, muscle, abdomen) {
   await page.evaluate(({ sex, width, height, fat, muscle, abdomen }) => {
-    // Set sex
     const sexBtn = document.querySelector(`.sex-btn[data-sex="${sex}"]`);
     if (sexBtn) sexBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    // Set sliders via input events
     const setSlider = (id, val) => {
       const el = document.getElementById(id);
       if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -51,12 +76,11 @@ async function setProportions(page, sex, width, height, fat, muscle, abdomen) {
     setSlider('fat-slider', fat);
     setSlider('muscle-slider', muscle);
 
-    // Set abdomen select
     const sel = document.getElementById('abdomen-select');
     if (sel) { sel.value = abdomen; sel.dispatchEvent(new Event('change', { bubbles: true })); }
   }, { sex, width, height, fat, muscle, abdomen });
 
-  await page.waitForTimeout(500); // let Three.js render
+  await page.waitForTimeout(500);
 }
 
 /** Switch view angle. */
@@ -65,7 +89,7 @@ async function setView(page, angle) {
     const btn = document.querySelector(`.view-btn[data-angle="${a}"]`);
     if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   }, angle);
-  await page.waitForTimeout(400); // let Three.js render new view
+  await page.waitForTimeout(400);
 }
 
 /** Capture canvas as PNG data URL. */
@@ -118,6 +142,18 @@ async function readProportions(page) {
   });
 }
 
+/** Save progress to disk after every sample. */
+function saveProgress() {
+  const dataset = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    count: samples.length,
+    angles: ANGLES,
+    samples,
+  };
+  writeFileSync(OUT_FILE, JSON.stringify(dataset, null, 2));
+}
+
 async function generate() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -128,10 +164,6 @@ async function generate() {
   await waitForReady(page);
   console.log('Page ready. Starting generation…\n');
 
-  const samples = [];
-  let count = 0;
-  const startTime = Date.now();
-
   for (const sex of SEXES) {
     const widths = WIDTHS_CM[sex];
     const heights = HEIGHTS_IN[sex];
@@ -141,6 +173,10 @@ async function generate() {
         for (const fat of FATS) {
           for (const muscle of MUSCLES) {
             for (const abdomen of ABDOMENS) {
+              // Skip if already done
+              const key = `${sex}|${width}|${height}|${fat}|${muscle}|${abdomen}`;
+              if (doneSet.has(key)) continue;
+
               // Set proportions
               await setProportions(page, sex, width, height, fat, muscle, abdomen);
 
@@ -163,6 +199,9 @@ async function generate() {
                 createdAt: new Date().toISOString(),
               });
 
+              // Save after EVERY sample so we never lose progress
+              saveProgress();
+
               if (count % 10 === 0) {
                 const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
                 console.log(`${count} samples | ${elapsed} min | ${sex} w=${width} h=${height} f=${fat} m=${muscle} a=${abdomen}`);
@@ -176,23 +215,18 @@ async function generate() {
 
   await browser.close();
 
-  const dataset = {
-    version: 1,
-    generatedAt: new Date().toISOString(),
-    count: samples.length,
-    angles: ANGLES,
-    samples,
-  };
-
-  const fs = await import('node:fs');
-  fs.writeFileSync(OUT_FILE, JSON.stringify(dataset, null, 2));
-  const mb = (fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2);
   const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-  console.log(`\nDONE! ${samples.length} samples → ${OUT_FILE} (${mb} MB) in ${elapsed} min`);
+  console.log(`\nDONE! ${samples.length} total samples → ${OUT_FILE}`);
+  console.log(`New samples this run: ${count - (samples.length - count)}`);
   console.log(`Next: python tools/train/train_model_images.py --dataset ${OUT_FILE} --device cuda`);
 }
 
 generate().catch((e) => {
   console.error('Generation failed:', e);
+  // Save what we have before exiting
+  try {
+    saveProgress();
+    console.log('Progress saved before exit.');
+  } catch { /* ignore */ }
   process.exit(1);
 });
