@@ -48,10 +48,9 @@ if (button) button.addEventListener('click', async () => {
   try {
     session = await within(getSession(), CAMERA_WAIT, null);
   } catch {
-    session = null; // no cloud, no session, no matter: the account screen decides
+    session = null;
   }
 
-  // A double tap must not leave the button dead if the navigation is blocked.
   setTimeout(() => {
     button.disabled = false;
     button.removeAttribute('aria-busy');
@@ -61,10 +60,7 @@ if (button) button.addEventListener('click', async () => {
   location.assign(isAccount(session) ? SCANNER : ACCOUNT);
 });
 
-/* ---------- booking a demo ----------
-   The mail client is the endpoint. It means no form service to run, no address
-   harvested by a third party, and — the useful part — the reply comes back to
-   the address the visitor typed, which is the one that needs the answer. */
+/* ---------- booking a demo ---------- */
 const demoForm = document.getElementById('demo-form');
 const demoAlert = document.getElementById('form-alert');
 const demoSuccess = document.getElementById('form-success');
@@ -76,7 +72,6 @@ const storeInput = document.getElementById('store');
 const emailInput = document.getElementById('email');
 const messageInput = document.getElementById('products');
 
-/** The two fields that must be filled in, with the message each one shows. */
 const required = [
   { input: nameInput, error: document.getElementById('name-error'), ok: (v) => v.length > 0 },
   { input: emailInput, error: document.getElementById('email-error'), ok: (v) => EMAIL_RE.test(v) },
@@ -94,8 +89,6 @@ function clearErrors() {
 }
 
 for (const field of required) {
-  // Once a field has been flagged it re-checks as the visitor types, so the
-  // message goes away the moment it is no longer true.
   field.input?.addEventListener('input', () => {
     if (field.input.getAttribute('aria-invalid') === 'true') mark(field, field.ok(field.input.value.trim()));
   });
@@ -123,8 +116,6 @@ demoForm?.addEventListener('submit', (event) => {
   const email = emailInput.value.trim();
   const message = messageInput.value.trim();
 
-  // Written out and sent, rather than sent by the form: what arrives in the
-  // inbox is then something a person can read, in the order they would ask it.
   const body = [
     `Name: ${name}`,
     store ? `Store: ${store}` : null,
@@ -140,8 +131,6 @@ demoForm?.addEventListener('submit', (event) => {
   const subject = store ? `Demo request — ${store}` : `Demo request — ${name}`;
   window.location.href = `mailto:${DEMO_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
-  // The card says what actually happened: the mail app was opened, nothing has
-  // been sent until they press send there.
   if (demoSuccessEmail) demoSuccessEmail.textContent = email;
   demoForm.hidden = true;
   if (demoSuccess) {
@@ -152,7 +141,6 @@ demoForm?.addEventListener('submit', (event) => {
 
 demoReset?.addEventListener('click', () => {
   if (!demoForm) return;
-  // Not reset(): they are editing a request that is still in front of them, not starting another.
   clearErrors();
   if (demoSuccess) demoSuccess.hidden = true;
   demoForm.hidden = false;
@@ -160,11 +148,7 @@ demoReset?.addEventListener('click', () => {
   nameInput?.focus({ preventScroll: true });
 });
 
-/* ---------- the menu on a phone ----------
-   nav.js opens and closes the section list. This adds what the full-screen
-   version needs on top: the page behind it stops scrolling while it is open,
-   the button says what it will do, and the "Book a Demo" button inside it
-   (which stays on this page) puts the menu away on its way down. */
+/* ---------- the menu on a phone ---------- */
 const menuButton = document.getElementById('nav-menu');
 if (menuButton) {
   const syncMenu = () => {
@@ -178,8 +162,20 @@ if (menuButton) {
     if (menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
   });
 
-  // Turning the phone sideways (or widening the window) past the breakpoint must not leave the page locked.
   window.matchMedia('(min-width: 961px)').addEventListener('change', (event) => {
     if (event.matches && menuButton.getAttribute('aria-expanded') === 'true') menuButton.click();
   });
 }
+
+/* ---------- AI help chat (bottom-right) ---------- */
+(function loadChat() {
+  const base = import.meta.env.BASE_URL || '/';
+  const cfg = document.createElement('script');
+  cfg.src = base + 'chat-config.js';
+  cfg.onload = () => {
+    const chat = document.createElement('script');
+    chat.src = base + 'chat.js';
+    document.body.appendChild(chat);
+  };
+  document.body.appendChild(cfg);
+})();
