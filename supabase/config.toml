@@ -13,7 +13,7 @@ major_version = 17
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["https://damii-lola.github.io/3dGarments/"]
+additional_redirect_urls = ["https://findmysize.org/", "https://www.findmysize.org/"]
 
 # Passwords: 8+ chars, mixed case + digits. Leaked-password (HIBP) protection is
 # not expressible here; enable it via the Management API / Dashboard (see below).
