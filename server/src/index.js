@@ -14,6 +14,7 @@ import { bodyScan } from './routes/body-scan.js';
 import { chartCheck } from './routes/chart-check.js';
 import { websiteAnalysis } from './routes/website-analysis.js';
 import { selarWebhook } from './routes/webhook-selar.js';
+import { chat } from './routes/chat.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
 import { startGmailPoll } from './services/gmail-poll.js';
@@ -36,8 +37,6 @@ app.use(express.json({ limit: '256kb' }));
 
 app.get('/', (_req, res) => res.json({ service: '3dgarments-api', docs: '/health' }));
 app.use('/health', health);
-// the web app (GitHub Pages) reads its public Supabase settings from here, so every key lives in
-// Render's env. Only browser-safe values: the project URL and the anon key (RLS guards the data).
 app.get('/api/public-config', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
   res.json({
@@ -52,8 +51,8 @@ app.use('/api/scan', scan);
 app.use('/api/body-scan', bodyScan);
 app.use('/api/chart-check', chartCheck);
 app.use('/api/website-analysis', websiteAnalysis);
-// Selar → Zapier webhook: activates a store's $150/month unlimited plan.
 app.use('/api/webhooks/selar', selarWebhook);
+app.use('/api/chat', chat);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
 
@@ -79,7 +78,6 @@ const server = app.listen(config.port, () => {
     recoverStaleJobs().catch((e) => console.warn('stale-job recovery skipped:', e.message));
     recoverStaleGroups().catch((e) => console.warn('stale-group recovery skipped:', e.message));
   }
-  // Start polling Gmail for Selar payment emails (only if credentials are set).
   startGmailPoll();
 });
 
