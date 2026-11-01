@@ -8,32 +8,19 @@
  *   2. the rest of the page, which is written for the brand rather than for the
  *      shopper, and ends in a way to reach us that does not need a server of
  *      ours: the form opens the visitor's own mail client.
- *
- * Whether the detour in (1) is necessary depends on a session, and a session
- * depends on the cloud settings the API hands out — a request that can be slow
- * on a cold start. So the wait is capped, and the account screen is the
- * fallback: it is the one screen that can also let somebody through without an
- * account, when a copy of the site has no cloud configured at all.
  */
 import './nav.js';
 import { getSession, isAccount } from './services/auth.js';
 
-/** Long enough for a warm API, short enough that a tap never feels stuck. */
 const CAMERA_WAIT = 2500;
-
-/** Where the rest of the site lives, relative to this page, under any base path. */
 const SCANNER = 'size/';
 const ACCOUNT = 'auth/';
-
-/** Where a demo request goes. Change this one line when the address changes. */
 const DEMO_EMAIL = 'findmysize.us@gmail.com';
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const button = document.getElementById('open-camera');
 const cta = button ? button.querySelector('.cam-cta') : null;
 
-/** `promise`, or `fallback` if it has not settled within `ms`. */
 function within(promise, ms, fallback) {
   return Promise.race([promise, new Promise((r) => setTimeout(() => r(fallback), ms))]);
 }
@@ -170,12 +157,7 @@ if (menuButton) {
 /* ---------- AI help chat (bottom-right) ---------- */
 (function loadChat() {
   const base = import.meta.env.BASE_URL || '/';
-  const cfg = document.createElement('script');
-  cfg.src = base + 'chat-config.js';
-  cfg.onload = () => {
-    const chat = document.createElement('script');
-    chat.src = base + 'chat.js';
-    document.body.appendChild(chat);
-  };
-  document.body.appendChild(cfg);
+  const chat = document.createElement('script');
+  chat.src = base + 'chat.js';
+  document.body.appendChild(chat);
 })();
