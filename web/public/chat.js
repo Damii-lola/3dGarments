@@ -1,12 +1,11 @@
 /**
  * FindMySize AI help chat — bottom-right floating button.
- * Calls a Cloudflare Worker. Set window.FMS_CHAT_URL before this script loads.
+ * Calls /api/chat on the same server that already runs Cloudflare Workers AI.
  */
 (function () {
   'use strict';
 
-  var CHAT_URL = (window.FMS_CHAT_URL || '').trim();
-  if (!CHAT_URL) return;
+  var API = (window.FMS_API_URL || 'https://threedgarments.onrender.com').replace(/\/$/, '');
 
   var STYLE = [
     '.fms-chat-btn{position:fixed;right:1.1rem;bottom:1.1rem;z-index:2147482500;width:3.4rem;height:3.4rem;border:0;border-radius:50%;background:#f0521f;color:#fff;box-shadow:0 .6rem 1.6rem rgba(240,82,31,.35);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.4rem}',
@@ -74,7 +73,7 @@
     msgs.appendChild(thinking);
     msgs.scrollTop = msgs.scrollHeight;
     try {
-      var res = await fetch(CHAT_URL, {
+      var res = await fetch(API + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q }),
