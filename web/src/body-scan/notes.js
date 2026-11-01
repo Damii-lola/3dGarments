@@ -6,17 +6,14 @@
  * API, not for the person looking at their own waistline. Some of it is kept,
  * because it says which number was too ambiguous to give.
  *
- * What is never shown is capture coaching. The clip is already recorded by the
- * time this list is on screen, so a line telling somebody how to stand next time
- * cannot be acted on — it is the app telling them off for a take they cannot
- * change, and the missing row already says the same thing without the scolding.
+ * What is never shown is capture coaching or minor missing parts (feet, height
+ * when not needed). The clip is already recorded by the time this list is on
+ * screen, so a line telling somebody how to stand next time cannot be acted on
+ * — it is the app telling them off for a take they cannot change, and the
+ * missing row already says the same thing without the scolding.
  *
- * That distinction is the whole reason this is a list of patterns rather than a
- * list of phrases. A pattern like /in shot/ would also swallow "your feet were
- * not in shot, so nothing that needs the floor could be read", which is the
- * disclosure, and the point of showing notes at all. So the patterns below match
- * imperatives — a verb telling the viewer to do something — and leave the half
- * of the sentence that reports back alone.
+ * Only show notes that change what the shopper should do with the result
+ * (e.g. "chest could not be read, so the size is based on waist only").
  */
 export const HIDDEN_NOTES = [
   // Written for the API reader.
@@ -38,8 +35,14 @@ export const HIDDEN_NOTES = [
   /\bstep (back|closer|further)\b/i,
   /\bhold (them|your arms?|the arms?)\b[^.]*\bclear\b/i,
 
-  // The phrasing the on-device measurement pass used to emit, which is written
-  // by the browser and arrives inside the payload rather than from this file.
+  // Minor missing parts — the missing measurement already says it.
+  /\bfeet (were |was )?not in (shot|frame)\b/i,
+  /\bcould not (capture|read|see) (the )?(feet|floor|height)\b/i,
+  /\bnothing that needs the floor\b/i,
+  /\bheight (could not|was not|wasn't) (read|measured)\b/i,
+  /\blegs (were |was )?not (fully )?(in shot|visible)\b/i,
+
+  // The phrasing the on-device measurement pass used to emit.
   /a little clear|truest numbers|pause at the side/i,
 ];
 
