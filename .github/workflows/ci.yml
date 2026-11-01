@@ -9,8 +9,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Read-only by default: a test job has no reason to write to the repo or use a
-# token with more reach than checking the code out.
 permissions:
   contents: read
 
@@ -22,10 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
-      - run: npm ci
+        with: { node-version: 22 }
+      - run: npm install
       - run: npm run check
-      - name: Geometry — the measurement arithmetic, on synthetic bodies with known answers
+      - name: Geometry check
         run: node scripts/geometry-check.mjs
       - run: npm test
 
@@ -36,8 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
-      - run: npm ci
+        with: { node-version: 22 }
+      - run: npm install
       - run: npm run check
       - run: npm run build
 
@@ -48,14 +46,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            test/package-lock.json
-            web/package-lock.json
-      # the lab imports web/src, whose dependencies resolve from web/node_modules
-      - run: npm ci
+        with: { node-version: 22 }
+      - run: npm install
         working-directory: web
-      - run: npm ci
+      - run: npm install
       - run: npm run build
