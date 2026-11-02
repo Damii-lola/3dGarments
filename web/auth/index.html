@@ -21,7 +21,19 @@
         .auth-card-wrap, .auth-hero { animation: none !important; }
       </style>
     </noscript>
-  </head>
+  
+<style>
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 2.6rem; }
+.pw-eye {
+  position: absolute; right: .6rem; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; padding: .3rem; cursor: pointer; color: #8a7a6a;
+  display: flex; align-items: center;
+}
+.pw-eye:hover { color: #f0521f; }
+.pw-eye svg { width: 1.2rem; height: 1.2rem; stroke: currentColor; fill: none; stroke-width: 1.8; }
+</style>
+</head>
   <body id="top" class="auth-page">
   <a class="skip" href="#main">Skip to content</a>
 
@@ -130,11 +142,15 @@
                       <label for="signup-password">Password</label>
                       <span class="field-note">6+ characters</span>
                     </div>
-                    <input id="signup-password" name="password" type="password" autocomplete="new-password" required>
+                    <div class="pw-wrap"><input id="signup-password" name="password" type="password" autocomplete="new-password" required><button type="button" class="pw-eye" aria-label="Show password" data-target="signup-password">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button></div>
                   </div>
                   <div class="auth-field">
                     <label for="signup-confirm">Confirm password</label>
-                    <input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" required>
+                    <div class="pw-wrap"><input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" required><button type="button" class="pw-eye" aria-label="Show password" data-target="signup-confirm">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button></div>
                   </div>
                 </div>
 
@@ -160,7 +176,9 @@
 
                 <div class="auth-field">
                   <label for="login-password">Password</label>
-                  <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                  <div class="pw-wrap"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button type="button" class="pw-eye" aria-label="Show password" data-target="login-password">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button></div>
                 </div>
 
                 <div class="form-aside">
@@ -210,11 +228,15 @@
                 <div class="field-row">
                   <div class="auth-field">
                     <label for="recovery-password">New password</label>
-                    <input id="recovery-password" name="password" type="password" autocomplete="new-password" required>
+                    <div class="pw-wrap"><input id="recovery-password" name="password" type="password" autocomplete="new-password" required><button type="button" class="pw-eye" aria-label="Show password" data-target="recovery-password">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button></div>
                   </div>
                   <div class="auth-field">
                     <label for="recovery-confirm">Confirm new password</label>
-                    <input id="recovery-confirm" name="confirm" type="password" autocomplete="new-password" required>
+                    <div class="pw-wrap"><input id="recovery-confirm" name="confirm" type="password" autocomplete="new-password" required><button type="button" class="pw-eye" aria-label="Show password" data-target="recovery-confirm">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button></div>
                   </div>
                 </div>
 
@@ -327,5 +349,20 @@
   </footer>
 
   <script type="module" src="/src/auth.js"></script>
-  </body>
+  
+<script>
+document.querySelectorAll(".pw-eye").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    btn.querySelector("svg").innerHTML = show
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+      : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>';
+  });
+});
+</script>
+</body>
 </html>
