@@ -82,6 +82,7 @@ import {
   spanX,
 } from '../lib/bodyGeometry.js';
 import { buildCatalogue, depthRatioFor } from '../lib/catalogue.js';
+import { landmarksToPoints, predictMeasurements } from '../lib/pointnet.js';
 import { aiErrorMessage, authHeaders, classifyAiError, modelUrl, recordVision } from '../lib/cloudflare.js';
 import { mistralChat, mistralConfigured } from '../lib/mistral.js';
 import { geminiChat, geminiConfigured } from '../lib/gemini.js';
@@ -1838,6 +1839,24 @@ function finishScan(res, { frames, rejected, unreadable, failures, clip = null, 
     bodyWidthRemovedIn: round1(removed),
     bodyWidthRemovedLowerIn: round1(removedLower),
   };
+
+  // PointNet refinement when the trained model is present.
+  // Fills gaps and can override low-confidence geometric readings.
+  try {
+    const pts = landmarksToPoints(frames);
+    const pn = await predictMeasurements(pts);
+    if (pn) {
+      const cmToIn = (cm) => cm == null ? null : Math.round((cm / 2.54) * 10) / 10;
+      if (pn.chest_cm && adjusted.chest == null) adjusted.chest = cmToIn(pn.chest_cm);
+      if (pn.waist_cm && adjusted.waist == null) adjusted.waist = cmToIn(pn.waist_cm);
+      if (pn.hips_cm && adjusted.hips == null) adjusted.hips = cmToIn(pn.hips_cm);
+      if (pn.shoulder_cm && adjusted.shoulder == null) adjusted.shoulder = cmToIn(pn.shoulder_cm);
+      if (pn.neck_circumference_cm && adjusted.neck == null) adjusted.neck = cmToIn(pn.neck_circumference_cm);
+      diagnostics.pointnet = { used: true, chest: pn.chest_cm, waist: pn.waist_cm, hips: pn.hips_cm };
+    }
+  } catch (e) {
+    log('[pointnet] skipped:', e.message);
+  }
 
   // 8. Size.
   //
