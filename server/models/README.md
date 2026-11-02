@@ -1,7 +1,17 @@
-# Cut-out model
+# Models
 
-`u2netp.onnx` — U²-Net-P (lightweight salient-object / background-removal network, Qin et al. 2020), 4.6 MB.
-Used by `src/services/segment.js` to cut a garment out of a product photo (the colour-based cut-out in
-`src/shared/silhouette.js` only works on plain backdrops). Weights as distributed by the rembg project.
-U²-Net is released under the Apache-2.0 licence — check the current terms of the exact file before shipping commercially.
-If the file is missing the server downloads it once from `U2NETP_URL` (default: rembg's GitHub release) into this folder.
+## u2netp.onnx
+U²-Net-P for garment cut-out. See existing notes.
+
+## pointnet.onnx
+Trained body-measurement model. Optional — if missing, the scanner falls back to geometric measurement.
+
+### How to add it
+1. On the machine where you trained, export:
+   ```
+   python tools/export_pointnet_onnx.py --checkpoint checkpoints/best_model.pt --out pointnet.onnx
+   ```
+2. Place `pointnet.onnx` in this folder (`server/models/`).
+3. Redeploy the server.
+
+The model is used to fill measurement gaps when landmarks are incomplete. It does not override numbers that were already measured from the video.
