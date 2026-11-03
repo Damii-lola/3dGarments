@@ -1426,7 +1426,7 @@ bodyScan.post('/', limiter, cap, upload.fields([{ name: 'frames', maxCount: 16 }
     // here as on the vision path, and it is what fills a chest the geometry alone
     // could not find.
     const { calc, calcMeta } = await runCalculation(frames, req.query);
-    return finishScan(res, {
+    return await finishScan(res, {
       frames,
       rejected,
       unreadable,
@@ -1594,7 +1594,7 @@ bodyScan.post('/', limiter, cap, upload.fields([{ name: 'frames', maxCount: 16 }
   // measures — from the points as they came in.
   const { calc, calcMeta } = await runCalculation(frames, req.query);
 
-  return finishScan(res, {
+  return await finishScan(res, {
     frames,
     rejected,
     unreadable,
@@ -1623,7 +1623,7 @@ bodyScan.post('/', limiter, cap, upload.fields([{ name: 'frames', maxCount: 16 }
  * on one scale across the turn, measure each region from landmark geometry, and
  * pick a size. Nothing here knows or cares which path produced the frames.
  */
-function finishScan(res, { frames, rejected, unreadable, failures, clip = null, timing = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, calc = null, calcMeta = null, startedAt }) {
+async function finishScan(res, { frames, rejected, unreadable, failures, clip = null, timing = null, aspect, attempted, totalBytes, sourceModel, poseNotes, gender: chosenGender, chart = null, chartName = '', chartSex = null, calc = null, calcMeta = null, startedAt }) {
   if (frames.length === 0) {
     log(`x no usable frames after ${Date.now() - startedAt}ms (${rejected.length} rejected, ${failures.length} failed)`);
     const details = { diagnostics: { model: sourceModel, clip, timing, rejected, unreadable, failures } };
