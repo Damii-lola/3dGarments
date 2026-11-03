@@ -876,16 +876,24 @@ sortSelect?.addEventListener('change', () => {
 /* ---------- who is signed in ---------- */
 
 function paint(session) {
-  const account = isAccount(session);
-  signInSection.hidden = account;
-  workSection.hidden = !account;
-  listSection.hidden = !account;
-  howSection.hidden = !account;
-  for (const el of document.querySelectorAll('[data-in-only]')) el.hidden = !account;
-  for (const el of document.querySelectorAll('[data-out-only]')) el.hidden = account;
+  // Temporary: allow dashboard use without login for testing.
+  const account = true;
+  signInSection.hidden = true;
+  workSection.hidden = false;
+  listSection.hidden = false;
+  howSection.hidden = false;
+  for (const el of document.querySelectorAll('[data-in-only]')) el.hidden = false;
+  for (const el of document.querySelectorAll('[data-out-only]')) el.hidden = true;
 
   const unsubSection = document.getElementById('dash-unsubscribed');
-  if (!account) {
+  if (unsubSection) unsubSection.hidden = true;
+  // Skip subscription check — free access for now.
+  refresh().catch(() => {});
+  return;
+
+  // Original auth path below (unreachable):
+  const _account = isAccount(session);
+  if (!_account) {
     if (unsubSection) unsubSection.hidden = true;
     return;
   }
