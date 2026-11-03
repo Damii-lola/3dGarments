@@ -38,7 +38,7 @@ const run = promisify(execFile);
  * turn by cos, so the error it used to cause is gone. Sixteen bought views the
  * arithmetic did not need and paid for them in waiting.
  */
-export const MAX_FRAMES = 8;
+export const MAX_FRAMES = 16;
 
 /**
  * Seeks run side by side, all of them at once. Each seek spends most of its life
