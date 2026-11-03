@@ -26,6 +26,15 @@ const LOCAL_KEY = "fms_charts_local";
 function localList() {
   try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]"); } catch { return []; }
 }
+
+async function hasSession() {
+  try {
+    const { getSession } = await import('./auth.js');
+    const s = await getSession();
+    return !!s;
+  } catch { return false; }
+}
+
 function localSave(charts) {
   localStorage.setItem(LOCAL_KEY, JSON.stringify(charts));
 }
@@ -78,6 +87,7 @@ export function notSetUp(error) {
 
 /** The charts this account owns, newest first. Signed out (or local mode) = none. */
 export async function listCharts() {
+  if (!(await hasSession())) return localList();
   const client = await supabaseClient();
   if (!client) return localList();
   const { data, error } = await client
@@ -95,6 +105,19 @@ export async function listCharts() {
  * is a unique index) is answered by asking for another code once.
  */
 export async function saveChart({ id, name, sex, unit, columns, rows, popup }) {
+  if (!(await hasSession())) {
+    const charts = localList();
+    const row = { id: id || crypto.randomUUID(), code: newCode(), name: name.trim().slice(0, 60), sex, unit, columns, rows, popup: popup || {}, created_at: new Date().toISOString() };
+    if (id) {
+      const i = charts.findIndex((c) => c.id === id);
+      if (i >= 0) charts[i] = { ...charts[i], ...row };
+      else charts.push(row);
+    } else {
+      charts.unshift(row);
+    }
+    localSave(charts);
+    return row;
+  }
   const client = await supabaseClient();
   if (!client) {
     const charts = localList();
