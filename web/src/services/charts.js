@@ -20,6 +20,16 @@
  * rows.
  */
 import { supabaseClient } from './auth.js';
+
+// Local fallback when not signed in (testing).
+const LOCAL_KEY = "fms_charts_local";
+function localList() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]"); } catch { return []; }
+}
+function localSave(charts) {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(charts));
+}
+
 import { api } from './api.js';
 
 /**
@@ -69,7 +79,7 @@ export function notSetUp(error) {
 /** The charts this account owns, newest first. Signed out (or local mode) = none. */
 export async function listCharts() {
   const client = await supabaseClient();
-  if (!client) return [];
+  if (!client) return localList();
   const { data, error } = await client
     .from('size_charts')
     .select('id, code, name, sex, unit, columns, rows, popup, created_at, updated_at')
@@ -86,7 +96,19 @@ export async function listCharts() {
  */
 export async function saveChart({ id, name, sex, unit, columns, rows, popup }) {
   const client = await supabaseClient();
-  if (!client) throw new Error('cloud not configured');
+  if (!client) {
+    const charts = localList();
+    const row = { id: id || crypto.randomUUID(), code: newCode(), name: name.trim().slice(0, 60), sex, unit, columns, rows, popup: popup || {}, created_at: new Date().toISOString() };
+    if (id) {
+      const i = charts.findIndex((c) => c.id === id);
+      if (i >= 0) charts[i] = { ...charts[i], ...row };
+      else charts.push(row);
+    } else {
+      charts.unshift(row);
+    }
+    localSave(charts);
+    return row;
+  }
   const row = { name: name.trim().slice(0, 60), sex, unit, columns, rows, popup: popup || {} };
   if (id) {
     const { data, error } = await client.from('size_charts').update(row).eq('id', id).select().single();
