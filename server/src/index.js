@@ -14,6 +14,8 @@ import { bodyScan } from './routes/body-scan.js';
 import { chartCheck } from './routes/chart-check.js';
 import { websiteAnalysis } from './routes/website-analysis.js';
 import { selarWebhook } from './routes/webhook-selar.js';
+import { wavyWebhook } from './routes/webhook-wavy.js';
+import { wavyCheckout } from './routes/wavy-checkout.js';
 import { chat } from './routes/chat.js';
 import { recoverStaleGroups } from './services/groups.js';
 import { recoverStaleJobs, ensureBucket } from './services/pipeline.js';
@@ -30,7 +32,7 @@ app.use(cors({
     cb(new HttpError(403, `Origin ${origin} not allowed (add it to CORS_ORIGINS)`));
   },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'X-Wavy-Signature', 'X-Webhook-Secret'],
   maxAge: 86400,
 }));
 app.use(express.json({ limit: '256kb' }));
@@ -42,6 +44,9 @@ app.get('/api/public-config', (_req, res) => {
   res.json({
     supabaseUrl: config.supabase.anonKey ? config.supabase.url : '',
     supabaseAnonKey: config.supabase.anonKey,
+    wavyApi: Boolean(config.wavySecretKey),
+    wavyPublishableKey: config.wavyPublishableKey || '',
+    wavyCheckoutUrl: config.wavyCheckoutUrl || '',
   });
 });
 app.use('/api/garments', garments);
@@ -52,6 +57,8 @@ app.use('/api/body-scan', bodyScan);
 app.use('/api/chart-check', chartCheck);
 app.use('/api/website-analysis', websiteAnalysis);
 app.use('/api/webhooks/selar', selarWebhook);
+app.use('/api/webhooks/wavy', wavyWebhook);
+app.use('/api/pay/wavy-checkout', wavyCheckout);
 app.use('/api/chat', chat);
 
 app.use((_req, _res, next) => next(new HttpError(404, 'Not found')));

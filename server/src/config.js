@@ -85,6 +85,11 @@ export const config = Object.freeze({
   scanLabKey: process.env.SCAN_LAB_KEY || '',
   selarWebhookSecret: process.env.SELAR_WEBHOOK_SECRET || '',
   selarCheckoutUrl: process.env.SELAR_CHECKOUT_URL || '',
+  wavyWebhookSecret: process.env.WAVY_WEBHOOK_SECRET || '',
+  wavySecretKey: process.env.WAVY_SECRET_KEY || '',
+  wavyPublishableKey: process.env.WAVY_PUBLISHABLE_KEY || '',
+  wavyCheckoutUrl: process.env.WAVY_CHECKOUT_URL || '',
+  wavyApiBase: (process.env.WAVY_API_BASE || 'https://api.wavy.ng').replace(/\/$/, ''),
   adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase().trim(),
   gmail: Object.freeze({
     user: process.env.GMAIL_USER || '',
